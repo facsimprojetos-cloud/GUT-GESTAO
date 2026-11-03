@@ -141,7 +141,7 @@ function copiar(txt) { (navigator.clipboard ? navigator.clipboard.writeText(txt)
 
 // ================= login =================
 function telaLogin(err) {
-  $('app').innerHTML = `<div class="wrap"><div class="login"><div class="row" style="gap:14px"><div class="brand">G</div><div><h2 style="margin:0;font-size:22px">GUT Gestão</h2><div class="sub">Empresas, equipe e acessos de campo • v1.1</div></div></div>
+  $('app').innerHTML = `<div class="wrap"><div class="login"><div class="row" style="gap:14px"><div class="brand">G</div><div><h2 style="margin:0;font-size:22px">GUT Gestão</h2><div class="sub">Empresas, equipe e acessos de campo • v1.2</div></div></div>
     <label>E-mail</label><input id="em" type="email" autocomplete="username" placeholder="voce@empresa.com.br">
     <label>Senha</label><input id="pw" type="password" autocomplete="current-password" placeholder="Sua senha">
     <div class="err" id="lgErr">${esc(err || '')}</div>
@@ -194,6 +194,11 @@ function trocarSenha() {
     };
   });
 }
+function telaSoAdmin() {
+  $('app').innerHTML = `<div class="wrap"><div class="login" style="text-align:center"><div class="brand" style="margin:0 auto 12px">G</div><h2 style="margin:0 0 6px">Acesso restrito</h2>
+    <div class="sub">O GUT Gestão é usado só pelo administrador da plataforma.<br>Para usar o sistema da sua empresa, entre pelo link do sistema principal.</div>
+    <button class="btn ghost" style="margin-top:18px" onclick="sair()">Sair</button></div></div>`;
+}
 async function sair() { await sb.auth.signOut(); Object.assign(S, { eu: null, emp: '', tab: '', empresas: [], usuarios: [], campo: null, q: '' }); telaLogin(); }
 
 // ================= estrutura =================
@@ -201,6 +206,7 @@ async function iniciar() {
   busy(true);
   try {
     S.eu = await rpc('gestao_eu');
+    if (!S.eu.admin) { telaSoAdmin(); return; }
     const lista = S.eu.empresas || [];
     let salvo = ''; try { salvo = localStorage.getItem('gutGestaoEmp') || ''; } catch (e) {}
     S.emp = lista.some(e => e.id === salvo) ? salvo : (lista[0] && lista[0].id) || '';
@@ -210,16 +216,16 @@ async function iniciar() {
 }
 function render() {
   const eu = S.eu, lista = eu.empresas || [], e = empAtual();
-  const tabs = [eu.admin ? ['empresas', '🏢 Empresas'] : null, ['equipe', '👥 Equipe'], ['campo', '📱 App de campo']].filter(Boolean);
+  const tabs = [['empresas', '🏢 Empresas'], ['equipe', '👥 Acessos do escritório']];
   if (!tabs.some(t => t[0] === S.tab)) S.tab = tabs[0][0];
-  $('app').innerHTML = `<div class="top"><div class="bar"><div class="logo">G</div><div><h1>GUT Gestão <span style="font-size:11px;font-weight:600;opacity:.6">v1.1</span></h1><small>${esc(eu.user.email)}${eu.admin ? ' • administrador' : ''}</small></div><div class="sp"></div>
+  $('app').innerHTML = `<div class="top"><div class="bar"><div class="logo">G</div><div><h1>GUT Gestão <span style="font-size:11px;font-weight:600;opacity:.6">v1.2</span></h1><small>${esc(eu.user.email)}${eu.admin ? ' • administrador' : ''}</small></div><div class="sp"></div>
       ${lista.length ? `<select id="empSel" title="Empresa">${lista.map(x => `<option value="${x.id}" ${x.id === S.emp ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select>` : ''}
       <button class="tb" onclick="trocarSenha()" title="Trocar a minha senha">🔑<span class="hide-m"> Trocar senha</span></button><button class="tb" onclick="sair()">Sair</button></div>
     <div class="tabs">${tabs.map(t => `<button class="${S.tab === t[0] ? 'on' : ''}" onclick="irTab('${t[0]}')">${t[1]}</button>`).join('')}</div></div>
     <div class="wrap" id="main"></div>`;
   if ($('empSel')) $('empSel').onchange = ev => { S.emp = ev.target.value; try { localStorage.setItem('gutGestaoEmp', S.emp); } catch (x) {} S.usuarios = []; S.campo = null; irTab(S.tab); };
   if (!e && S.tab !== 'empresas') { $('main').innerHTML = '<div class="card empty">Você ainda não está ligado a nenhuma empresa. Peça ao dono para te convidar.</div>'; return; }
-  if (S.tab === 'empresas') abaEmpresas(); else if (S.tab === 'equipe') abaEquipe(); else abaCampo();
+  if (S.tab === 'empresas') abaEmpresas(); else abaEquipe();
 }
 function irTab(t) { S.tab = t; render(); }
 
@@ -233,7 +239,7 @@ async function abaEmpresas() {
         <div class="sub">${esc(e.cnpj || 'sem CNPJ')} • plano ${esc(e.plano || '—')}${e.contato ? ' • ' + esc(e.contato) : ''}</div>
         <div class="stats"><div><b>${e.usuarios}</b>usuários</div><div><b>${e.operadores_app}/${e.operadores}</b>operadores no app</div><div><b>${e.faccoes_app}/${e.faccoes}</b>facções no app</div></div>
         <div class="sub" style="margin-top:8px">Último uso do sistema: ${dt(e.ultimo_uso, true)}</div>
-        <div class="acts" style="justify-content:flex-start"><button class="btn ghost sm" onclick="editarEmpresa('${e.id}')">✏️ Editar</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','equipe')">👥 Equipe</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','campo')">📱 Campo</button></div></div>`; }).join('') || '<div class="card empty">Nenhuma empresa ainda.</div>'}</div>`;
+        <div class="acts" style="justify-content:flex-start"><button class="btn ghost sm" onclick="editarEmpresa('${e.id}')">✏️ Editar</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','equipe')">👥 Acessos</button></div></div>`; }).join('') || '<div class="card empty">Nenhuma empresa ainda.</div>'}</div>`;
 }
 function abrirEmpresa(id, tab) { S.emp = id; try { localStorage.setItem('gutGestaoEmp', id); } catch (e) {} S.usuarios = []; S.campo = null; S.tab = tab; render(); }
 function editarEmpresa(id) {
@@ -262,11 +268,10 @@ function editarEmpresa(id) {
 // ================= equipe =================
 async function abaEquipe() {
   const m = $('main'), e = empAtual();
-  if (!souDonoAqui()) { m.innerHTML = '<div class="card empty">Só o dono da empresa gerencia a equipe.</div>'; return; }
   m.innerHTML = '<div class="empty">Carregando…</div>';
   try { S.usuarios = await rpc('gestao_usuarios', { p_emp: S.emp }); } catch (er) { m.innerHTML = `<div class="card empty">${esc(er.message)}</div>`; return; }
-  m.innerHTML = `<div class="head"><div><h2>Equipe do escritório</h2><p>${esc(e.nome)} • ${S.usuarios.length} pessoa(s)</p></div><button class="btn pri" onclick="editarUsuario()">+ Convidar pessoa</button></div>
-    <div class="note">As permissões ficam guardadas aqui e passam a valer no sistema principal quando ele sair do Google. Por enquanto, o sistema atual continua liberando pelo e-mail do Google.</div>
+  m.innerHTML = `<div class="head"><div><h2>Acessos do escritório</h2><p>${esc(e.nome)} • ${S.usuarios.length} pessoa(s)</p></div><button class="btn pri" onclick="editarUsuario()">+ Convidar pessoa</button></div>
+    <div class="note">Quem entra no sistema principal desta empresa e o que cada um pode fazer. Os acessos do app de campo (costureiras e facções) são cadastrados pela própria empresa, no sistema principal. As permissões passam a valer quando o sistema principal sair do Google.</div>
     <div class="tw"><table class="table"><thead><tr><th>Pessoa</th><th>Papel</th><th class="hide-m">Acesso</th><th class="hide-m">Último acesso</th><th></th></tr></thead><tbody>
     ${S.usuarios.map(u => `<tr><td><b>${esc(u.nome || u.email)}</b>${u.sou_eu ? ' <span class="chip info">você</span>' : ''}<div class="sub">${esc(u.email)}</div></td>
       <td><span class="chip">${esc(PAPEIS[u.papel] || u.papel)}</span></td>
@@ -320,63 +325,6 @@ function editarUsuario(uid) {
   });
 }
 function abaEquipeSilenciosa() { const t = document.querySelector('#main .tw tbody'); if (t) abaEquipe(); }
-
-// ================= app de campo =================
-async function abaCampo() {
-  const m = $('main'), e = empAtual();
-  if (!souDonoAqui()) { m.innerHTML = '<div class="card empty">Só o dono da empresa gerencia os acessos de campo.</div>'; return; }
-  if (!S.campo) { m.innerHTML = '<div class="empty">Carregando…</div>'; try { S.campo = await rpc('gestao_campo', { p_emp: S.emp }); } catch (er) { m.innerHTML = `<div class="card empty">${esc(er.message)}</div>`; return; } }
-  const fac = S.campoTipo === 'FACCAO', lista = (fac ? S.campo.faccoes : S.campo.operadores) || [], q = S.q.trim().toUpperCase();
-  const vis = lista.filter(x => !q || (x.nome + ' ' + x.login).toUpperCase().includes(q));
-  const lib = lista.filter(x => x.acesso && x.tem_senha).length;
-  m.innerHTML = `<div class="head"><div><h2>App de campo</h2><p>${esc(e.nome)} • ${lib} de ${lista.length} ${fac ? 'facções' : 'operadores'} com acesso</p></div>
-      <div class="seg"><button class="${!fac ? 'on' : ''}" onclick="S.campoTipo='OPERADOR';abaCampo()">🧵 Operadores</button><button class="${fac ? 'on' : ''}" onclick="S.campoTipo='FACCAO';abaCampo()">🏭 Facções</button></div></div>
-    <div class="card" style="margin-bottom:14px"><div class="row"><div style="flex:1;min-width:240px"><b>Link do app de campo</b><div class="sub">É o endereço que vai na mensagem de WhatsApp.</div></div>
-      <input id="lnk" style="flex:2;min-width:240px" value="${esc(S.campo.link || '')}" placeholder="https://script.google.com/macros/s/…/exec"><button class="btn ghost sm" id="lnkSv">Salvar link</button></div></div>
-    <div class="row" style="margin-bottom:10px"><input class="search" id="q" value="${esc(S.q)}" placeholder="Buscar nome ou ${fac ? 'código' : 'matrícula'}"></div>
-    <div class="tw"><table class="table"><thead><tr><th>${fac ? 'Facção' : 'Operador'}</th><th>${fac ? 'Código' : 'Matrícula'}</th><th>Acesso</th>${fac ? '' : '<th class="hide-m">Modo</th>'}<th class="hide-m">Último acesso</th><th></th></tr></thead><tbody>
-    ${vis.map(x => `<tr><td><b>${esc(x.nome)}</b>${x.lider ? ' <span class="chip info">👑 líder</span>' : ''}<div class="sub">${esc(x.telefone || 'sem telefone')}</div></td>
-      <td class="mono">${esc(x.login || '—')}</td>
-      <td>${!x.tem_senha ? '<span class="chip">Sem senha</span>' : x.acesso ? '<span class="chip ok">Liberado</span>' : '<span class="chip bad">Bloqueado</span>'}</td>
-      ${fac ? '' : `<td class="hide-m sub">${{ MARCADOR: '⏱ Marcador', APONTADOR: '✓ Apontador', AMBOS: 'Os dois' }[x.modo] || x.modo}</td>`}
-      <td class="hide-m sub">${dt(x.ultimo_acesso, true)}</td>
-      <td style="text-align:right"><button class="btn ghost sm" onclick="editarCampo('${esc(x.id)}')">Editar</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">Nenhum ${fac ? 'facção' : 'operador'} encontrado.</td></tr>`}
-    </tbody></table></div>`;
-  const qi = $('q'); qi.oninput = () => { S.q = qi.value; const pos = qi.selectionStart; abaCampo().then(() => { const n = $('q'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} }); };
-  $('lnkSv').onclick = async () => { busy(true); try { await rpc('gestao_link_campo', { p_emp: S.emp, p_link: $('lnk').value }); S.campo.link = $('lnk').value; toast('Link salvo ✓'); } catch (er) { toast(er.message, true); } finally { busy(false); } };
-}
-function editarCampo(id) {
-  const fac = S.campoTipo === 'FACCAO', x = ((fac ? S.campo.faccoes : S.campo.operadores) || []).find(r => String(r.id) === String(id)); if (!x) return;
-  modal(`<div class="mh"><h3>${esc(x.nome)}</h3><button class="x" onclick="fechar(this)">×</button></div><div class="sub">${fac ? 'Facção' : 'Operador'} • acesso ao app de campo</div>
-    <div class="f2"><div><label>${fac ? 'Código de acesso' : 'Matrícula (usuário)'}</label><input id="cLg" value="${esc(x.login)}" style="text-transform:uppercase"></div><div><label>${fac ? 'WhatsApp' : 'Telefone'}</label><input id="cTel" value="${esc(x.telefone)}" placeholder="(11) 99999-0000"></div></div>
-    ${fac ? '' : `<label>Modo no app</label><select id="cModo">${[['AMBOS', 'Os dois (a pessoa escolhe)'], ['MARCADOR', '⏱ Marcador (inicia e finaliza)'], ['APONTADOR', '✓ Apontador (só dá baixa)']].map(([k, l]) => `<option value="${k}" ${x.modo === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <label class="switch"><input type="checkbox" id="cLid" ${x.lider ? 'checked' : ''}> 👑 Líder (pode pausar e retomar todo mundo)</label>`}
-    <label class="switch"><input type="checkbox" id="cAc" ${x.acesso || !x.tem_senha ? 'checked' : ''}> Acesso liberado</label>
-    <label>${x.tem_senha ? 'Nova senha (deixe em branco para manter)' : 'Senha'}</label><div class="row"><input id="cPw" style="flex:1" inputmode="numeric" placeholder="${x.tem_senha ? '••••••' : 'crie uma senha'}"><button class="btn ghost sm" id="cGen" type="button">🎲 Gerar</button></div>
-    <div class="err" id="cErr"></div><div id="cShare"></div>
-    <div class="acts"><button class="btn ghost" onclick="fechar(this)">Fechar</button><button class="btn pri" id="cSv">Salvar</button></div>`, m => {
-    m.querySelector('#cGen').onclick = () => { m.querySelector('#cPw').value = gerarSenha(); };
-    m.querySelector('#cSv').onclick = async () => {
-      const senha = m.querySelector('#cPw').value.trim(), login = m.querySelector('#cLg').value.trim().toUpperCase(), tel = m.querySelector('#cTel').value.trim();
-      const p = { tipo: S.campoTipo, id: x.id, login, telefone: tel, acesso: m.querySelector('#cAc').checked, senha };
-      if (!fac) { p.modo = m.querySelector('#cModo').value; p.lider = m.querySelector('#cLid').checked; }
-      busy(true); m.querySelector('#cErr').textContent = '';
-      try {
-        await rpc('gestao_campo_salvar', { p_emp: S.emp, p });
-        S.campo = await rpc('gestao_campo', { p_emp: S.emp });
-        toast('Acesso salvo ✓');
-        if (senha && p.acesso) {
-          const msg = `Olá ${x.nome}! Seu acesso ao app GUT Campo:\n${S.campo.link ? S.campo.link + '\n' : ''}${fac ? 'Código' : 'Matrícula'}: ${login}\nSenha: ${senha}`;
-          m.querySelector('#cShare').innerHTML = `<div class="share"><b>Envie o acesso</b><code>${esc(msg).replace(/\n/g, '<br>')}</code><div class="row"><button class="btn ghost sm" id="cCp">📋 Copiar</button><a class="btn wa sm" target="_blank" href="${waLink(tel, msg)}">WhatsApp</a></div></div>`;
-          m.querySelector('#cCp').onclick = () => copiar(msg);
-          m.querySelector('#cSv').classList.add('hidden');
-        } else m.remove();
-        abaCampoFundo();
-      } catch (er) { m.querySelector('#cErr').textContent = er.message; } finally { busy(false); }
-    };
-  });
-}
-function abaCampoFundo() { if (S.tab === 'campo') { const keep = document.querySelector('.modal'); abaCampo(); if (keep && !document.body.contains(keep)) document.body.appendChild(keep); } }
 
 // ================= início =================
 (async () => {

@@ -8,7 +8,7 @@
   let sess=null;
   const err=m=>({data:null,error:{message:m}});
   const me=()=>sess&&Object.entries(users).find(([e,u])=>u.id===sess.user.id);
-  const pode=emp=>{const m=me();if(!m)return false;if(m[1].admin)return true;return DB.membros.some(x=>x.user_id===m[1].id&&x.empresa_id===emp&&x.papel==='DONO'&&x.ativo)};
+  const pode=emp=>{const m=me();return !!(m&&m[1].admin)};
   const R={
     gestao_eu(){const m=me();if(!m)throw 'Entre no sistema primeiro.';const adm=m[1].admin;return {user:{id:m[1].id,email:m[0]},admin:adm,empresas:DB.empresas.filter(e=>adm||DB.membros.some(x=>x.user_id===m[1].id&&x.empresa_id===e.id)).map(e=>({id:e.id,nome:e.nome,slug:e.slug,status:e.status,plano:e.plano,papel:adm?'ADMIN':(DB.membros.find(x=>x.user_id===m[1].id&&x.empresa_id===e.id)||{}).papel}))}},
     gestao_empresas(){if(!me()[1].admin)throw 'Só o administrador da plataforma vê todas as empresas.';return DB.empresas.map(e=>Object.assign({},e,{usuarios:DB.membros.filter(x=>x.empresa_id===e.id).length,operadores:(DB.ops[e.id]||[]).length,operadores_app:(DB.ops[e.id]||[]).filter(o=>o.acesso).length,faccoes:(DB.facs[e.id]||[]).length,faccoes_app:(DB.facs[e.id]||[]).filter(o=>o.acesso).length,ultimo_uso:'2026-11-03T12:00:00Z'}))},
