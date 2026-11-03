@@ -1,0 +1,10 @@
+# Netlify publica só a pasta site/ (o resto do repositório fica privado)
+[build]
+  publish = "site"
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"

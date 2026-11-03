@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e1b4b">
+<title>GUT Gestão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --bg:#f4f6fb;--card:#fff;--ink:#0b1220;--ink2:#334155;--muted:#6b7a90;--line:rgba(15,23,42,.08);--line2:rgba(15,23,42,.14);
+    --pri:#4f46e5;--pri2:#7c3aed;--ok:#059669;--okbg:#ecfdf5;--warn:#d97706;--warnbg:#fffbeb;--bad:#dc2626;--badbg:#fff1f2;--infobg:#eef2ff;
+    --sh:0 1px 2px rgba(15,23,42,.04),0 6px 20px -8px rgba(15,23,42,.12);--sh2:0 2px 6px rgba(15,23,42,.06),0 18px 40px -16px rgba(30,27,75,.28);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;color:var(--ink);font:15px/1.45 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  body{background:radial-gradient(1200px 520px at 100% -10%,rgba(124,58,237,.10),transparent 60%),radial-gradient(900px 440px at -10% 0%,rgba(37,99,235,.10),transparent 60%),var(--bg);background-attachment:fixed;min-height:100vh}
+  button,input,select,textarea{font:inherit}button{cursor:pointer}
+  .hidden{display:none!important}
+  .top{position:sticky;top:0;z-index:10;color:#fff;padding:calc(12px + env(safe-area-inset-top)) 20px 0;background:linear-gradient(135deg,#1e1b4b 0%,#312e81 55%,#4c1d95 100%);box-shadow:0 10px 30px -14px rgba(30,27,75,.7)}
+  .top .bar{display:flex;align-items:center;gap:12px;max-width:1180px;margin:0 auto}
+  .logo{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;font-weight:800;background:linear-gradient(135deg,rgba(255,255,255,.22),rgba(255,255,255,.06));border:1px solid rgba(255,255,255,.28)}
+  .top h1{font-size:17px;margin:0;font-weight:700}.top small{display:block;opacity:.72;font-size:12px}
+  .top .sp{flex:1}
+  .top select{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:12px;padding:8px 12px;max-width:260px}
+  .top select option{color:#0b1220}
+  .top .tb{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:8px 13px;font-weight:600}
+  .tabs{display:flex;gap:4px;max-width:1180px;margin:12px auto 0;overflow:auto}
+  .tabs button{border:0;background:transparent;color:#c7cbe6;padding:11px 16px;border-radius:12px 12px 0 0;font-weight:600;white-space:nowrap}
+  .tabs button.on{background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 20px 80px}
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 16px}
+  .head h2{margin:0;font-size:24px;letter-spacing:-.4px}.head p{margin:2px 0 0;color:var(--muted)}
+  .card{background:linear-gradient(180deg,#fff,#fdfdff);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--sh)}
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .ttl{font-weight:700;font-size:16px;margin:0}.sub{color:var(--muted);font-size:13px}
+  .chip{display:inline-flex;align-items:center;gap:4px;border-radius:99px;padding:3px 10px;font-size:12px;font-weight:600;background:#f1f5f9;color:var(--ink2);border:1px solid var(--line)}
+  .chip.ok{background:var(--okbg);color:#065f46;border-color:rgba(5,150,105,.2)}.chip.warn{background:var(--warnbg);color:#92400e;border-color:rgba(217,119,6,.22)}
+  .chip.bad{background:var(--badbg);color:#9f1239;border-color:rgba(225,29,72,.2)}.chip.info{background:var(--infobg);color:#3730a3;border-color:rgba(79,70,229,.2)}
+  .stats{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap}.stats div{font-size:12px;color:var(--muted)}.stats b{display:block;font-size:18px;color:var(--ink)}
+  .btn{border:0;border-radius:12px;padding:10px 15px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px;color:#fff;transition:transform .08s,box-shadow .15s}
+  .btn:active{transform:scale(.97)}.btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.pri{background:linear-gradient(135deg,var(--pri),var(--pri2));box-shadow:0 8px 18px -10px rgba(79,70,229,.75),inset 0 1px 0 rgba(255,255,255,.22)}
+  .btn.ok{background:linear-gradient(135deg,#10b981,var(--ok))}.btn.bad{background:linear-gradient(135deg,#f43f5e,var(--bad))}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line2);box-shadow:0 1px 2px rgba(15,23,42,.05)}
+  .btn.sm{padding:7px 11px;font-size:13px;border-radius:10px}
+  .btn.wa{background:linear-gradient(135deg,#22c55e,#16a34a)}
+  label{display:block;font-weight:600;font-size:13px;color:var(--ink2);margin:12px 0 5px}
+  input,select,textarea{width:100%;padding:11px 13px;border:1px solid var(--line2);border-radius:12px;background:#fff;color:var(--ink);font-size:15px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 4px rgba(79,70,229,.13)}
+  .f2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+  .table{width:100%;border-collapse:separate;border-spacing:0}
+  .table th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#4b5568;text-align:left;padding:10px 12px;background:linear-gradient(180deg,#f8f9fd,#f2f4fa);border-bottom:1px solid var(--line)}
+  .table td{padding:11px 12px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:middle}
+  .table tr:last-child td{border-bottom:0}.table tr:hover td{background:#f7f7ff}
+  .tw{overflow:auto;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:var(--sh)}
+  .seg{display:inline-flex;background:#eef1f7;border:1px solid var(--line);border-radius:12px;padding:3px}
+  .seg button{border:0;background:transparent;border-radius:9px;padding:7px 12px;font-weight:600;color:var(--ink2);font-size:13px}
+  .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.08);outline:1px solid rgba(79,70,229,.18)}
+  .perm{display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:center;margin-top:6px}
+  .perm .seg button{padding:6px 10px;font-size:12px}
+  .perm .seg button.on.n{color:#64748b}.perm .seg button.on.v{color:#1d4ed8}.perm .seg button.on.e{color:#047857}
+  .switch{display:flex;align-items:center;gap:10px;margin-top:12px;font-weight:600;font-size:14px}
+  .switch input{width:20px;height:20px;accent-color:var(--pri)}
+  .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:grid;place-items:center;z-index:50;padding:16px;animation:fi .15s}
+  .modal .card{width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:22px;padding:22px;box-shadow:var(--sh2);animation:up .2s ease-out}
+  .modal .mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.modal .mh h3{margin:0;font-size:19px}
+  .x{border:0;background:#f1f5f9;border-radius:10px;width:34px;height:34px;font-size:18px}
+  .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+  @keyframes fi{from{opacity:0}}@keyframes up{from{transform:translateY(14px);opacity:.6}}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(15,23,42,.94);color:#fff;padding:12px 18px;border-radius:14px;font-weight:600;z-index:80;max-width:92vw;box-shadow:0 18px 40px -14px rgba(0,0,0,.5)}
+  .toast.bad{background:linear-gradient(135deg,#e11d48,#b91c1c)}
+  .busy{position:fixed;inset:0;background:rgba(244,246,251,.5);display:grid;place-items:center;z-index:70}
+  .spin{width:40px;height:40px;border-radius:50%;border:3.5px solid rgba(79,70,229,.15);border-top-color:var(--pri);animation:sp .75s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+  .login{max-width:410px;margin:10vh auto 0;padding:28px 24px;border-radius:24px;box-shadow:var(--sh2);background:rgba(255,255,255,.94)}
+  .brand{width:50px;height:50px;border-radius:16px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:20px;background:linear-gradient(135deg,var(--pri),var(--pri2));box-shadow:0 10px 22px -8px rgba(79,70,229,.6)}
+  .err{color:var(--bad);font-weight:600;font-size:14px;min-height:20px;margin-top:10px}
+  .link{background:none;border:0;color:var(--pri);font-weight:600;padding:8px 0}
+  .share{border:1px dashed rgba(79,70,229,.35);background:linear-gradient(135deg,rgba(238,242,255,.9),rgba(250,245,255,.9));border-radius:14px;padding:14px;margin-top:14px}
+  .share code{display:block;word-break:break-all;font-size:12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px;margin:8px 0}
+  .empty{text-align:center;color:var(--muted);padding:34px}
+  .note{font-size:13px;color:#3730a3;background:var(--infobg);border:1px solid rgba(79,70,229,.18);border-radius:12px;padding:10px 12px;margin-bottom:14px}
+  .search{max-width:320px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  @media(max-width:720px){.top h1{font-size:15px;white-space:nowrap}.top small{display:none}.table td,.table th{padding:9px 8px}.table td .btn.sm{padding:6px 9px}.tabs button{padding:10px 12px}.f2{grid-template-columns:1fr}.wrap{padding:14px 14px 80px}.top{padding-left:14px;padding-right:14px}.hide-m{display:none}.top select{max-width:150px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="busy" class="busy hidden"><div class="spin"></div></div>
+<script>
+// ===== configuração do Supabase (chave pública, pode ficar no site) =====
+const SUPA_URL = 'https://ipjsogzbdkqprrtuquok.supabase.co';
+const SUPA_KEY = 'sb_publishable_jJqCSp5S2wOh0Pa5bQlVGg_cxJweXNy';
+
+const HASH_TIPO = new URLSearchParams(location.hash.slice(1)).get('type') || '';
+const sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+
+const MODULOS = [
+  ['cadastros', 'Cadastros', 'produtos, fichas, materiais, operadores'],
+  ['estoque', 'Estoque e compras', 'materiais, entradas, saldos'],
+  ['corte', 'Corte', 'novo corte, estoque de corte, volumes'],
+  ['producao', 'Produção interna', 'Kanban, cupons, marcação, apontamento'],
+  ['faccoes', 'Facções', 'remessas, romaneios, retornos, inspeção'],
+  ['financeiro', 'Financeiro facções', 'a pagar, pagamentos'],
+  ['custos', 'Custos', 'custo minuto, custo do produto, preços'],
+  ['relatorios', 'Dashboards e relatórios', 'indicadores e análises'],
+];
+const PAPEIS = { DONO: 'Dono', SUPERVISOR: 'Supervisor', FINANCEIRO: 'Financeiro', OPERADOR: 'Operacional' };
+const PRESET = {
+  DONO: { cadastros: 'editar', estoque: 'editar', corte: 'editar', producao: 'editar', faccoes: 'editar', financeiro: 'editar', custos: 'editar', relatorios: 'editar' },
+  SUPERVISOR: { cadastros: 'ver', estoque: 'editar', corte: 'editar', producao: 'editar', faccoes: 'editar', financeiro: 'nenhum', custos: 'nenhum', relatorios: 'ver' },
+  FINANCEIRO: { cadastros: 'ver', estoque: 'ver', corte: 'nenhum', producao: 'nenhum', faccoes: 'ver', financeiro: 'editar', custos: 'ver', relatorios: 'ver' },
+  OPERADOR: { cadastros: 'nenhum', estoque: 'ver', corte: 'ver', producao: 'editar', faccoes: 'ver', financeiro: 'nenhum', custos: 'nenhum', relatorios: 'nenhum' },
+};
+const STATUS = { ATIVA: ['ok', 'Ativa'], TESTE: ['info', 'Em teste'], SUSPENSA: ['warn', 'Suspensa'], CANCELADA: ['bad', 'Cancelada'] };
+
+const S = { eu: null, emp: '', tab: '', empresas: [], usuarios: [], campo: null, campoTipo: 'OPERADOR', q: '' };
+const $ = id => document.getElementById(id);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dt = (v, h) => { if (!v) return '—'; const d = new Date(v); if (isNaN(d)) return '—'; return h ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('pt-BR'); };
+function toast(m, bad) { const t = document.createElement('div'); t.className = 'toast' + (bad ? ' bad' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), bad ? 5500 : 3000); }
+function busy(on) { $('busy').classList.toggle('hidden', !on); }
+async function rpc(fn, args) { const { data, error } = await sb.rpc(fn, args || {}); if (error) throw new Error(error.message || 'Erro'); return data; }
+async function fn(body) {
+  const { data, error } = await sb.functions.invoke('gestao-convite', { body });
+  if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch (e) {} throw new Error(m); }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+const empAtual = () => (S.eu && S.eu.empresas || []).find(e => e.id === S.emp) || null;
+const souDonoAqui = () => { const e = empAtual(); return !!(S.eu && (S.eu.admin || (e && e.papel === 'DONO'))); };
+function modal(html, onReady) { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="card">' + html + '</div>'; m.addEventListener('mousedown', e => { if (e.target === m) m.remove(); }); document.body.appendChild(m); if (onReady) onReady(m); return m; }
+const fechar = el => { const m = el.closest('.modal'); if (m) m.remove(); };
+function gerarSenha() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function waLink(tel, msg) { const n = String(tel || '').replace(/\D/g, ''); const nn = n && n.length <= 11 ? '55' + n : n; return 'https://wa.me/' + nn + '?text=' + encodeURIComponent(msg); }
+function copiar(txt) { (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Copiado ✓')).catch(() => { const t = document.createElement('textarea'); t.value = txt; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); toast('Copiado ✓'); } catch (e) {} t.remove(); }); }
+
+// ================= login =================
+function telaLogin(err) {
+  $('app').innerHTML = `<div class="wrap"><div class="login"><div class="row" style="gap:14px"><div class="brand">G</div><div><h2 style="margin:0;font-size:22px">GUT Gestão</h2><div class="sub">Empresas, equipe e acessos de campo</div></div></div>
+    <label>E-mail</label><input id="em" type="email" autocomplete="username" placeholder="voce@empresa.com.br">
+    <label>Senha</label><input id="pw" type="password" autocomplete="current-password" placeholder="Sua senha">
+    <div class="err" id="lgErr">${esc(err || '')}</div>
+    <button class="btn pri" style="width:100%;margin-top:8px;padding:14px" id="go">Entrar</button>
+    <div style="text-align:center;margin-top:6px"><button class="link" id="esq">Esqueci a senha</button></div></div></div>`;
+  $('go').onclick = entrar; $('pw').onkeydown = e => { if (e.key === 'Enter') entrar(); };
+  ['keyup', 'keydown'].forEach(ev => $('pw').addEventListener(ev, e => { if (e.getModifierState && e.getModifierState('CapsLock')) $('lgErr').textContent = '⚠️ Caps Lock está ligado'; else if ($('lgErr').textContent.indexOf('Caps') >= 0) $('lgErr').textContent = ''; }));
+  $('esq').onclick = async () => { const em = $('em').value.trim(); if (!em) { $('lgErr').textContent = 'Digite o seu e-mail acima.'; return; }
+    busy(true); const { error } = await sb.auth.resetPasswordForEmail(em, { redirectTo: location.origin + location.pathname }); busy(false);
+    if (error) $('lgErr').textContent = error.message; else toast('Se o e-mail estiver cadastrado, chega um link para criar uma nova senha.'); };
+  setTimeout(() => $('em').focus(), 30);
+}
+async function entrar() {
+  const em = $('em').value.trim(), pw = $('pw').value;
+  if (!em || !pw) { $('lgErr').textContent = 'Preencha e-mail e senha.'; return; }
+  busy(true); const { error } = await sb.auth.signInWithPassword({ email: em, password: pw }); busy(false);
+  if (error) { $('lgErr').textContent = /invalid/i.test(error.message) ? 'E-mail ou senha incorretos.' : error.message; return; }
+  iniciar();
+}
+function telaNovaSenha(tipo) {
+  $('app').innerHTML = `<div class="wrap"><div class="login"><div class="row" style="gap:14px"><div class="brand">G</div><div><h2 style="margin:0;font-size:22px">${tipo === 'invite' ? 'Bem-vindo(a)!' : 'Nova senha'}</h2><div class="sub">${tipo === 'invite' ? 'Crie a sua senha para entrar no GUT.' : 'Escolha uma nova senha.'}</div></div></div>
+    <label>Nova senha</label><input id="n1" type="password" autocomplete="new-password" placeholder="mínimo 8 caracteres">
+    <label>Repita a senha</label><input id="n2" type="password" autocomplete="new-password">
+    <div class="err" id="nsErr"></div><button class="btn pri" style="width:100%;margin-top:8px;padding:14px" id="sv">Salvar senha e entrar</button></div></div>`;
+  $('sv').onclick = async () => { const a = $('n1').value, b = $('n2').value;
+    if (a.length < 8) { $('nsErr').textContent = 'A senha precisa ter pelo menos 8 caracteres.'; return; }
+    if (a !== b) { $('nsErr').textContent = 'As duas senhas não são iguais.'; return; }
+    busy(true); const { error } = await sb.auth.updateUser({ password: a }); busy(false);
+    if (error) { $('nsErr').textContent = error.message; return; }
+    history.replaceState(null, '', location.pathname); toast('Senha salva ✓'); iniciar(); };
+}
+function trocarSenha() {
+  modal(`<div class="mh"><h3>Trocar a minha senha</h3><button class="x" onclick="fechar(this)">×</button></div>
+    <div class="sub">Vale para o login do GUT Gestão (${esc(S.eu.user.email)}).</div>
+    <label>Nova senha</label><input id="t1" type="password" autocomplete="new-password" placeholder="mínimo 8 caracteres">
+    <label>Repita a nova senha</label><input id="t2" type="password" autocomplete="new-password">
+    <div class="sub" id="tCaps" style="color:#b45309;min-height:18px"></div>
+    <div class="err" id="tErr"></div>
+    <div class="acts"><button class="btn ghost" onclick="fechar(this)">Cancelar</button><button class="btn pri" id="tSv">Salvar nova senha</button></div>`, m => {
+    const caps = e => { m.querySelector('#tCaps').textContent = e.getModifierState && e.getModifierState('CapsLock') ? '⚠️ Caps Lock está ligado' : ''; };
+    m.querySelectorAll('input').forEach(i => { i.addEventListener('keyup', caps); i.addEventListener('keydown', caps); });
+    setTimeout(() => m.querySelector('#t1').focus(), 30);
+    m.querySelector('#tSv').onclick = async () => {
+      const a = m.querySelector('#t1').value, b = m.querySelector('#t2').value;
+      if (a.length < 8) { m.querySelector('#tErr').textContent = 'A senha precisa ter pelo menos 8 caracteres.'; return; }
+      if (a !== b) { m.querySelector('#tErr').textContent = 'As duas senhas não são iguais.'; return; }
+      busy(true); const { error } = await sb.auth.updateUser({ password: a }); busy(false);
+      if (error) { m.querySelector('#tErr').textContent = /same|different/i.test(error.message) ? 'A nova senha precisa ser diferente da atual.' : error.message; return; }
+      m.remove(); toast('Senha trocada ✓ Use a nova senha no próximo login.');
+    };
+  });
+}
+async function sair() { await sb.auth.signOut(); Object.assign(S, { eu: null, emp: '', tab: '', empresas: [], usuarios: [], campo: null, q: '' }); telaLogin(); }
+
+// ================= estrutura =================
+async function iniciar() {
+  busy(true);
+  try {
+    S.eu = await rpc('gestao_eu');
+    const lista = S.eu.empresas || [];
+    let salvo = ''; try { salvo = localStorage.getItem('gutGestaoEmp') || ''; } catch (e) {}
+    S.emp = lista.some(e => e.id === salvo) ? salvo : (lista[0] && lista[0].id) || '';
+    S.tab = S.tab || (S.eu.admin ? 'empresas' : 'equipe');
+    render();
+  } catch (e) { telaLogin(e.message); } finally { busy(false); }
+}
+function render() {
+  const eu = S.eu, lista = eu.empresas || [], e = empAtual();
+  const tabs = [eu.admin ? ['empresas', '🏢 Empresas'] : null, ['equipe', '👥 Equipe'], ['campo', '📱 App de campo']].filter(Boolean);
+  if (!tabs.some(t => t[0] === S.tab)) S.tab = tabs[0][0];
+  $('app').innerHTML = `<div class="top"><div class="bar"><div class="logo">G</div><div><h1>GUT Gestão</h1><small>${esc(eu.user.email)}${eu.admin ? ' • administrador' : ''}</small></div><div class="sp"></div>
+      ${lista.length ? `<select id="empSel" title="Empresa">${lista.map(x => `<option value="${x.id}" ${x.id === S.emp ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select>` : ''}
+      <button class="tb" onclick="trocarSenha()" title="Trocar a minha senha">🔑<span class="hide-m"> Trocar senha</span></button><button class="tb" onclick="sair()">Sair</button></div>
+    <div class="tabs">${tabs.map(t => `<button class="${S.tab === t[0] ? 'on' : ''}" onclick="irTab('${t[0]}')">${t[1]}</button>`).join('')}</div></div>
+    <div class="wrap" id="main"></div>`;
+  if ($('empSel')) $('empSel').onchange = ev => { S.emp = ev.target.value; try { localStorage.setItem('gutGestaoEmp', S.emp); } catch (x) {} S.usuarios = []; S.campo = null; irTab(S.tab); };
+  if (!e && S.tab !== 'empresas') { $('main').innerHTML = '<div class="card empty">Você ainda não está ligado a nenhuma empresa. Peça ao dono para te convidar.</div>'; return; }
+  if (S.tab === 'empresas') abaEmpresas(); else if (S.tab === 'equipe') abaEquipe(); else abaCampo();
+}
+function irTab(t) { S.tab = t; render(); }
+
+// ================= empresas =================
+async function abaEmpresas() {
+  const m = $('main'); m.innerHTML = '<div class="empty">Carregando…</div>';
+  try { S.empresas = await rpc('gestao_empresas'); } catch (e) { m.innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
+  m.innerHTML = `<div class="head"><div><h2>Empresas</h2><p>${S.empresas.length} empresa(s) na plataforma</p></div><button class="btn pri" onclick="editarEmpresa()">+ Nova empresa</button></div>
+    <div class="grid">${S.empresas.map(e => { const st = STATUS[e.status] || ['', e.status];
+      return `<div class="card"><div class="row"><p class="ttl" style="flex:1">${esc(e.nome)}</p><span class="chip ${st[0]}">${st[1]}</span></div>
+        <div class="sub">${esc(e.cnpj || 'sem CNPJ')} • plano ${esc(e.plano || '—')}${e.contato ? ' • ' + esc(e.contato) : ''}</div>
+        <div class="stats"><div><b>${e.usuarios}</b>usuários</div><div><b>${e.operadores_app}/${e.operadores}</b>operadores no app</div><div><b>${e.faccoes_app}/${e.faccoes}</b>facções no app</div></div>
+        <div class="sub" style="margin-top:8px">Último uso do sistema: ${dt(e.ultimo_uso, true)}</div>
+        <div class="acts" style="justify-content:flex-start"><button class="btn ghost sm" onclick="editarEmpresa('${e.id}')">✏️ Editar</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','equipe')">👥 Equipe</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','campo')">📱 Campo</button></div></div>`; }).join('') || '<div class="card empty">Nenhuma empresa ainda.</div>'}</div>`;
+}
+function abrirEmpresa(id, tab) { S.emp = id; try { localStorage.setItem('gutGestaoEmp', id); } catch (e) {} S.usuarios = []; S.campo = null; S.tab = tab; render(); }
+function editarEmpresa(id) {
+  const e = S.empresas.find(x => x.id === id) || { status: 'TESTE', plano: 'TESTE' };
+  modal(`<div class="mh"><h3>${id ? 'Editar empresa' : 'Nova empresa'}</h3><button class="x" onclick="fechar(this)">×</button></div>
+    <label>Nome da empresa</label><input id="eNome" value="${esc(e.nome || '')}" placeholder="Ex.: Confecção Bela Moda">
+    <div class="f2"><div><label>CNPJ</label><input id="eCnpj" value="${esc(e.cnpj || '')}"></div><div><label>Código (endereço)</label><input id="eSlug" value="${esc(e.slug || '')}" placeholder="automático"></div></div>
+    <div class="f2"><div><label>Contato</label><input id="eCont" value="${esc(e.contato || '')}"></div><div><label>Telefone</label><input id="eTel" value="${esc(e.telefone || '')}"></div></div>
+    <label>E-mail</label><input id="eMail" type="email" value="${esc(e.email || '')}">
+    <div class="f2"><div><label>Situação</label><select id="eSt">${Object.keys(STATUS).map(k => `<option value="${k}" ${e.status === k ? 'selected' : ''}>${STATUS[k][1]}</option>`).join('')}</select></div>
+      <div><label>Plano</label><select id="ePl">${['TESTE', 'BASICO', 'PROFISSIONAL', 'PREMIUM'].map(k => `<option ${e.plano === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div></div>
+    <div class="f2"><div><label>Início</label><input id="eIni" type="date" value="${esc(e.inicio || '')}"></div><div></div></div>
+    <label>Observação</label><textarea id="eObs" rows="2">${esc(e.observacao || '')}</textarea>
+    <div class="err" id="eErr"></div>
+    <div class="acts"><button class="btn ghost" onclick="fechar(this)">Cancelar</button><button class="btn pri" id="eSv">Salvar</button></div>`, m => {
+    m.querySelector('#eSv').onclick = async () => {
+      busy(true);
+      try {
+        await rpc('gestao_empresa_salvar', { p: { id: id || '', nome: $('eNome').value, cnpj: $('eCnpj').value, slug: $('eSlug').value, contato: $('eCont').value, telefone: $('eTel').value, email: $('eMail').value, status: $('eSt').value, plano: $('ePl').value, inicio: $('eIni').value, observacao: $('eObs').value } });
+        m.remove(); toast('Empresa salva ✓'); S.eu = await rpc('gestao_eu'); render();
+      } catch (er) { $('eErr').textContent = er.message; } finally { busy(false); }
+    };
+  });
+}
+
+// ================= equipe =================
+async function abaEquipe() {
+  const m = $('main'), e = empAtual();
+  if (!souDonoAqui()) { m.innerHTML = '<div class="card empty">Só o dono da empresa gerencia a equipe.</div>'; return; }
+  m.innerHTML = '<div class="empty">Carregando…</div>';
+  try { S.usuarios = await rpc('gestao_usuarios', { p_emp: S.emp }); } catch (er) { m.innerHTML = `<div class="card empty">${esc(er.message)}</div>`; return; }
+  m.innerHTML = `<div class="head"><div><h2>Equipe do escritório</h2><p>${esc(e.nome)} • ${S.usuarios.length} pessoa(s)</p></div><button class="btn pri" onclick="editarUsuario()">+ Convidar pessoa</button></div>
+    <div class="note">As permissões ficam guardadas aqui e passam a valer no sistema principal quando ele sair do Google. Por enquanto, o sistema atual continua liberando pelo e-mail do Google.</div>
+    <div class="tw"><table class="table"><thead><tr><th>Pessoa</th><th>Papel</th><th class="hide-m">Acesso</th><th class="hide-m">Último acesso</th><th></th></tr></thead><tbody>
+    ${S.usuarios.map(u => `<tr><td><b>${esc(u.nome || u.email)}</b>${u.sou_eu ? ' <span class="chip info">você</span>' : ''}<div class="sub">${esc(u.email)}</div></td>
+      <td><span class="chip">${esc(PAPEIS[u.papel] || u.papel)}</span></td>
+      <td class="hide-m">${!u.ativo ? '<span class="chip bad">Bloqueado</span>' : u.confirmado ? '<span class="chip ok">Ativo</span>' : '<span class="chip warn">Convite pendente</span>'}</td>
+      <td class="hide-m sub">${dt(u.ultimo_acesso, true)}</td>
+      <td style="text-align:right"><button class="btn ghost sm" onclick="editarUsuario('${u.user_id}')">Editar</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Ninguém ainda. Convide a primeira pessoa.</td></tr>'}
+    </tbody></table></div>`;
+}
+function permHtml(perm) {
+  return `<div class="perm">${MODULOS.map(([k, l, d]) => `<div><b style="font-size:14px">${l}</b><div class="sub">${d}</div></div>
+    <div class="seg" data-mod="${k}">${[['nenhum', '—', 'n'], ['ver', 'Ver', 'v'], ['editar', 'Editar', 'e']].map(([v, t, c]) => `<button type="button" data-v="${v}" class="${c} ${(perm[k] || 'nenhum') === v ? 'on' : ''}">${t}</button>`).join('')}</div>`).join('')}</div>`;
+}
+function lerPerm(m) { const p = {}; m.querySelectorAll('.perm .seg').forEach(s => { const b = s.querySelector('button.on'); p[s.dataset.mod] = b ? b.dataset.v : 'nenhum'; }); return p; }
+function ligarPerm(m) {
+  m.querySelectorAll('.perm .seg button').forEach(b => b.onclick = () => { b.parentNode.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  const pap = m.querySelector('#uPap'); if (pap) pap.onchange = () => { m.querySelector('#permBox').innerHTML = permHtml(PRESET[pap.value] || {}); ligarPerm(m); };
+}
+function editarUsuario(uid) {
+  const u = S.usuarios.find(x => x.user_id === uid), novo = !u, papel = u ? u.papel : 'OPERADOR', perm = u ? Object.assign({}, PRESET[papel], u.permissoes || {}) : PRESET.OPERADOR;
+  modal(`<div class="mh"><h3>${novo ? 'Convidar pessoa' : 'Editar acesso'}</h3><button class="x" onclick="fechar(this)">×</button></div>
+    <div class="f2"><div><label>Nome</label><input id="uNome" value="${esc(u ? u.nome : '')}"></div><div><label>E-mail</label><input id="uMail" type="email" value="${esc(u ? u.email : '')}" ${novo ? '' : 'disabled'}></div></div>
+    <label>Papel</label><select id="uPap">${Object.keys(PAPEIS).map(k => `<option value="${k}" ${papel === k ? 'selected' : ''}>${PAPEIS[k]}</option>`).join('')}</select>
+    <div class="sub" style="margin-top:4px">Ao trocar o papel, as permissões abaixo vêm prontas. Depois é só ajustar.</div>
+    <label style="margin-top:16px">Permissões por módulo</label><div id="permBox">${permHtml(perm)}</div>
+    ${novo ? '' : `<label class="switch"><input type="checkbox" id="uAtv" ${u.ativo ? 'checked' : ''}> Acesso liberado</label>`}
+    <div class="err" id="uErr"></div><div id="uShare"></div>
+    <div class="acts">${novo ? '' : `<button class="btn ghost sm" id="uLink" style="margin-right:auto">🔑 Link para trocar a senha</button>${u.sou_eu ? '' : '<button class="btn ghost sm" id="uDel">Remover</button>'}`}
+      <button class="btn ghost" onclick="fechar(this)">Fechar</button><button class="btn pri" id="uSv">${novo ? 'Convidar' : 'Salvar'}</button></div>`, m => {
+    ligarPerm(m);
+    const mostrarLink = (link, txt) => { const msg = txt + '\n' + link; m.querySelector('#uShare').innerHTML = `<div class="share"><b>Link gerado</b><div class="sub">Envie para a pessoa. Ele vale por tempo limitado.</div><code>${esc(link)}</code><div class="row"><button class="btn ghost sm" id="cpL">📋 Copiar</button><a class="btn wa sm" target="_blank" href="${waLink('', msg)}">WhatsApp</a></div></div>`; m.querySelector('#cpL').onclick = () => copiar(link); };
+    m.querySelector('#uSv').onclick = async () => {
+      const body = { papel: $('uPap').value, permissoes: lerPerm(m), nome: $('uNome').value.trim() };
+      busy(true); $('uErr').textContent = '';
+      try {
+        if (novo) {
+          const r = await fn(Object.assign(body, { acao: 'convidar', empresa_id: S.emp, email: $('uMail').value.trim(), redirect_to: location.origin + location.pathname }));
+          toast(r.novo ? 'Convite criado ✓' : 'Pessoa adicionada ✓');
+          if (r.link) mostrarLink(r.link, 'Você foi convidado(a) para o GUT (' + (empAtual() || {}).nome + '). Abra o link para criar sua senha:');
+          m.querySelector('#uSv').classList.add('hidden');
+        } else {
+          await rpc('gestao_usuario_salvar', { p_emp: S.emp, p: Object.assign(body, { user_id: uid, ativo: m.querySelector('#uAtv').checked }) });
+          m.remove(); toast('Acesso salvo ✓');
+        }
+        S.usuarios = await rpc('gestao_usuarios', { p_emp: S.emp }); if (!document.querySelector('.modal')) abaEquipe(); else abaEquipeSilenciosa();
+      } catch (er) { $('uErr').textContent = er.message; } finally { busy(false); }
+    };
+    if (!novo) {
+      m.querySelector('#uLink').onclick = async () => { busy(true); try { const r = await fn({ acao: 'link_senha', empresa_id: S.emp, email: u.email, redirect_to: location.origin + location.pathname }); mostrarLink(r.link, 'Link para criar uma nova senha no GUT:'); } catch (er) { $('uErr').textContent = er.message; } finally { busy(false); } };
+      const del = m.querySelector('#uDel'); if (del) del.onclick = async () => { if (!confirm('Remover ' + (u.nome || u.email) + ' desta empresa?')) return; busy(true); try { await rpc('gestao_usuario_remover', { p_emp: S.emp, p_user: uid }); m.remove(); toast('Removido.'); abaEquipe(); } catch (er) { $('uErr').textContent = er.message; } finally { busy(false); } };
+    }
+  });
+}
+function abaEquipeSilenciosa() { const t = document.querySelector('#main .tw tbody'); if (t) abaEquipe(); }
+
+// ================= app de campo =================
+async function abaCampo() {
+  const m = $('main'), e = empAtual();
+  if (!souDonoAqui()) { m.innerHTML = '<div class="card empty">Só o dono da empresa gerencia os acessos de campo.</div>'; return; }
+  if (!S.campo) { m.innerHTML = '<div class="empty">Carregando…</div>'; try { S.campo = await rpc('gestao_campo', { p_emp: S.emp }); } catch (er) { m.innerHTML = `<div class="card empty">${esc(er.message)}</div>`; return; } }
+  const fac = S.campoTipo === 'FACCAO', lista = (fac ? S.campo.faccoes : S.campo.operadores) || [], q = S.q.trim().toUpperCase();
+  const vis = lista.filter(x => !q || (x.nome + ' ' + x.login).toUpperCase().includes(q));
+  const lib = lista.filter(x => x.acesso && x.tem_senha).length;
+  m.innerHTML = `<div class="head"><div><h2>App de campo</h2><p>${esc(e.nome)} • ${lib} de ${lista.length} ${fac ? 'facções' : 'operadores'} com acesso</p></div>
+      <div class="seg"><button class="${!fac ? 'on' : ''}" onclick="S.campoTipo='OPERADOR';abaCampo()">🧵 Operadores</button><button class="${fac ? 'on' : ''}" onclick="S.campoTipo='FACCAO';abaCampo()">🏭 Facções</button></div></div>
+    <div class="card" style="margin-bottom:14px"><div class="row"><div style="flex:1;min-width:240px"><b>Link do app de campo</b><div class="sub">É o endereço que vai na mensagem de WhatsApp.</div></div>
+      <input id="lnk" style="flex:2;min-width:240px" value="${esc(S.campo.link || '')}" placeholder="https://script.google.com/macros/s/…/exec"><button class="btn ghost sm" id="lnkSv">Salvar link</button></div></div>
+    <div class="row" style="margin-bottom:10px"><input class="search" id="q" value="${esc(S.q)}" placeholder="Buscar nome ou ${fac ? 'código' : 'matrícula'}"></div>
+    <div class="tw"><table class="table"><thead><tr><th>${fac ? 'Facção' : 'Operador'}</th><th>${fac ? 'Código' : 'Matrícula'}</th><th>Acesso</th>${fac ? '' : '<th class="hide-m">Modo</th>'}<th class="hide-m">Último acesso</th><th></th></tr></thead><tbody>
+    ${vis.map(x => `<tr><td><b>${esc(x.nome)}</b>${x.lider ? ' <span class="chip info">👑 líder</span>' : ''}<div class="sub">${esc(x.telefone || 'sem telefone')}</div></td>
+      <td class="mono">${esc(x.login || '—')}</td>
+      <td>${!x.tem_senha ? '<span class="chip">Sem senha</span>' : x.acesso ? '<span class="chip ok">Liberado</span>' : '<span class="chip bad">Bloqueado</span>'}</td>
+      ${fac ? '' : `<td class="hide-m sub">${{ MARCADOR: '⏱ Marcador', APONTADOR: '✓ Apontador', AMBOS: 'Os dois' }[x.modo] || x.modo}</td>`}
+      <td class="hide-m sub">${dt(x.ultimo_acesso, true)}</td>
+      <td style="text-align:right"><button class="btn ghost sm" onclick="editarCampo('${esc(x.id)}')">Editar</button></td></tr>`).join('') || `<tr><td colspan="6" class="empty">Nenhum ${fac ? 'facção' : 'operador'} encontrado.</td></tr>`}
+    </tbody></table></div>`;
+  const qi = $('q'); qi.oninput = () => { S.q = qi.value; const pos = qi.selectionStart; abaCampo().then(() => { const n = $('q'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} }); };
+  $('lnkSv').onclick = async () => { busy(true); try { await rpc('gestao_link_campo', { p_emp: S.emp, p_link: $('lnk').value }); S.campo.link = $('lnk').value; toast('Link salvo ✓'); } catch (er) { toast(er.message, true); } finally { busy(false); } };
+}
+function editarCampo(id) {
+  const fac = S.campoTipo === 'FACCAO', x = ((fac ? S.campo.faccoes : S.campo.operadores) || []).find(r => String(r.id) === String(id)); if (!x) return;
+  modal(`<div class="mh"><h3>${esc(x.nome)}</h3><button class="x" onclick="fechar(this)">×</button></div><div class="sub">${fac ? 'Facção' : 'Operador'} • acesso ao app de campo</div>
+    <div class="f2"><div><label>${fac ? 'Código de acesso' : 'Matrícula (usuário)'}</label><input id="cLg" value="${esc(x.login)}" style="text-transform:uppercase"></div><div><label>${fac ? 'WhatsApp' : 'Telefone'}</label><input id="cTel" value="${esc(x.telefone)}" placeholder="(11) 99999-0000"></div></div>
+    ${fac ? '' : `<label>Modo no app</label><select id="cModo">${[['AMBOS', 'Os dois (a pessoa escolhe)'], ['MARCADOR', '⏱ Marcador (inicia e finaliza)'], ['APONTADOR', '✓ Apontador (só dá baixa)']].map(([k, l]) => `<option value="${k}" ${x.modo === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label class="switch"><input type="checkbox" id="cLid" ${x.lider ? 'checked' : ''}> 👑 Líder (pode pausar e retomar todo mundo)</label>`}
+    <label class="switch"><input type="checkbox" id="cAc" ${x.acesso || !x.tem_senha ? 'checked' : ''}> Acesso liberado</label>
+    <label>${x.tem_senha ? 'Nova senha (deixe em branco para manter)' : 'Senha'}</label><div class="row"><input id="cPw" style="flex:1" inputmode="numeric" placeholder="${x.tem_senha ? '••••••' : 'crie uma senha'}"><button class="btn ghost sm" id="cGen" type="button">🎲 Gerar</button></div>
+    <div class="err" id="cErr"></div><div id="cShare"></div>
+    <div class="acts"><button class="btn ghost" onclick="fechar(this)">Fechar</button><button class="btn pri" id="cSv">Salvar</button></div>`, m => {
+    m.querySelector('#cGen').onclick = () => { m.querySelector('#cPw').value = gerarSenha(); };
+    m.querySelector('#cSv').onclick = async () => {
+      const senha = m.querySelector('#cPw').value.trim(), login = m.querySelector('#cLg').value.trim().toUpperCase(), tel = m.querySelector('#cTel').value.trim();
+      const p = { tipo: S.campoTipo, id: x.id, login, telefone: tel, acesso: m.querySelector('#cAc').checked, senha };
+      if (!fac) { p.modo = m.querySelector('#cModo').value; p.lider = m.querySelector('#cLid').checked; }
+      busy(true); m.querySelector('#cErr').textContent = '';
+      try {
+        await rpc('gestao_campo_salvar', { p_emp: S.emp, p });
+        S.campo = await rpc('gestao_campo', { p_emp: S.emp });
+        toast('Acesso salvo ✓');
+        if (senha && p.acesso) {
+          const msg = `Olá ${x.nome}! Seu acesso ao app GUT Campo:\n${S.campo.link ? S.campo.link + '\n' : ''}${fac ? 'Código' : 'Matrícula'}: ${login}\nSenha: ${senha}`;
+          m.querySelector('#cShare').innerHTML = `<div class="share"><b>Envie o acesso</b><code>${esc(msg).replace(/\n/g, '<br>')}</code><div class="row"><button class="btn ghost sm" id="cCp">📋 Copiar</button><a class="btn wa sm" target="_blank" href="${waLink(tel, msg)}">WhatsApp</a></div></div>`;
+          m.querySelector('#cCp').onclick = () => copiar(msg);
+          m.querySelector('#cSv').classList.add('hidden');
+        } else m.remove();
+        abaCampoFundo();
+      } catch (er) { m.querySelector('#cErr').textContent = er.message; } finally { busy(false); }
+    };
+  });
+}
+function abaCampoFundo() { if (S.tab === 'campo') { const keep = document.querySelector('.modal'); abaCampo(); if (keep && !document.body.contains(keep)) document.body.appendChild(keep); } }
+
+// ================= início =================
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if (HASH_TIPO === 'invite' || HASH_TIPO === 'recovery') {
+    if (data.session) return telaNovaSenha(HASH_TIPO);
+  }
+  sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') telaNovaSenha('recovery'); });
+  if (data.session) iniciar(); else telaLogin();
+})();
+</script>
+</body>
+</html>
