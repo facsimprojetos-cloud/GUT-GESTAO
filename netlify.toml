@@ -8,3 +8,9 @@
   [headers.values]
     X-Frame-Options = "DENY"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+# app de campo: /campo/<codigo-da-empresa> abre sempre o mesmo app
+[[redirects]]
+  from = "/campo/*"
+  to = "/campo/index.html"
+  status = 200
