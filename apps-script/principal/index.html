@@ -1320,7 +1320,7 @@ function flushLazyRender(view){
 }
 // ===== v4.13.0: modo web (Netlify). Sem google.script.run: a tela fala com a "GUT API" (Apps Script) usando o login do Supabase =====
 const GUT_WEB=!(window.google&&window.google.script&&window.google.script.run);
-const GUT_API_URL='__GUT_API_URL__';
+const GUT_API_URL='https://script.google.com/macros/s/AKfycbzKmOesc8gecYfr7T3L_1anEICCmyVu7QLtvsBPj5V1QOkxuvGMl1EtRb0fWdqLZtnHhw/exec';
 const GUT_SB=GUT_WEB&&window.supabase?window.supabase.createClient('https://ipjsogzbdkqprrtuquok.supabase.co','sb_publishable_jJqCSp5S2wOh0Pa5bQlVGg_cxJweXNy',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
 let GUT_STARTED=false;
 async function gutToken(){try{const {data}=await GUT_SB.auth.getSession();return data&&data.session?data.session.access_token:''}catch(e){return ''}}
