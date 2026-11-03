@@ -703,6 +703,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style id="gut-visual-412">
+.gut-ao-vivo::before{content:'● ao vivo ';color:#16a34a;font-weight:700}
+
 /* GUT PPCP — camada visual moderna (v4.12.2). Só vale na tela do app (html.ui); impressões não usam. */
 html.ui{--ac1:#4f46e5;--ac2:#7c3aed;--hair:rgba(15,23,42,.08);--hair2:rgba(15,23,42,.14);
   --sh-s:0 1px 2px rgba(15,23,42,.04),0 6px 18px -8px rgba(15,23,42,.12);--sh-m:0 2px 6px rgba(15,23,42,.05),0 18px 40px -18px rgba(30,27,75,.25)}
@@ -803,7 +805,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.13.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.14.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1359,7 +1361,168 @@ function gutWebExtras(){if(!GUT_WEB)return;const tb=document.querySelector('.top
 function gutBoot(){if(!GUT_WEB){GUT_STARTED=true;return startShell()}
   if(!GUT_SB){document.body.innerHTML='<p style="font-family:sans-serif;padding:24px">Não foi possível carregar o login. Verifique a internet e recarregue a página.</p>';return}
   GUT_SB.auth.getSession().then(({data})=>{if(data&&data.session){GUT_STARTED=true;startShell();gutWebExtras()}else gutWebLogin()})}
-function startShell(){gutWebExtras();installLazyRender();initTheme();bindNav();setOperationalNavigation(true);Promise.resolve(init()).catch(e=>{console.error('[GUT INIT]',e);toast('O sistema abriu em modo de segurança. Alguns dados podem não ter carregado: '+(e?.message||e),true)})}
+// ===== v4.14.0: Kanbans direto no Supabase (modo web). Os cards são montados aqui com as mesmas regras do Apps Script
+// (getInternalProductionBoardImpl_ / getRemessasExternasImpl_) e o quadro se atualiza sozinho quando o banco avisa. =====
+const GUT_EMPRESA_SLUG='gut';
+const WEBQ={empresa:'',canal:null,sujo:{interno:false,faccao:false},em:0,skip:false,ok:{}};
+const WQ_TZ=-3*3600000; // Brasília (sem horário de verão)
+function wqVal(v){if(v===null||v===undefined)return '';if(typeof v==='string'){const m=v.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/);if(m)return wqFmt(Date.parse(v));if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v+'T00:00:00'}return v}
+function wqFmt(ms){return new Date(ms+WQ_TZ).toISOString().slice(0,19)}
+const WQMS=new WeakMap(); // milissegundos originais de cada data (o texto exibido fica sem ms, como no Apps Script)
+function wqRows(a){return (a||[]).map(r=>{const o={},ms={};for(const k in r){const K=k.toUpperCase(),v=r[k];o[K]=wqVal(v);if(typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)&&/(Z|[+-]\d{2}:?\d{2})$/.test(v))ms[K]=Date.parse(v)}WQMS.set(o,ms);return o})}
+function wqT(row,...fs){if(!row)return 0;const m=WQMS.get(row)||{};for(const f of fs){if(row[f]){return m[f]!=null?m[f]:wqMs(row[f])}}return 0}
+function wqMs(v){if(!v)return 0;if(v instanceof Date)return v.getTime();if(typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(v))return Date.parse(v+'-03:00')||0;const d=new Date(v);return isNaN(d.getTime())?0:d.getTime()}
+function wqNum(v,f){if(v===''||v===null||v===undefined)return f===undefined?0:f;if(typeof v==='number')return Number.isFinite(v)?v:(f||0);let s=String(v).trim();if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');const x=Number(s);return Number.isFinite(x)?x:(f===undefined?0:f)}
+function wqR2(x){return Math.round((Number(x)+Number.EPSILON)*100)/100}
+function wqMap(rows,k){const o={};rows.forEach(r=>{if(r[k]!==''&&r[k]!=null)o[r[k]]=r});return o}
+function wqGroup(rows,k){const o=Object.create(null);rows.forEach(r=>(o[String(r[k])]||(o[String(r[k])]=[])).push(r));return o}
+function wqTruthy(v){if(typeof v==='boolean')return v;if(typeof v==='number')return v!==0;return ['TRUE','VERDADEIRO','SIM','1','ATIVO'].includes(String(v||'').trim().toUpperCase())}
+function wqLabels(rows,k,fn){const o={};(rows||[]).forEach(r=>o[r[k]]=fn(r));return o}
+function wqMaps(t){return {produtos:wqLabels(t.CAD_PRODUTOS,'ID_PRODUTO',r=>[r.CODIGO_PRODUTO,r.PRODUTO].filter(Boolean).join(' - ')),cores:wqLabels(t.CAD_CORES,'ID_COR',r=>r.COR),tamanhos:wqLabels(t.CAD_TAMANHOS,'ID_TAMANHO',r=>r.TAMANHO),processos:wqLabels(t.CAD_PROCESSOS,'ID_PROCESSO',r=>r.PROCESSO),maquinas:wqLabels(t.CAD_MAQUINAS,'ID_MAQUINA',r=>r.MAQUINA),destinos:wqLabels(t.CAD_DESTINOS,'ID_DESTINO',r=>r.NOME_DESTINO),setores:wqLabels(t.CAD_SETORES,'ID_SETOR',r=>r.SETOR)}}
+function wqVolCode(v,subFb){v=v||{};const raw=String(v.COD_VOLUME||'').trim(),sub=String(v.SUBLOTE||subFb||'').trim(),leg=raw.match(/^SEP-\d+-V(\d+)(\.\d+)?$/i);if(leg&&sub)return sub+'-V'+String(Number(leg[1])||1).padStart(2,'0')+(leg[2]||'');if(raw)return raw;const seq=wqNum(v.SEQ_SEPARACAO||v.VOLUME_SEQ);return sub&&seq>0?sub+'-V'+String(seq).padStart(2,'0'):(sub||'')}
+function wqMetodo(c){const m=String(c.METODO_CONCLUSAO||'').toUpperCase();if(m)return m;if(String(c.STATUS_CUPOM||'').toUpperCase()!=='CONCLUIDO')return '';return (c.DATA_HORA_INICIO_MARCACAO&&c.DATA_HORA_FIM_MARCACAO)?'MARCACAO':'CUPOM'}
+function wqExecucao(c){if(String(c.STATUS_CUPOM||'').toUpperCase()!=='CONCLUIDO'||wqMetodo(c)!=='MARCACAO')return {};const ini=wqT(c,'DATA_HORA_INICIO_MARCACAO'),fim=wqT(c,'DATA_HORA_FIM_MARCACAO');if(!ini||!fim||fim<=ini)return {};
+  const segReais=Math.max(1,Math.round((fim-ini)/1000-wqNum(c.SEGUNDOS_PAUSA))),segPadrao=wqNum(c.MINUTOS_PADRAO_TOTAL)?wqNum(c.MINUTOS_PADRAO_TOTAL)*60:wqNum(c.QTD_PROGRAMADA)*wqNum(c.TEMPO_PADRAO_SEG_UN);
+  return {SEGUNDOS_REAIS:segReais,MINUTOS_REAIS:wqR2(segReais/60),EFICIENCIA_EXECUCAO_PCT:segPadrao>0?wqR2(segPadrao/segReais*100):''}}
+async function wqFetch(rpc){
+  if(!GUT_SB)throw new Error('Sem conexão com o banco.');
+  const {data,error}=await GUT_SB.rpc(rpc,{p_slug:GUT_EMPRESA_SLUG});
+  if(error)throw new Error(error.message||'Falha ao ler o quadro.');
+  const t={};Object.keys(data||{}).forEach(k=>{t[k]=Array.isArray(data[k])?wqRows(data[k]):data[k]});
+  if(data&&data.EMPRESA_ID)wqAoVivo(String(data.EMPRESA_ID));
+  return t;
+}
+async function wqQuadroInterno(){
+  const t=await wqFetch('web_quadro_interno');
+  const volumes=t.VOLUMES.filter(v=>{const loc=String(v.TIPO_LOCAL_ATUAL||'').toUpperCase(),st=String(v.STATUS_VOLUME||'').toUpperCase();return loc==='INTERNO'&&!['CANCELADO','ESTORNADO','EM_ESTOQUE_PA'].includes(st)});
+  const cupons=t.CUPONS_PRODUCAO.filter(c=>!['CANCELADO','ESTORNADO'].includes(String(c.STATUS_CUPOM||'').toUpperCase()));
+  const estoque=wqMap(t.ESTOQUE_CORTE,'ID_ESTOQUE_CORTE'),processos=wqMap(t.CAD_PROCESSOS,'ID_PROCESSO');
+  const operadores=wqMap(t.CAD_OPERADORES.filter(r=>r.ATIVO===''||r.ATIVO==null||wqTruthy(r.ATIVO)),'ID_OPERADOR'),operadoresTodos=wqMap(t.CAD_OPERADORES,'ID_OPERADOR');
+  const maps=wqMaps(t),byVolume=wqGroup(cupons,'ID_VOLUME');
+  const remessasInternas=t.REMESSAS.filter(r=>['INTERNO','PRODUCAO_INTERNA'].includes(String(r.TIPO_DESTINO||'').toUpperCase()));
+  const remessaInternaById=wqMap(remessasInternas,'ID_REMESSA'),remessaItemByVolume={};
+  t.REMESSA_ITENS.forEach(i=>{if(remessaInternaById[String(i.ID_REMESSA)])remessaItemByVolume[String(i.ID_VOLUME)]=i});
+  const paisComFilhos=new Set(volumes.filter(v=>v.ID_VOLUME_ORIGEM).map(v=>String(v.ID_VOLUME_ORIGEM)));
+  const caixas=volumes.filter(v=>v.ID_VOLUME_ORIGEM||(!paisComFilhos.has(String(v.ID_VOLUME))&&(byVolume[String(v.ID_VOLUME)]||[]).length));
+  const minOf=c=>wqNum(c.MINUTOS_PADRAO_TOTAL,wqNum(c.QTD_PROGRAMADA)*wqNum(c.TEMPO_PADRAO_SEG_UN)/60);
+  const rows=caixas.map(v=>{
+    const ops=(byVolume[String(v.ID_VOLUME)]||[]).slice().sort((a,b)=>wqNum(a.ORDEM_PROCESSO)-wqNum(b.ORDEM_PROCESSO));
+    const concl=ops.filter(c=>String(c.STATUS_CUPOM||'').toUpperCase()==='CONCLUIDO');
+    const minTotal=wqR2(ops.reduce((s,c)=>s+minOf(c),0)),minConcl=wqR2(concl.reduce((s,c)=>s+minOf(c),0));
+    let progresso=minTotal>0?Math.min(100,wqR2(minConcl/minTotal*100)):(ops.length?wqR2(concl.length/ops.length*100):0);
+    if(concl.length<ops.length)progresso=Math.min(progresso,99.9);
+    const atual=ops.find(c=>String(c.STATUS_CUPOM||'').toUpperCase()!=='CONCLUIDO')||null;
+    const idx=atual?ops.findIndex(c=>String(c.ID_CUPOM)===String(atual.ID_CUPOM)):-1;
+    const prox=idx>=0?ops.slice(idx+1).find(c=>String(c.STATUS_CUPOM||'').toUpperCase()!=='CONCLUIDO')||null:null;
+    const est=estoque[v.ID_ESTOQUE_CORTE]||{};
+    const remItem=remessaItemByVolume[String(v.ID_VOLUME)]||remessaItemByVolume[String(v.ID_VOLUME_ORIGEM||'')]||null;
+    const remInterna=remItem?remessaInternaById[String(remItem.ID_REMESSA)]||null:null;
+    const opOut=c=>{if(!c)return null;const maq=c.ID_MAQUINA||(processos[c.ID_PROCESSO]||{}).ID_MAQUINA_PADRAO||'';return {
+      ID_CUPOM:c.ID_CUPOM,COD_CUPOM:c.COD_CUPOM,ID_VOLUME:c.ID_VOLUME,ID_PROCESSO:c.ID_PROCESSO,
+      PROCESSO:maps.processos[c.ID_PROCESSO]||c.ID_PROCESSO,ORDEM_PROCESSO:wqNum(c.ORDEM_PROCESSO),
+      ID_SETOR:c.ID_SETOR,SETOR:maps.setores[c.ID_SETOR]||'',ID_MAQUINA:maq,MAQUINA:maps.maquinas[maq]||'',
+      QTD_PROGRAMADA:wqNum(c.QTD_PROGRAMADA),TEMPO_PADRAO_SEG_UN:wqNum(c.TEMPO_PADRAO_SEG_UN),MINUTOS_PADRAO_TOTAL:wqR2(minOf(c)),
+      STATUS_CUPOM:String(c.STATUS_CUPOM||'PENDENTE').toUpperCase(),
+      ID_OPERADOR_MARCACAO:c.ID_OPERADOR_MARCACAO||'',OPERADOR_MARCACAO:(operadores[c.ID_OPERADOR_MARCACAO]||{}).NOME||'',ID_OPERADOR_BIPAGEM:c.ID_OPERADOR_BIPAGEM||'',OPERADOR_BIPAGEM:(operadores[c.ID_OPERADOR_BIPAGEM]||{}).NOME||'',
+      DATA_HORA_INICIO_MARCACAO:c.DATA_HORA_INICIO_MARCACAO||'',DATA_HORA_FIM_MARCACAO:c.DATA_HORA_FIM_MARCACAO||'',PAUSADO_EM:c.PAUSADO_EM||'',SEGUNDOS_PAUSA:wqNum(c.SEGUNDOS_PAUSA),PAUSA_TIPO:c.PAUSA_TIPO||'',
+      ID_OPERADOR_ALOCADO:c.ID_OPERADOR_ALOCADO||'',OPERADOR_ALOCADO:c.ID_OPERADOR_ALOCADO?((operadoresTodos[c.ID_OPERADOR_ALOCADO]||{}).NOME||''):'',
+      METODO_CONCLUSAO:wqMetodo(c),ATUALIZADO_EM:c.ATUALIZADO_EM||'',DATA_HORA_BIPAGEM:c.DATA_HORA_BIPAGEM||'',...wqExecucao(c)}};
+    return {
+      ID_VOLUME:v.ID_VOLUME,COD_VOLUME:v.COD_VOLUME||'',COD_VOLUME_EXIBICAO:wqVolCode(v,v.SUBLOTE||est.SUBLOTE),ID_VOLUME_ORIGEM:v.ID_VOLUME_ORIGEM||'',VOLUME_SEQ:wqNum(v.VOLUME_SEQ),
+      ID_REMESSA_INTERNA:remInterna?remInterna.ID_REMESSA:'',NUM_REMESSA_INTERNA:remInterna?remInterna.NUM_REMESSA:'',
+      LOTE_CORTE:est.LOTE_CORTE||'',SUBLOTE:v.SUBLOTE||est.SUBLOTE||'',QTD_VOLUME:wqNum(v.QTD_VOLUME),
+      ID_PRODUTO:est.ID_PRODUTO||'',PRODUTO:maps.produtos[est.ID_PRODUTO]||'',COR:maps.cores[est.ID_COR]||'',TAMANHO:maps.tamanhos[est.ID_TAMANHO]||'',
+      STATUS_VOLUME:v.STATUS_VOLUME||'',OPERACOES_TOTAL:ops.length,OPERACOES_CONCLUIDAS:concl.length,
+      MINUTOS_PADRAO_TOTAL:minTotal,MINUTOS_PADRAO_CONCLUIDOS:minConcl,PROGRESSO_PCT:progresso,
+      _ms:Math.max(0,wqT(v,'ATUALIZADO_EM','DATA_CRIACAO'),wqT(remInterna,'ATUALIZADO_EM','DATA_HORA','DATA_ENVIO'),...ops.map(c=>wqT(c,'ATUALIZADO_EM','DATA_HORA_BIPAGEM','DATA_HORA_INICIO_MARCACAO','DATA_CRIACAO'))),
+      OPERACAO_ATUAL:opOut(atual),PROXIMA_OPERACAO:opOut(prox),OPERACOES:ops.map(opOut)};
+  }).sort((a,b)=>b._ms-a._ms||String(a.LOTE_CORTE||a.SUBLOTE||'').localeCompare(String(b.LOTE_CORTE||b.SUBLOTE||''),'pt-BR',{numeric:true})||String(a.COD_VOLUME).localeCompare(String(b.COD_VOLUME),'pt-BR',{numeric:true}));
+  rows.forEach(r=>{r.ULTIMA_ATIVIDADE_EM=wqFmt(r._ms);delete r._ms});
+  return {ok:true,generatedAt:new Date().toISOString(),rows,__direto:true};
+}
+async function wqRemessasExternas(){
+  const t=await wqFetch('web_quadro_faccao');
+  const remessas=t.REMESSAS.filter(r=>String(r.TIPO_DESTINO||'').toUpperCase()==='FACCAO');
+  const items=t.REMESSA_ITENS,retornos=t.RETORNOS_EXTERNOS,volumes=t.VOLUMES;
+  const volumeById=wqMap(volumes,'ID_VOLUME'),estoqueById=wqMap(t.ESTOQUE_CORTE,'ID_ESTOQUE_CORTE'),maps=wqMaps(t);
+  const itemsByRemessa=wqGroup(items,'ID_REMESSA'),returnsByItem=wqGroup(retornos,'ID_ITEM_REMESSA'),contentByVolume=wqGroup(t.VOLUME_ITENS,'ID_VOLUME');
+  const returnedByContent={};t.RETORNO_VOLUME_ITENS.forEach(ri=>returnedByContent[ri.ID_VOLUME_ITEM]=(returnedByContent[ri.ID_VOLUME_ITEM]||0)+wqNum(ri.QTD_RETORNADA));
+  const finRows=t.FINANCEIRO_FACCAO,pagNum=Object.create(null);t.PAGAMENTOS_FACCAO.forEach(p=>pagNum[String(p.ID_PAGAMENTO)]=p.NUM_PAGAMENTO);
+  const finByRetorno=Object.create(null),finByRemessa=Object.create(null);
+  finRows.forEach(l=>{const st=String(l.STATUS||'').toUpperCase();if(st==='CANCELADO')return;
+    const rem=finByRemessa[String(l.ID_REMESSA)]||(finByRemessa[String(l.ID_REMESSA)]={FIN_PAGO:0,FIN_A_PAGAR:0,FIN_DEBITO_ABERTO:0,FIN_DEBITO_DESCONTADO:0,FIN_PAGAMENTOS:[]});
+    const v=wqNum(l.VALOR),num=l.ID_PAGAMENTO?(pagNum[String(l.ID_PAGAMENTO)]||''):'';
+    if(l.TIPO==='A_PAGAR'){if(st==='PAGO')rem.FIN_PAGO=wqR2(rem.FIN_PAGO+v);else rem.FIN_A_PAGAR=wqR2(rem.FIN_A_PAGAR+v);if(l.ID_RETORNO)finByRetorno[String(l.ID_RETORNO)]={FIN_STATUS:st==='PAGO'?'PAGO':'A_PAGAR',FIN_VALOR:v,FIN_PAGAMENTO:num}}
+    else if(l.TIPO==='DEBITO'){if(st==='DESCONTADO')rem.FIN_DEBITO_DESCONTADO=wqR2(rem.FIN_DEBITO_DESCONTADO+v);else rem.FIN_DEBITO_ABERTO=wqR2(rem.FIN_DEBITO_ABERTO+v)}
+    if(num&&rem.FIN_PAGAMENTOS.indexOf(num)<0)rem.FIN_PAGAMENTOS.push(num)});
+  const precoDebito=(item,idVolume)=>{const direto=wqNum(item&&item.PRECO_FACCAO_UNIT);if(direto>0)return direto;let vol=volumeById[idVolume],guard=0;
+    while(vol&&guard++<8){const deb=finRows.find(l=>String(l.ID_VOLUME)===String(vol.ID_VOLUME)&&l.TIPO==='DEBITO'&&l.ORIGEM==='RETRABALHO'&&wqNum(l.VALOR_UNITARIO)>0);if(deb)return wqNum(deb.VALOR_UNITARIO);
+      const origemId=String(vol.ID_VOLUME_ORIGEM_RETRABALHO||'');if(!origemId)break;const it=items.filter(i=>String(i.ID_VOLUME)===origemId&&wqNum(i.PRECO_FACCAO_UNIT)>0).pop();if(it)return wqNum(it.PRECO_FACCAO_UNIT);vol=volumeById[origemId]}
+    return 0};
+  // avisos do app de campo (mesma regra de avisosCampoMap_/campoStatusVolume_/campoResumoRemessa_)
+  const av={};t.FACCAO_AVISOS.slice().sort((a,b)=>wqT(a,'DATA_HORA')-wqT(b,'DATA_HORA')).forEach(a=>{const k=String(a.ID_REMESSA||'');if(!k)return;const r=av[k]||(av[k]={geral:null,vols:{},ultimo:null,naoLidos:0});
+    const ev={TIPO:String(a.TIPO||'').toUpperCase(),DATA_HORA:a.DATA_HORA,ms:wqT(a,'DATA_HORA'),OBS:a.OBS||''};
+    if(a.ID_VOLUME)r.vols[String(a.ID_VOLUME)]=ev;else{r.geral=ev;r.vols=Object.fromEntries(Object.entries(r.vols).filter(([,v])=>v.ms>ev.ms))}
+    r.ultimo=ev;if(!a.LIDO_EM)r.naoLidos++});
+  const stVol=(a,idV)=>{if(!a)return '';const g=a.geral,v=a.vols[String(idV)],e=v&&(!g||v.ms>=g.ms)?v:g;return e?e.TIPO:''};
+  const resumo=(a,itens)=>{if(!a)return null;const pend=itens.filter(i=>wqNum(i.QTD_ENVIADA)-wqNum(i.QTD_RETORNADA)>0||!itens.some(x=>wqNum(x.QTD_RETORNADA)>0));const st=(pend.length?pend:itens).map(i=>stVol(a,i.ID_VOLUME));
+    const conc=st.filter(s=>s==='CONCLUIDO').length,ini=st.filter(s=>s==='INICIADO').length;return {STATUS:st.length&&conc===st.length?'CONCLUIDO':conc?'PARCIAL':ini?'INICIADO':'',CONCLUIDOS:conc,INICIADOS:ini,TOTAL:st.length,ULTIMO:a.ultimo,NAO_LIDOS:a.naoLidos}};
+  return remessas.sort((a,b)=>wqT(b,'ATUALIZADO_EM','DATA_ENVIO','DATA_HORA')-wqT(a,'ATUALIZADO_EM','DATA_ENVIO','DATA_HORA')).map(r=>{
+    const remessaItens=(itemsByRemessa[r.ID_REMESSA]||[]).map(i=>{
+      const volume=volumeById[i.ID_VOLUME]||{},est=estoqueById[volume.ID_ESTOQUE_CORTE]||{};
+      let conteudos=(contentByVolume[String(i.ID_VOLUME)]||[]).map(vi=>{const qr=(returnedByContent[vi.ID_VOLUME_ITEM]||0);return {...vi,
+        PRODUTO:maps.produtos[vi.ID_PRODUTO]||vi.ID_PRODUTO||'',COR:maps.cores[vi.ID_COR]||vi.ID_COR||'',TAMANHO:maps.tamanhos[vi.ID_TAMANHO]||vi.ID_TAMANHO||'',
+        QTD_ITEM:wqNum(vi.QTD_ITEM),QTD_RETORNADA_ITEM:qr,SALDO_RETORNO_ITEM:Math.max(0,wqNum(vi.QTD_ITEM)-qr),
+        PRECO_FACCAO_UNIT:wqNum(i.PRECO_FACCAO_UNIT)>0?wqNum(i.PRECO_FACCAO_UNIT):wqNum(vi.PRECO_FACCAO_UNIT),
+        VALOR_TOTAL_ITEM:wqR2(wqNum(i.PRECO_FACCAO_UNIT)>0?wqNum(i.PRECO_FACCAO_UNIT)*wqNum(vi.QTD_ITEM):wqNum(vi.VALOR_TOTAL_ITEM))}});
+      if(!conteudos.length&&(volume.ID_ESTOQUE_CORTE||est.ID_ESTOQUE_CORTE)){conteudos=[{ID_VOLUME_ITEM:'',ID_VOLUME:i.ID_VOLUME,ID_ESTOQUE_CORTE:volume.ID_ESTOQUE_CORTE||est.ID_ESTOQUE_CORTE,ID_PRODUTO:est.ID_PRODUTO||'',SUBLOTE:volume.SUBLOTE||est.SUBLOTE||'',
+        PRODUTO:maps.produtos[est.ID_PRODUTO]||est.ID_PRODUTO||'',COR:maps.cores[est.ID_COR]||est.ID_COR||'',TAMANHO:maps.tamanhos[est.ID_TAMANHO]||est.ID_TAMANHO||'',
+        QTD_ITEM:wqNum(i.QTD_ENVIADA),QTD_RETORNADA_ITEM:wqNum(i.QTD_RETORNADA),SALDO_RETORNO_ITEM:Math.max(0,wqNum(i.QTD_ENVIADA)-wqNum(i.QTD_RETORNADA)),PRECO_FACCAO_UNIT:wqNum(i.PRECO_FACCAO_UNIT),VALOR_TOTAL_ITEM:wqR2(wqNum(i.VALOR_TOTAL_ITEM))}]}
+      const rs=(returnsByItem[i.ID_ITEM_REMESSA]||[]);
+      const resumoProdutos=[...new Set(conteudos.map(c=>c.PRODUTO).filter(Boolean))].join(' + ');
+      const resumoVariacoes=conteudos.map(c=>[c.COR,c.TAMANHO].filter(Boolean).join('/')).filter(Boolean).join(' + ');
+      const sub1=conteudos.length===1?conteudos[0].SUBLOTE:volume.SUBLOTE;
+      const finIt=st=>wqR2(rs.reduce((s,x)=>{const f=finByRetorno[String(x.ID_RETORNO)];return s+(f&&f.FIN_STATUS===st?f.FIN_VALOR:0)},0));
+      return {...i,VOLUME_SEQ:wqNum(volume.VOLUME_SEQ||volume.SEQ_SEPARACAO),COD_VOLUME_EXIBICAO:wqVolCode(volume,sub1),VOLUME_EXIBICAO:wqVolCode(volume,sub1),
+        SUBLOTE:conteudos.length===1?conteudos[0].SUBLOTE:(volume.SUBLOTE||'MULTILOTE'),LOTE_CORTE:est.LOTE_CORTE||'',
+        PRODUTO:resumoProdutos||(maps.produtos[est.ID_PRODUTO]||est.ID_PRODUTO||''),COR:conteudos.length===1?conteudos[0].COR:'',TAMANHO:conteudos.length===1?conteudos[0].TAMANHO:'',
+        RESUMO_VARIACOES:resumoVariacoes,CONTEUDOS:conteudos,PRECO_FACCAO_UNIT:wqNum(i.PRECO_FACCAO_UNIT),VALOR_TOTAL_ITEM:wqR2(wqNum(i.VALOR_TOTAL_ITEM)),
+        BIP_ENVIO_CONFIRMADO:String(i.STATUS_BIPAGEM_ENVIO||'').toUpperCase()==='CONFIRMADO',BIP_RECEBIMENTO_CONFIRMADO:String(i.STATUS_BIPAGEM_RECEBIMENTO||'').toUpperCase()==='CONFIRMADO',
+        STATUS_VOLUME_ATUAL:volume.STATUS_VOLUME||'',TIPO_LOCAL_ATUAL:volume.TIPO_LOCAL_ATUAL||'',
+        QTD_APROVADA:rs.reduce((s,x)=>s+wqNum(x.QTD_APROVADA),0),QTD_REPROVADA:rs.reduce((s,x)=>s+wqNum(x.QTD_REPROVADA),0),QTD_RETRABALHO:rs.reduce((s,x)=>s+wqNum(x.QTD_RETRABALHO),0),QTD_EMBALADA:rs.reduce((s,x)=>s+wqNum(x.QTD_EMBALADA),0),
+        retornos:rs.map(x=>({...x,...(finByRetorno[String(x.ID_RETORNO)]||{})})),
+        PRECO_DEBITO_REF:wqNum(i.PRECO_FACCAO_UNIT)>0||!String(volume.ID_VOLUME_ORIGEM_RETRABALHO||'')?wqNum(i.PRECO_FACCAO_UNIT):precoDebito(i,i.ID_VOLUME),
+        FIN_PAGO_ITEM:finIt('PAGO'),FIN_A_PAGAR_ITEM:finIt('A_PAGAR'),CAMPO_STATUS:stVol(av[String(r.ID_REMESSA)],i.ID_VOLUME)};
+    });
+    const allReturns=remessaItens.flatMap(i=>i.retornos||[]),aprovadas=allReturns.reduce((s,x)=>s+wqNum(x.QTD_APROVADA),0),embaladas=allReturns.reduce((s,x)=>s+wqNum(x.QTD_EMBALADA),0);
+    return {...r,CAMPO:resumo(av[String(r.ID_REMESSA)],(itemsByRemessa[r.ID_REMESSA]||[])),DESTINO:maps.destinos[r.ID_DESTINO]||r.ID_DESTINO,PROCESSO:maps.processos[r.ID_PROCESSO]||r.ID_PROCESSO,
+      QTD_EMBALADA:embaladas,VALOR_TOTAL_REMESSA:wqR2(remessaItens.reduce((s,i)=>s+wqNum(i.VALOR_TOTAL_ITEM),0)),
+      QTD_BIP_ENVIO:remessaItens.filter(i=>i.BIP_ENVIO_CONFIRMADO).length,QTD_BIP_RECEBIMENTO:remessaItens.filter(i=>i.BIP_RECEBIMENTO_CONFIRMADO).length,
+      STATUS_EMBALAGEM:aprovadas<=0?'PENDENTE':(embaladas>=aprovadas?'CONCLUIDA':(embaladas>0?'PARCIAL':'PENDENTE')),
+      ...(finByRemessa[String(r.ID_REMESSA)]||{FIN_PAGO:0,FIN_A_PAGAR:0,FIN_DEBITO_ABERTO:0,FIN_DEBITO_DESCONTADO:0,FIN_PAGAMENTOS:[]}),itens:remessaItens};
+  });
+}
+const WEBQ_FAST={getInternalProductionBoard:wqQuadroInterno,getRemessasExternas:wqRemessasExternas};
+// ao vivo: o banco avisa no canal da empresa a cada gravação (app de campo, outro computador ou este)
+const WQ_TAB_INTERNO=['cupons_producao','volumes','remessas','remessa_itens'],WQ_TAB_FACCAO=['remessas','remessa_itens','faccao_avisos','retornos_externos','volumes'];
+function wqAoVivo(emp){
+  if(!GUT_SB||WEBQ.canal&&WEBQ.empresa===emp)return;WEBQ.empresa=emp;
+  try{if(WEBQ.canal)GUT_SB.removeChannel(WEBQ.canal)}catch(e){}
+  WEBQ.canal=GUT_SB.channel('campo-'+emp).on('broadcast',{event:'mudou'},m=>{const tb=String(m&&m.payload&&m.payload.t||'');
+    if(!tb||WQ_TAB_INTERNO.includes(tb))WEBQ.sujo.interno=true;if(!tb||WQ_TAB_FACCAO.includes(tb))WEBQ.sujo.faccao=true;WEBQ.em=Date.now();wqMostraVivo(true)})
+    .subscribe(st=>{wqMostraVivo(st==='SUBSCRIBED');if(st==='SUBSCRIBED'){WEBQ.sujo.interno=WEBQ.sujo.faccao=true}});
+}
+function wqMostraVivo(on){['internalSyncAt','factionSyncAt'].forEach(id=>{const el=document.getElementById(id);if(el){el.classList.toggle('gut-ao-vivo',!!on);el.title=on?'Ao vivo: atualiza sozinho quando algo muda (app de campo ou outro computador)':''}})}
+function wqPodeAtualizar(){if(document.hidden)return false;if(Date.now()-WEBQ.em<600)return false;if(Date.now()-BOARD_LAST_TOUCH<1500)return false;
+  if(document.querySelector('.modal.open,.qn-modal'))return false;if(STATE.kanbanDrag||STATE.waitDrag||STATE.allocMode||(STATE.multiSel&&(STATE.multiSel.size||STATE.multiSel.length))||STATE.prodOpsSelected)return false;
+  if(document.body.classList.contains('scan-drawer-open'))return false;const a=document.activeElement;if(a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName))return false;
+  if(typeof DIRECTQ!=='undefined'&&(DIRECTQ.syncing||(DIRECTQ.queue||[]).length))return false;if(typeof MARKQ!=='undefined'&&(MARKQ.syncing||(MARKQ.consolidation||[]).length))return false;
+  return !Object.keys(RPC.pending||{}).length}
+async function wqConectar(){if(!GUT_SB||WEBQ.canal)return;try{const {data,error}=await GUT_SB.rpc('web_empresa_id',{p_slug:GUT_EMPRESA_SLUG});if(!error&&data)wqAoVivo(String(data))}catch(e){console.warn('[GUT] ao vivo:',e)}}
+if(GUT_WEB)setInterval(()=>{if(!WEBQ.canal||!wqPodeAtualizar())return;
+  if(STATE.view==='dash-interna'&&WEBQ.sujo.interno&&!STATE.internalBoardLoading){WEBQ.sujo.interno=false;refreshInternalBoard(true)}
+  else if(STATE.view==='dash-faccoes'&&WEBQ.sujo.faccao){WEBQ.sujo.faccao=false;refreshFactionSilent()}},1000);
+function startShell(){gutWebExtras();if(GUT_WEB)setTimeout(wqConectar,1500);installLazyRender();initTheme();bindNav();setOperationalNavigation(true);Promise.resolve(init()).catch(e=>{console.error('[GUT INIT]',e);toast('O sistema abriu em modo de segurança. Alguns dados podem não ter carregado: '+(e?.message||e),true)})}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',gutBoot,{once:true});else gutBoot();
 window.addEventListener('error',e=>console.error('[GUT WINDOW ERROR]',e.error||e.message));
 window.addEventListener('unhandledrejection',e=>console.error('[GUT PROMISE ERROR]',e.reason));
@@ -4037,6 +4200,7 @@ function applyListDelta(result,snap){
   return ok;
 }
 function callServer(fn,...args){
+  if(GUT_WEB&&!WEBQ.skip&&!args.length&&WEBQ_FAST[fn])return WEBQ_FAST[fn]().catch(e=>{console.warn('[GUT] Quadro direto do banco falhou, usando a GUT API:',e);WEBQ.skip=true;try{return callServer(fn,...args)}finally{WEBQ.skip=false}});
   const sig=JSON.stringify([fn,args]);if(RPC.inflight.has(sig))return RPC.inflight.get(sig);
   const mutation=MUTATION_ACTIONS.includes(fn),parallelSafe=fn==='iniciarMarcacaoProducao'||fn==='finalizarMarcacaoProducao';
   if(mutation&&!parallelSafe&&Object.values(RPC.pending).some(x=>x.fn===fn&&x.sig!==sig))return Promise.reject(new Error('Existe uma operação deste tipo aguardando confirmação. Use Verificar operação antes de criar outra.'));
