@@ -141,7 +141,7 @@ function copiar(txt) { (navigator.clipboard ? navigator.clipboard.writeText(txt)
 
 // ================= login =================
 function telaLogin(err) {
-  $('app').innerHTML = `<div class="wrap"><div class="login"><div class="row" style="gap:14px"><div class="brand">G</div><div><h2 style="margin:0;font-size:22px">GUT Gestão</h2><div class="sub">Empresas, equipe e acessos de campo</div></div></div>
+  $('app').innerHTML = `<div class="wrap"><div class="login"><div class="row" style="gap:14px"><div class="brand">G</div><div><h2 style="margin:0;font-size:22px">GUT Gestão</h2><div class="sub">Empresas, equipe e acessos de campo • v1.1</div></div></div>
     <label>E-mail</label><input id="em" type="email" autocomplete="username" placeholder="voce@empresa.com.br">
     <label>Senha</label><input id="pw" type="password" autocomplete="current-password" placeholder="Sua senha">
     <div class="err" id="lgErr">${esc(err || '')}</div>
@@ -212,7 +212,7 @@ function render() {
   const eu = S.eu, lista = eu.empresas || [], e = empAtual();
   const tabs = [eu.admin ? ['empresas', '🏢 Empresas'] : null, ['equipe', '👥 Equipe'], ['campo', '📱 App de campo']].filter(Boolean);
   if (!tabs.some(t => t[0] === S.tab)) S.tab = tabs[0][0];
-  $('app').innerHTML = `<div class="top"><div class="bar"><div class="logo">G</div><div><h1>GUT Gestão</h1><small>${esc(eu.user.email)}${eu.admin ? ' • administrador' : ''}</small></div><div class="sp"></div>
+  $('app').innerHTML = `<div class="top"><div class="bar"><div class="logo">G</div><div><h1>GUT Gestão <span style="font-size:11px;font-weight:600;opacity:.6">v1.1</span></h1><small>${esc(eu.user.email)}${eu.admin ? ' • administrador' : ''}</small></div><div class="sp"></div>
       ${lista.length ? `<select id="empSel" title="Empresa">${lista.map(x => `<option value="${x.id}" ${x.id === S.emp ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select>` : ''}
       <button class="tb" onclick="trocarSenha()" title="Trocar a minha senha">🔑<span class="hide-m"> Trocar senha</span></button><button class="tb" onclick="sair()">Sair</button></div>
     <div class="tabs">${tabs.map(t => `<button class="${S.tab === t[0] ? 'on' : ''}" onclick="irTab('${t[0]}')">${t[1]}</button>`).join('')}</div></div>
