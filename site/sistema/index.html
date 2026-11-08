@@ -1352,7 +1352,7 @@ function gutWebLogin(msg){
     document.getElementById('gwGo').onclick=go;document.getElementById('gwPw').onkeydown=e=>{if(e.key==='Enter')go()};
     ['keyup','keydown'].forEach(ev=>document.getElementById('gwPw').addEventListener(ev,e=>{const er=document.getElementById('gwErr');if(e.getModifierState&&e.getModifierState('CapsLock'))er.textContent='⚠️ Caps Lock está ligado';else if(er.textContent.indexOf('Caps')>=0)er.textContent=''}));
     document.getElementById('gwEsq').onclick=async()=>{const em=document.getElementById('gwEm').value.trim(),er=document.getElementById('gwErr');if(!em){er.textContent='Digite o seu e-mail acima.';return}
-      const {error}=await GUT_SB.auth.resetPasswordForEmail(em,{redirectTo:location.origin+'/'});er.textContent=error?error.message:'Se o e-mail estiver cadastrado, chega um link para criar uma nova senha.'};
+      const {error}=await GUT_SB.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname.replace(/sistema\/?.*$/,'')});er.textContent=error?error.message:'Se o e-mail estiver cadastrado, chega um link para criar uma nova senha.'};
   }
   ov.style.display='grid';const er=document.getElementById('gwErr');if(er)er.textContent=msg&&!/^Entre no sistema/.test(msg)?msg:'';setTimeout(()=>{const f=document.getElementById('gwEm');if(f&&!f.value)f.focus();else{const p=document.getElementById('gwPw');if(p)p.focus()}},50);
 }

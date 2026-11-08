@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GUT Campo</title>
-<link rel="manifest" id="mf" href="/campo/manifest.webmanifest">
+<link rel="manifest" id="mf" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -166,7 +166,9 @@ function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){retur
 // v5: app de campo direto no Supabase. A empresa vem do link: /campo/<codigo-da-empresa>
 var SUPA_URL='https://ipjsogzbdkqprrtuquok.supabase.co',SUPA_KEY='sb_publishable_jJqCSp5S2wOh0Pa5bQlVGg_cxJweXNy';
 var EMPRESA=(function(){var p=location.pathname.split('/').filter(Boolean),i=p.indexOf('campo'),q=new URLSearchParams(location.search).get('e');return String(q||(i>=0&&p[i+1])||'').toLowerCase().replace(/[^a-z0-9-]/g,'')})();
-(function(){try{var nome='GUT Campo',m={name:nome,short_name:nome,start_url:location.origin+location.pathname,scope:location.origin+'/campo/',display:'standalone',background_color:'#f4f6fb',theme_color:'#1e1b4b',icons:[{src:location.origin+'/campo/icone.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}]};
+// pasta do app (funciona em /campo/... no Netlify e em /GUT-GESTAO/campo/... no GitHub Pages)
+var CAMPO_BASE=location.origin+(function(){var p=location.pathname,i=p.indexOf('/campo/');return i>=0?p.slice(0,i+7):p.replace(/[^/]*$/,'')})();
+(function(){try{var nome='GUT Campo',m={name:nome,short_name:nome,start_url:location.origin+location.pathname+location.search,scope:CAMPO_BASE,display:'standalone',background_color:'#f4f6fb',theme_color:'#1e1b4b',icons:[{src:CAMPO_BASE+'icone.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}]};
   document.getElementById('mf').href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}))}catch(e){}})();
 var sb=window.supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
 function ls(k,v){k=k+'@'+EMPRESA;try{if(v===undefined)return localStorage.getItem(k)||'';if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch(e){return ''}}

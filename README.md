@@ -10,4 +10,4 @@ Painel de gestão do GUT PPCP: empresas, equipe do escritório (com permissões 
 - `supabase/functions/gestao-convite/` — função de convite (gera o link para a pessoa criar a senha).
 - `test/` — testes das telas com um Supabase simulado: `node test/e2e.js` (gestão) e `node test/campo_e2e.js` (app de campo). Precisam do Playwright.
 
-Publicação: cada alteração enviada para a branch `main` é publicada automaticamente pelo Netlify em https://gut-gestao.netlify.app.
+Publicação: cada alteração enviada para a branch `main` é publicada automaticamente pelo GitHub Pages (workflow `.github/workflows/pages.yml`, só a pasta `site/`) em https://facsimprojetos-cloud.github.io/GUT-GESTAO/ — gestão na raiz, sistema em `/sistema/`, app de campo em `/campo/<empresa>`. O Netlify (https://gut-gestao.netlify.app) ficou parado na última versão.
