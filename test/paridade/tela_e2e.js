@@ -1,0 +1,76 @@
+#!/usr/bin/env node
+// Teste da tela /sistema no navegador (Playwright) com o banco local:
+//  • as leituras (abrir o sistema, telas) saem do banco pelo motor, sem passar pela GUT API;
+//  • as gravações continuam na GUT API (Apps Script simulado) e a leitura seguinte já vê o dado novo;
+//  • se o banco falhar, a mesma leitura volta para a GUT API sozinha.
+process.env.TZ = 'America/Sao_Paulo';
+const fs = require('fs'), path = require('path');
+const { chromium } = require('playwright');
+const pg = require('./pg_base'), criarGas = require('./gas_sim'), { cenario } = require('./rodar');
+const ROOT = path.join(__dirname, '..', '..');
+const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '  ✓ ' : '  ✗ ') + m); };
+
+(async () => {
+  await pg.subir();
+  let browser;
+  try {
+    const gas = criarGas(pg); cenario(gas);
+    const html = fs.readFileSync(path.join(ROOT, 'site/sistema/index.html'), 'utf8');
+    const motorJs = fs.readFileSync(path.join(ROOT, 'site/sistema/gut-motor.js'), 'utf8');
+    const API = [], RPC = []; let bancoFora = false;
+    const mockSb = `window.supabase={createClient(){const s={access_token:'tok-ok',user:{email:'carla@gut.com'}};
+      return {auth:{async getSession(){return {data:{session:s}}},async signInWithPassword(){return {error:null}},async signOut(){},async resetPasswordForEmail(){return {error:null}}},
+        async rpc(fn,args){const r=await fetch('http://sb.local/rpc/'+fn,{method:'POST',body:JSON.stringify(args)});const j=await r.json();return r.ok?{data:j,error:null}:{data:null,error:{message:j.message}}},
+        channel(){const c={on(){return c},subscribe(){return c}};return c},removeChannel(){}}}};`;
+    browser = await chromium.launch();
+    const page = await (await browser.newContext({ viewport: { width: 1366, height: 860 } })).newPage();
+    const errors = [], avisos = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'warning' || m.type() === 'error') avisos.push(m.text()); });
+    await page.route('**/*', async r => {
+      const u = r.request().url();
+      if (u.startsWith('http://app.local/sistema/gut-motor.js')) return r.fulfill({ contentType: 'application/javascript', body: motorJs });
+      if (u.startsWith('http://app.local/')) return r.fulfill({ contentType: 'text/html', body: html });
+      if (u.startsWith('http://sb.local/rpc/')) {
+        const fn = u.split('/rpc/')[1], args = JSON.parse(r.request().postData() || '{}'); RPC.push(fn);
+        if (bancoFora) return r.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'banco fora do ar' }) });
+        try {
+          const a = Object.entries(args).map(([k, v]) => Array.isArray(v) ? `${k} => array(select jsonb_array_elements_text($j$${JSON.stringify(v)}$j$::jsonb))` : `${k} => $j$${v}$j$`);
+          const out = pg.psql(pg.comoUsuario(`select coalesce(public.${fn}(${a.join(', ')})::text, 'null');`)).split('\n').pop();
+          return r.fulfill({ contentType: 'application/json', body: out });
+        } catch (e) { return r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: e.message.split('\n')[0] }) }); }
+      }
+      if (u.startsWith('https://script.google.com/')) {
+        const b = JSON.parse(r.request().postData() || '{}'); API.push(b.action);
+        let out; try { out = gas.api(b.action, b.args, b.meta || {}); } catch (e) { out = { __error: true, message: String(e.message || e) }; }
+        return r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(out) });
+      }
+      if (u.includes('supabase-js')) return r.fulfill({ contentType: 'application/javascript', body: mockSb });
+      if (u.includes('chart.js')) return r.fulfill({ contentType: 'application/javascript', body: 'window.Chart=function(){this.destroy=function(){};this.update=function(){}};Chart.defaults={plugins:{legend:{}}};' });
+      if (u.includes('qrcode')) return r.fulfill({ contentType: 'application/javascript', body: 'window.QRCode=function(){};QRCode.CorrectLevel={M:0};' });
+      return r.fulfill({ body: '' });
+    });
+    await page.goto('http://app.local/sistema/'); await page.waitForTimeout(3500);
+    ok(RPC.includes('web_ler') && !API.includes('getBootstrapData') && !API.includes('getOperationalData'), 'abrir o sistema lê do banco, sem a GUT API (API: ' + ([...new Set(API)].join(',') || 'nada') + ')');
+    const st = await page.evaluate(() => ({ vol: (STATE.volumes || []).length, rem: (STATE.remessas || []).length, prod: (STATE.cad?.produtos || []).length, mat: (STATE.estoqueMateriais || []).length }));
+    ok(st.vol >= 6 && st.rem >= 2 && st.prod === 2 && st.mat >= 1, 'dados carregados na tela: ' + JSON.stringify(st));
+    await page.click('#nav button[data-view="volumes"]'); await page.waitForTimeout(800);
+    ok(/-V0?1/.test(await page.textContent('#view-volumes').catch(() => '') || await page.textContent('body')), 'tela de volumes mostra os volumes');
+    API.length = 0;
+    await page.click('#nav button[data-view="financeiro"]'); await page.waitForTimeout(1200);
+    ok(!API.includes('getFinanceiroFaccao') && /COSTURA DA ANA/.test(await page.textContent('body')), 'financeiro das facções vem do banco');
+    // gravação pela GUT API e leitura nova já com o dado
+    await page.evaluate(() => callServer('salvarCadastro', 'cor', { COR: 'VERDE MUSGO' }));
+    const cad = await page.evaluate(() => callServer('getCadastros'));
+    ok(API.includes('salvarCadastro') && (cad.cores || []).some(c => c.COR === 'VERDE MUSGO'), 'gravação continua na GUT API e a leitura seguinte (banco) já vê a cor nova');
+    // banco fora → volta para a GUT API
+    bancoFora = true; API.length = 0;
+    const d = await page.evaluate(() => callServer('getDashboard', { DATA_INICIAL: localDateKey(), DATA_FINAL: localDateKey() }));
+    ok(API.includes('getDashboard') && d && d.cards, 'se o banco falha, a leitura volta para a GUT API sozinha');
+    bancoFora = false;
+    const par = await page.evaluate(() => gutParidade([['getVolumes', []], ['getFinanceiroFaccao', []], ['getInitialData', [localDateKey()]]]));
+    ok(par.every(x => x.igual === 'sim'), 'gutParidade() no navegador: ' + par.map(x => x.ação + '=' + x.igual).join(', '));
+    ok(errors.length === 0, 'sem erro de JavaScript ' + errors.join(' | '));
+    const motorFalhou = avisos.filter(a => /Leitura direta do banco falhou/.test(a) && !/banco fora do ar/.test(a));
+    ok(motorFalhou.length === 0, 'nenhuma leitura precisou voltar para a GUT API (fora o teste do banco fora) ' + motorFalhou.join(' | ').slice(0, 400));
+  } finally { if (browser) await browser.close(); pg.descer(true); }
+  const f = results.filter(x => !x).length; console.log(`\n${results.length - f}/${results.length}`); process.exit(f ? 1 : 0);
+})().catch(e => { console.error(e); pg.descer(true); process.exit(2); });

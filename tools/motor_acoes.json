@@ -1,0 +1,98 @@
+[
+ {
+  "acao": "getBootstrapData",
+  "impl": "getBootstrapDataImpl_"
+ },
+ {
+  "acao": "getInitialData",
+  "impl": "getInitialDataImpl_"
+ },
+ {
+  "acao": "getOperationalData",
+  "impl": "getOperationalDataImpl_"
+ },
+ {
+  "acao": "getCadastros",
+  "impl": "getCadastrosImpl_"
+ },
+ {
+  "acao": "getCorte",
+  "impl": "getCorteImpl_"
+ },
+ {
+  "acao": "getDashboard",
+  "impl": "getDashboardImpl_"
+ },
+ {
+  "acao": "getFinanceiroFaccao",
+  "impl": "getFinanceiroFaccaoImpl_"
+ },
+ {
+  "acao": "getFluxoEstoque",
+  "impl": "getFluxoEstoqueImpl_"
+ },
+ {
+  "acao": "getInternalProductionPerformance",
+  "impl": "getInternalProductionPerformanceImpl_"
+ },
+ {
+  "acao": "getRemessasExternas",
+  "impl": "getRemessasExternasImpl_"
+ },
+ {
+  "acao": "getRemessasInternas",
+  "impl": "getRemessasInternasImpl_"
+ },
+ {
+  "acao": "getEstoqueMateriais",
+  "impl": "getEstoqueMateriaisImpl_"
+ },
+ {
+  "acao": "getComprasRecentes",
+  "impl": "getComprasRecentesImpl_"
+ },
+ {
+  "acao": "getCortesProgramados",
+  "impl": "getCortesProgramadosImpl_"
+ },
+ {
+  "acao": "getEstoqueCorte",
+  "impl": "getEstoqueCorteImpl_"
+ },
+ {
+  "acao": "getSeparacoesVolume",
+  "impl": "getSeparacoesVolumeImpl_"
+ },
+ {
+  "acao": "getPrecosFaccao",
+  "impl": "getPrecosFaccaoImpl_"
+ },
+ {
+  "acao": "getVolumes",
+  "impl": "getVolumesImpl_"
+ },
+ {
+  "acao": "getCuponsVolume",
+  "impl": "getCuponsVolumeImpl_"
+ },
+ {
+  "acao": "getScanCatalog",
+  "impl": "getScanCatalogImpl_"
+ },
+ {
+  "acao": "getExternalScanCatalog",
+  "impl": "getExternalScanCatalogImpl_"
+ },
+ {
+  "acao": "previewTempoPadraoMarcacao",
+  "impl": "previewTempoPadraoMarcacaoImpl_"
+ },
+ {
+  "acao": "prepararRomaneioRemessa",
+  "impl": "prepararRomaneioRemessaImpl_"
+ },
+ {
+  "acao": "prepararRomaneioInterno",
+  "impl": "prepararRomaneioInternoImpl_"
+ }
+]

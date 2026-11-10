@@ -805,7 +805,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.14.2 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.15.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1516,6 +1516,45 @@ async function wqCorteExclusao(fn,id,token){
   return {ok:true,mensagem:'Exclusão concluída.',resultado:data};
 }
 const WEBQ_FAST={getInternalProductionBoard:wqQuadroInterno,getRemessasExternas:wqRemessasExternas};
+// ===== v4.15.0 (fase 1 do "tudo no Supabase"): leituras direto do banco =====
+// As telas que pediam dados para a GUT API (abrir o sistema, cadastros, estoque, volumes, remessas, financeiro,
+// dashboard...) agora montam a mesma resposta aqui no navegador: gut-motor.js é o próprio código de leitura do
+// Apps Script (gerado por tools/gerar_motor.js) e lê as tabelas numa viagem só (RPC web_ler).
+// Se algo falhar, a chamada volta para a GUT API sozinha. Desligar: localStorage 'gut-motor' = 'off' ou ?motor=0.
+const GUT_MOTOR_ON=GUT_WEB&&!/[?&]motor=0\b/.test(location.search)&&(()=>{try{return localStorage.getItem('gut-motor')!=='off'}catch(e){return true}})();
+let GUT_MOTOR_P=null;
+function gutMotor(){
+  if(GUT_MOTOR_P)return GUT_MOTOR_P;
+  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.15.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor de leituras.'));document.head.appendChild(sc)})
+    .then(m=>GUT_SB.auth.getSession().then(({data})=>{m.configurar({slug:GUT_EMPRESA_SLUG,email:(data&&data.session&&data.session.user&&data.session.user.email)||'',
+      rpc:async(fn,args)=>{const {data:r,error}=await GUT_SB.rpc(fn,args);if(error)throw new Error(error.message||'Falha ao ler o banco.');return r}});return m}))
+    .catch(e=>{GUT_MOTOR_P=null;throw e});
+  return GUT_MOTOR_P;
+}
+const GUT_MOTOR_ACOES=['getBootstrapData','getInitialData','getOperationalData','getCadastros','getCorte','getDashboard','getFinanceiroFaccao','getFluxoEstoque','getInternalProductionPerformance','getRemessasExternas','getRemessasInternas','getEstoqueMateriais','getComprasRecentes','getCortesProgramados','getEstoqueCorte','getSeparacoesVolume','getPrecosFaccao','getVolumes','getCuponsVolume','getScanCatalog','getExternalScanCatalog','previewTempoPadraoMarcacao','prepararRomaneioRemessa','prepararRomaneioInterno'];
+function gutMotorLer(fn,args){
+  const meta={fluxoDias:STATE.fluxoDias};
+  return gutMotor().then(m=>m.executar(fn,JSON.parse(JSON.stringify(args||[])),meta)).then(r=>{applyListDelta(r,{});return r});
+}
+// Conferência no navegador, com os dados de verdade: cada leitura pela GUT API × pelo banco. Console: await gutParidade()
+async function gutParidade(acoes){
+  const hoje=localDateKey(),per={DATA_INICIAL:hoje,DATA_FINAL:hoje},out=[];
+  const lista=acoes||[['getCadastros',[]],['getEstoqueMateriais',[]],['getComprasRecentes',[]],['getFluxoEstoque',[]],['getCortesProgramados',[]],['getEstoqueCorte',[]],['getSeparacoesVolume',[]],['getPrecosFaccao',[]],['getVolumes',[]],['getRemessasExternas',[]],['getRemessasInternas',[]],['getFinanceiroFaccao',[]],['getDashboard',[per]],['getInternalProductionPerformance',[per]],['getOperationalData',[]],['getInitialData',[hoje]]];
+  const ISO=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,dif=(a,b,c,o)=>{if(o.length>20)return o;const ta=Array.isArray(a)?'a':a===null?'n':typeof a,tb=Array.isArray(b)?'a':b===null?'n':typeof b;
+    if(ta!==tb){o.push(c+': '+JSON.stringify(a)+' × '+JSON.stringify(b));return o}
+    if(ta==='a'){if(a.length!==b.length)o.push(c+': '+a.length+' × '+b.length+' itens');for(let i=0;i<Math.min(a.length,b.length);i++)dif(a[i],b[i],c+'['+i+']',o);return o}
+    if(ta==='object'){new Set([...Object.keys(a),...Object.keys(b)]).forEach(k=>{if(k==='__rowHashes')return;if(!(k in a)||!(k in b))o.push(c+'.'+k+': só em '+(k in a?'GUT API':'banco'));else dif(a[k],b[k],c+'.'+k,o)});return o}
+    if(ta==='number'&&Math.abs(a-b)<1e-9)return o;if(typeof a==='string'&&ISO.test(a)&&ISO.test(b)&&Math.abs(Date.parse(a)-Date.parse(b))<=5000)return o;if(a!==b)o.push(c+': '+JSON.stringify(a)+' × '+JSON.stringify(b));return o};
+  for(const [fn,args] of lista){
+    let a,b,t1,t2;const i0=performance.now();
+    try{a=await serverApi(fn,args,{forceFresh:true,fluxoDias:STATE.fluxoDias})}catch(e){a={__error:true,message:e.message}}t1=performance.now()-i0;
+    const i1=performance.now();try{b=await gutMotorLer(fn,args)}catch(e){b={__error:true,message:e.message}}t2=performance.now()-i1;
+    a=JSON.parse(JSON.stringify(a||null));b=JSON.parse(JSON.stringify(b||null));const d=dif(a,b,'',[]);
+    out.push({ação:fn,igual:d.length?'NÃO':'sim',diferenças:d.slice(0,3).join(' | '),'GUT API (ms)':Math.round(t1),'banco (ms)':Math.round(t2)});
+  }
+  console.table(out);return out;
+}
+window.gutParidade=gutParidade;
 // ao vivo: o banco avisa no canal da empresa a cada gravação (app de campo, outro computador ou este)
 const WQ_TAB_INTERNO=['cupons_producao','volumes','remessas','remessa_itens'],WQ_TAB_FACCAO=['remessas','remessa_itens','faccao_avisos','retornos_externos','volumes'];
 function wqAoVivo(emp){
@@ -4248,6 +4287,10 @@ function callServer(fn,...args){
   if(GUT_WEB&&(fn==='previewExclusao'||fn==='excluirEntidade')&&args[0]==='corte')return wqCorteExclusao(fn,args[1],args[2]);
   if(GUT_WEB&&!WEBQ.skip&&!args.length&&WEBQ_FAST[fn])return WEBQ_FAST[fn]().catch(e=>{console.warn('[GUT] Quadro direto do banco falhou, usando a GUT API:',e);WEBQ.skip=true;try{return callServer(fn,...args)}finally{WEBQ.skip=false}});
   const sig=JSON.stringify([fn,args]);if(RPC.inflight.has(sig))return RPC.inflight.get(sig);
+  if(GUT_MOTOR_ON&&!WEBQ.skip&&GUT_MOTOR_ACOES.includes(fn)){
+    const pm=gutMotorLer(fn,args).catch(e=>{RPC.inflight.delete(sig);console.warn('[GUT] Leitura direta do banco falhou ('+fn+'), usando a GUT API:',e);WEBQ.skip=true;try{return callServer(fn,...args)}finally{WEBQ.skip=false}}).finally(()=>RPC.inflight.delete(sig));
+    RPC.inflight.set(sig,pm);return pm;
+  }
   const mutation=MUTATION_ACTIONS.includes(fn),parallelSafe=fn==='iniciarMarcacaoProducao'||fn==='finalizarMarcacaoProducao';
   if(mutation&&!parallelSafe&&Object.values(RPC.pending).some(x=>x.fn===fn&&x.sig!==sig))return Promise.reject(new Error('Existe uma operação deste tipo aguardando confirmação. Use Verificar operação antes de criar outra.'));
   let p=mutation?Object.values(RPC.pending).find(x=>x.sig===sig):null;
