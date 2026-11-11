@@ -25,6 +25,7 @@ const mockSb=`window.supabase={createClient(){let s=null;try{s=JSON.parse(localS
   const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const CALLS=[];
   await page.route('**/*',async r=>{const u=r.request().url();
+    if(u.startsWith('http://app.local/sistema/paineis-tv.js'))return r.fulfill({contentType:'application/javascript',body:fs.readFileSync(__dirname+'/../site/sistema/paineis-tv.js','utf8')});
     if(u.startsWith('http://app.local/'))return r.fulfill({contentType:'text/html',body:html});
     if(u.startsWith('http://api.local/exec')){const b=JSON.parse(r.request().postData()||'{}');CALLS.push(b.action);let out;try{out=JSON.parse(JSON.stringify(E.ctx.apiWeb(b.action,b.args,b.meta,b.token)))}catch(e){out={__error:true,message:String(e.message||e)}}
       return r.fulfill({contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(out)})}
