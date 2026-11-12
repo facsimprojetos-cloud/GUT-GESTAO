@@ -187,20 +187,22 @@ function motorPublico_(GOOGLE_ACOES) {
   const erroDoBanco = e => !!(e && e.code && /^[0-9A-Z]{5}$/.test(String(e.code)));
 
   // Roda a ação como a GUT API rodaria e devolve a MESMA resposta (inclusive {__error, retryable, message}).
-  // Lança erro só quando não chegou a gravar nada (sem conexão, ação que precisa do Google): aí a tela usa a GUT API.
-  async function api(acao, args, meta) {
-    meta = meta || {};
-    if (!__MOTOR.rpc) throw new Error('Motor sem conexão com o banco.');
+  // Lança erro só quando não chegou a gravar nada (sem conexão, sem permissão, ação inexistente).
+  // ctx (no servidor, uma por pedido): { rpc, slug, email } — vários pedidos podem estar em andamento ao mesmo tempo.
+  async function api(acao, args, meta, ctx) {
+    meta = meta || {}; ctx = ctx || {};
+    const rpc = ctx.rpc || __MOTOR.rpc, slug = ctx.slug || __MOTOR.slug, email = () => (ctx.email !== undefined ? ctx.email : __MOTOR.email) || '';
+    if (!rpc) throw new Error('Motor sem conexão com o banco.');
     if (!tem(acao)) throw new Error('Ação não roda no navegador: ' + acao);
     const t0 = Date.now(), mut = mutacoes.has(acao), opId = mut && meta.requestId ? String(meta.requestId) : null;
-    if (!__MOTOR.schema) __MOTOR.schema = await __MOTOR.rpc('web_schema', { p_slug: __MOTOR.slug });
+    if (!__MOTOR.schema) __MOTOR.schema = await rpc('web_schema', { p_slug: slug });
     let minhas = {}, op, viagens = 0, conflitos = 0;
     const baixar = async (lista, comOp) => {
       const faltam = [...new Set(lista)].filter(t => !Object.prototype.hasOwnProperty.call(minhas, t));
       if (!faltam.length && !comOp) return;
-      const a = { p_slug: __MOTOR.slug, p_tabelas: faltam };
+      const a = { p_slug: slug, p_tabelas: faltam };
       if (comOp) a.p_op = opId;
-      const r = await __MOTOR.rpc('web_ler', a); viagens++;
+      const r = await rpc('web_ler', a); viagens++;
       faltam.forEach(t => { minhas[t] = (r && r[t]) || []; });
       if (comOp) op = r && r.__op ? r.__op : null;
     };
@@ -209,7 +211,8 @@ function motorPublico_(GOOGLE_ACOES) {
       if (__MOTOR.antes) __MOTOR.antes();   // (teste de paridade: mesmo relógio/ids a cada tentativa)
       __MOTOR.dados = minhas; __MOTOR.indice = {}; __MOTOR.falta = new Set(); __MOTOR.ops = null; __MOTOR.google = null;
       __MOTOR.op = opId ? op : undefined; __MOTOR.opId = opId;
-      __WEB_USER = __MOTOR.email || '';
+      __MOTOR.email = email(); __MOTOR.slug = slug;   // síncrono a partir daqui: vale só para este pedido
+      __WEB_USER = __MOTOR.email;
       let r;
       try { r = apiCall(acao, args || [], meta); } finally { __WEB_USER = ''; }   // síncrono: nada roda no meio
       if (__MOTOR.google || (r && r.__error && /__MOTOR_GOOGLE__/.test(r.message || ''))) throw new Error('Esta ação ainda usa o Google (' + (__MOTOR.google || '') + ').');
@@ -221,7 +224,7 @@ function motorPublico_(GOOGLE_ACOES) {
       const ops = __MOTOR.ops;
       if (!mut || !ops || !ops.length || (r && r.__error)) { motorLog_(acao, t0, viagens, 0); return r; }
       try {
-        await __MOTOR.rpc('web_aplicar', { p_slug: __MOTOR.slug, p_ops: ops });
+        await rpc('web_aplicar', { p_slug: slug, p_ops: ops });
       } catch (e) {
         if (erroDoBanco(e) && String(e.code) === '40001' && ++conflitos <= 4) { minhas = {}; await baixar(lembrar(acao).concat(['app_controle']), !!opId); continue; }
         if (erroDoBanco(e)) return { __error: true, retryable: false, message: String(e.message || e) };  // nada foi gravado (tudo ou nada)

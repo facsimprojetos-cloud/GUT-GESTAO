@@ -805,7 +805,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.18.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.19.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1325,12 +1325,29 @@ const GUT_WEB=!(window.google&&window.google.script&&window.google.script.run);
 const GUT_SB=GUT_WEB&&window.supabase?window.supabase.createClient('https://ipjsogzbdkqprrtuquok.supabase.co','sb_publishable_jJqCSp5S2wOh0Pa5bQlVGg_cxJweXNy',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
 let GUT_STARTED=false;
 async function gutToken(){try{const {data}=await GUT_SB.auth.getSession();return data&&data.session?data.session.access_token:''}catch(e){return ''}}
+// v4.19.0 (etapa A do plano SaaS): o cérebro roda no servidor — Edge Function "gut" no Supabase.
+// A tela só pede; o servidor confere login, empresa e permissão do usuário, roda a regra e grava numa transação só.
+// Se o servidor não responder, só as LEITURAS usam o motor do navegador (gut-motor.js) como plano B; gravação nunca.
+const GUT_FN_URL='https://ipjsogzbdkqprrtuquok.supabase.co/functions/v1/gut';
+const GUT_PUB_KEY='sb_publishable_jJqCSp5S2wOh0Pa5bQlVGg_cxJweXNy';
+function gutSessaoExpirada(){gutWebLogin('Sua sessão expirou. Entre novamente.')}
 function serverApi(fn,args,meta){
   if(!GUT_WEB)return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej).apiCall(fn,args,meta));
-  // cada ação roda no navegador (gut-motor.js): lê com web_ler e grava tudo numa transação com web_aplicar
-  return gutMotor().then(m=>{if(!m.tem(fn))throw new Error('Esta ação não existe mais no sistema: '+fn);return m.api(fn,JSON.parse(JSON.stringify(args||[])),meta)})
-    .then(out=>{if(out&&out.__error&&/fa[çc]a login|sess[ãa]o expirou|JWT/i.test(out.message||''))gutWebLogin('Sua sessão expirou. Entre novamente.');return out},
-      e=>{if(/fa[çc]a login|sess[ãa]o expirou|JWT/i.test((e&&e.message)||''))gutWebLogin('Sua sessão expirou. Entre novamente.');throw e});
+  const grava=(typeof MUTATION_ACTIONS!=='undefined'&&MUTATION_ACTIONS.includes(fn));
+  return gutToken().then(tok=>{
+    if(!tok){gutSessaoExpirada();throw new Error('Faça login para continuar.')}
+    return fetch(GUT_FN_URL,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok,apikey:GUT_PUB_KEY},body:JSON.stringify({acao:fn,args:args||[],meta:meta||{},slug:GUT_EMPRESA_SLUG})})
+      .then(async r=>{
+        const j=await r.json().catch(()=>null);
+        if(r.status===401||(j&&j.__error&&j.auth)){gutSessaoExpirada();return {__error:true,retryable:false,message:(j&&j.message)||'Sua sessão expirou. Entre novamente.'}}
+        if(!j||(!r.ok&&!j.__error))throw new Error('O servidor respondeu '+r.status+'.');
+        return j;
+      });
+  }).catch(e=>{
+    if(grava||/fa[çc]a login/i.test(e.message||''))throw e;   // gravação sem resposta: a tela guarda e tenta de novo (mesmo requestId)
+    console.warn('[GUT] servidor sem resposta para '+fn+'; lendo pelo navegador:',e);
+    return gutMotor().then(m=>m.api(fn,JSON.parse(JSON.stringify(args||[])),meta));
+  });
 }
 function gutWebLogin(msg){
   let ov=document.getElementById('gutWebLogin');
@@ -1523,7 +1540,7 @@ const GUT_MOTOR_ON=GUT_WEB;
 let GUT_MOTOR_P=null;
 function gutMotor(){
   if(GUT_MOTOR_P)return GUT_MOTOR_P;
-  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.18.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor do sistema.'));document.head.appendChild(sc)})
+  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.19.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor do sistema.'));document.head.appendChild(sc)})
     .then(m=>GUT_SB.auth.getSession().then(({data})=>{m.configurar({slug:GUT_EMPRESA_SLUG,email:(data&&data.session&&data.session.user&&data.session.user.email)||'',
       rpc:async(fn,args)=>{const {data:r,error}=await GUT_SB.rpc(fn,args);if(error){const e=new Error(error.message||'Falha ao falar com o banco.');e.code=error.code||'';throw e}return r}});return m}))
     .catch(e=>{GUT_MOTOR_P=null;throw e});
