@@ -805,7 +805,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.17.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.18.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1320,25 +1320,17 @@ function flushLazyRender(view){
   const lazy=window.__GUT_LAZY;if(!lazy)return;
   (lazy.byView[view]||[]).forEach(name=>{if(lazy.dirty.has(name))uiGuard('render '+name,()=>window[name]())});
 }
-// ===== v4.13.0: modo web (Netlify). Sem google.script.run: a tela fala com a "GUT API" (Apps Script) usando o login do Supabase =====
+// ===== modo web: a tela roda sozinha, direto no Supabase (desde a v4.18.0 não existe mais a GUT API do Google) =====
 const GUT_WEB=!(window.google&&window.google.script&&window.google.script.run);
-const GUT_API_URL='https://script.google.com/macros/s/AKfycbzKmOesc8gecYfr7T3L_1anEICCmyVu7QLtvsBPj5V1QOkxuvGMl1EtRb0fWdqLZtnHhw/exec';
 const GUT_SB=GUT_WEB&&window.supabase?window.supabase.createClient('https://ipjsogzbdkqprrtuquok.supabase.co','sb_publishable_jJqCSp5S2wOh0Pa5bQlVGg_cxJweXNy',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
 let GUT_STARTED=false;
 async function gutToken(){try{const {data}=await GUT_SB.auth.getSession();return data&&data.session?data.session.access_token:''}catch(e){return ''}}
 function serverApi(fn,args,meta){
   if(!GUT_WEB)return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej).apiCall(fn,args,meta));
-  // v4.17.0: tudo roda no navegador direto no Supabase; a GUT API só entra se o motor não conseguir nem começar
-  // (nesse caso nada foi gravado) ou para as ações que ainda dependem do Google.
-  if(GUT_MOTOR_ON&&!WEBQ.skip)return gutMotor().then(m=>{if(!m.tem(fn))return serverApiGoogle(fn,args,meta);return m.api(fn,JSON.parse(JSON.stringify(args||[])),meta)})
-    .catch(e=>{console.warn('[GUT] O sistema no navegador não conseguiu rodar '+fn+'; usando a GUT API:',e);return serverApiGoogle(fn,args,meta)});
-  return serverApiGoogle(fn,args,meta);
-}
-function serverApiGoogle(fn,args,meta){
-  if(!GUT_API_URL||GUT_API_URL.indexOf('__')===0)return Promise.reject(new Error('Endereço da GUT API não configurado.'));
-  return gutToken().then(token=>fetch(GUT_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:fn,args:args,meta:meta,token:token}),redirect:'follow'}))
-    .then(r=>{if(!r.ok)throw new Error('O servidor respondeu '+r.status+'. Tente de novo.');return r.json()})
-    .then(out=>{if(out&&out.__error&&out.auth)gutWebLogin(out.message);return out});
+  // cada ação roda no navegador (gut-motor.js): lê com web_ler e grava tudo numa transação com web_aplicar
+  return gutMotor().then(m=>{if(!m.tem(fn))throw new Error('Esta ação não existe mais no sistema: '+fn);return m.api(fn,JSON.parse(JSON.stringify(args||[])),meta)})
+    .then(out=>{if(out&&out.__error&&/fa[çc]a login|sess[ãa]o expirou|JWT/i.test(out.message||''))gutWebLogin('Sua sessão expirou. Entre novamente.');return out},
+      e=>{if(/fa[çc]a login|sess[ãa]o expirou|JWT/i.test((e&&e.message)||''))gutWebLogin('Sua sessão expirou. Entre novamente.');throw e});
 }
 function gutWebLogin(msg){
   let ov=document.getElementById('gutWebLogin');
@@ -1523,16 +1515,15 @@ async function wqCorteExclusao(fn,id,token){
   return {ok:true,mensagem:'Exclusão concluída.',resultado:data};
 }
 const WEBQ_FAST={getInternalProductionBoard:wqQuadroInterno,getRemessasExternas:wqRemessasExternas};
-// ===== v4.17.0 ("tudo no Supabase", fases 1 a 5): o sistema roda no navegador, direto no banco =====
+// ===== v4.17.0/v4.18.0 ("tudo no Supabase"): o sistema roda no navegador, direto no banco =====
 // gut-motor.js é o código de regras do sistema (gerado do Code.gs por tools/gerar_motor.js). Cada ação — leitura ou
 // gravação — roda aqui: lê as tabelas numa viagem (RPC web_ler) e grava tudo numa transação só (RPC web_aplicar,
 // com trava contra dois usuários mexendo no mesmo registro). Fotos vão para o Supabase Storage.
-// Se o motor não conseguir nem começar, a chamada volta para a GUT API. Desligar: localStorage 'gut-motor' = 'off' ou ?motor=0.
-const GUT_MOTOR_ON=GUT_WEB&&!/[?&]motor=0\b/.test(location.search)&&(()=>{try{return localStorage.getItem('gut-motor')!=='off'}catch(e){return true}})();
+const GUT_MOTOR_ON=GUT_WEB;
 let GUT_MOTOR_P=null;
 function gutMotor(){
   if(GUT_MOTOR_P)return GUT_MOTOR_P;
-  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.17.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor do sistema.'));document.head.appendChild(sc)})
+  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.18.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor do sistema.'));document.head.appendChild(sc)})
     .then(m=>GUT_SB.auth.getSession().then(({data})=>{m.configurar({slug:GUT_EMPRESA_SLUG,email:(data&&data.session&&data.session.user&&data.session.user.email)||'',
       rpc:async(fn,args)=>{const {data:r,error}=await GUT_SB.rpc(fn,args);if(error){const e=new Error(error.message||'Falha ao falar com o banco.');e.code=error.code||'';throw e}return r}});return m}))
     .catch(e=>{GUT_MOTOR_P=null;throw e});
@@ -1542,28 +1533,18 @@ function gutMotorLer(fn,args){
   const meta={fluxoDias:STATE.fluxoDias};
   return gutMotor().then(m=>m.executar(fn,JSON.parse(JSON.stringify(args||[])),meta)).then(r=>{applyListDelta(r,{});return r});
 }
-// Conferência no navegador, com os dados de verdade: cada leitura pela GUT API × pelo banco. Console: await gutParidade()
-async function gutParidade(acoes){
-  const hoje=localDateKey(),per={DATA_INICIAL:hoje,DATA_FINAL:hoje},out=[];
-  const lista=acoes||[['getCadastros',[]],['getEstoqueMateriais',[]],['getComprasRecentes',[]],['getFluxoEstoque',[]],['getCortesProgramados',[]],['getEstoqueCorte',[]],['getSeparacoesVolume',[]],['getPrecosFaccao',[]],['getVolumes',[]],['getRemessasExternas',[]],['getRemessasInternas',[]],['getFinanceiroFaccao',[]],['getDashboard',[per]],['getInternalProductionPerformance',[per]],['getOperationalData',[]],['getInitialData',[hoje]]];
-  const ISO=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,dif=(a,b,c,o)=>{if(o.length>20)return o;const ta=Array.isArray(a)?'a':a===null?'n':typeof a,tb=Array.isArray(b)?'a':b===null?'n':typeof b;
-    if(ta!==tb){o.push(c+': '+JSON.stringify(a)+' × '+JSON.stringify(b));return o}
-    if(ta==='a'){if(a.length!==b.length)o.push(c+': '+a.length+' × '+b.length+' itens');for(let i=0;i<Math.min(a.length,b.length);i++)dif(a[i],b[i],c+'['+i+']',o);return o}
-    if(ta==='object'){new Set([...Object.keys(a),...Object.keys(b)]).forEach(k=>{if(k==='__rowHashes')return;if(!(k in a)||!(k in b))o.push(c+'.'+k+': só em '+(k in a?'GUT API':'banco'));else dif(a[k],b[k],c+'.'+k,o)});return o}
-    if(ta==='number'&&Math.abs(a-b)<1e-9)return o;if(typeof a==='string'&&ISO.test(a)&&ISO.test(b)&&Math.abs(Date.parse(a)-Date.parse(b))<=5000)return o;if(a!==b)o.push(c+': '+JSON.stringify(a)+' × '+JSON.stringify(b));return o};
-  for(const [fn,args] of lista){
-    let a,b,t1,t2;const i0=performance.now();
-    try{a=await serverApiGoogle(fn,args,{forceFresh:true,fluxoDias:STATE.fluxoDias})}catch(e){a={__error:true,message:e.message}}t1=performance.now()-i0;
-    const i1=performance.now();try{b=await gutMotorLer(fn,args)}catch(e){b={__error:true,message:e.message}}t2=performance.now()-i1;
-    a=JSON.parse(JSON.stringify(a||null));b=JSON.parse(JSON.stringify(b||null));const d=dif(a,b,'',[]);
-    out.push({ação:fn,igual:d.length?'NÃO':'sim',diferenças:d.slice(0,3).join(' | '),'GUT API (ms)':Math.round(t1),'banco (ms)':Math.round(t2)});
-  }
-  console.table(out);return out;
-}
-window.gutParidade=gutParidade;
+
 // ===== v4.17.0: fotos dos produtos no Supabase Storage (bucket "produtos", pasta da empresa) =====
-// CAD_PRODUTOS.FOTO_* guarda 'sb:<caminho>'. Foto antiga (id do Google Drive) é buscada uma vez pela GUT API
-// e copiada para o Storage na hora — depois disso não depende mais do Google.
+// CAD_PRODUTOS.FOTO_* guarda 'sb:<caminho>'.
+// ===== v4.18.0: cópia de segurança (feita todo dia às 23h no próprio Supabase; o dono pode baixar a mais recente) =====
+async function gutBaixarBackup(){
+  busy(true);
+  try{const {data,error}=await GUT_SB.rpc('web_backup_baixar',{p_slug:GUT_EMPRESA_SLUG});if(error)throw new Error(error.message);
+    const blob=new Blob([JSON.stringify(data)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='gut-ppcp-copia-'+data.dia+'.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+    toast('Cópia de segurança de '+String(data.dia).split('-').reverse().join('/')+' baixada.')}
+  catch(e){toast(e.message,true)}finally{busy(false)}
+}
+if(typeof custosRender==='function'&&GUT_WEB){const _cr=custosRender;custosRender=function(){_cr.apply(this,arguments);const el=$('cadForms');if(el&&!$('gutBackupBox'))el.insertAdjacentHTML('beforeend',`<div class="section-box" id="gutBackupBox" style="margin-top:14px"><h3 style="margin:0 0 4px">🛟 Cópia de segurança</h3><div class="hint">Todo dia às 23h o sistema guarda uma cópia de todos os dados (os últimos 14 dias ficam no Supabase). Baixe a mais recente de vez em quando e guarde fora (só o dono da empresa).</div><div class="toolbar" style="margin-top:10px"><button class="btn" onclick="gutBaixarBackup()">⬇️ Baixar cópia mais recente</button></div></div>`)}}
 const GUT_FOTO_ACOES=['salvarFotoProduto','removerFotoProduto','getFotosProduto'];
 let GUT_EMP_ID=null;
 async function gutEmpresaId(){if(GUT_EMP_ID)return GUT_EMP_ID;const {data,error}=await GUT_SB.rpc('web_empresa_id',{p_slug:GUT_EMPRESA_SLUG});if(error||!data)throw new Error((error&&error.message)||'Empresa não encontrada.');return (GUT_EMP_ID=String(data))}
@@ -1597,16 +1578,12 @@ async function gutFotos(fn,p){
   // getFotosProduto(idProduto)
   const id=String(p),prod=prodRec(id)||((await callServer('getCadastros')).produtos||[]).find(x=>String(x.ID_PRODUTO)===id);
   if(!prod)throw new Error('Produto não encontrado.');
-  const fotos={};let drive=null;
+  const fotos={};
   for(const lado of Object.keys(FOTO_COL)){
     const v=String(prod[FOTO_COL[lado]]||'');if(!v)continue;
     try{
       if(/^sb:/.test(v)){const {data,error}=await GUT_SB.storage.from('produtos').download(v.slice(3));if(error)throw error;fotos[lado]=await gutBlobDataUrl(data)}
-      else{ // foto antiga no Drive: pega pela GUT API e já copia para o Storage
-        if(!drive)drive=await serverApiGoogle('getFotosProduto',[id],{});
-        fotos[lado]=(drive&&drive.fotos&&drive.fotos[lado])||'';
-        if(fotos[lado])gutFotoGravar(id,lado,fotos[lado]).then(nv=>{fotoCache()[nv]=fotos[lado];const r=prodRec(id);if(r)r[FOTO_COL[lado]]=nv}).catch(e=>console.warn('[GUT] cópia da foto para o Storage',e));
-      }
+      else fotos[lado]=''; // (fotos antigas do Google Drive não são mais lidas)
     }catch(e){console.warn('[GUT] foto',lado,e);fotos[lado]=''}
   }
   return {ok:true,ID_PRODUTO:id,fotos};
@@ -3989,7 +3966,7 @@ function campoAccessRender(type,r){const el=$('campoAccessBox');if(!el)return;co
     ${op?`<div class="field"><label>Como ela registra a produção</label><select id="caModo">${Object.entries(CAMPO_MODOS).map(([k,v])=>`<option value="${k}" ${String(r.MODO_APP||'AMBOS').toUpperCase()===k?'selected':''}>${v}</option>`).join('')}</select></div>`:'<div></div>'}
     <div class="field"><label>Senha ${r.TEM_SENHA?'<span class="hint">(deixe vazio para manter a atual)</span>':''}</label><div class="cost-min"><input id="caSenha" value="${esc(st.senha||'')}" placeholder="${r.TEM_SENHA?'nova senha':'crie uma senha'}" autocomplete="off"><button class="btn btn-secondary btn-sm" type="button" onclick="$('caSenha').value=campoGenPass()">🎲 Gerar</button></div></div>
     <div class="field"><label>&nbsp;</label><label class="qn-check" style="font-weight:600"><input type="checkbox" id="caAtivo" ${ativo?'checked':''}> Acesso liberado</label>${op?`<label class="qn-check" style="font-weight:600" title="Pode pausar e retomar a marcação de todo o setor pelo app (fim do expediente)"><input type="checkbox" id="caLider" ${truthyStr(r.LIDER_APP)?'checked':''}> 👑 Líder (pausa/retoma todos)</label>`:''}</div>
-    <div class="field span3"><label>Link do app de campo <span class="hint">(o mesmo para todos — o endereço que termina em /exec, da implantação do GUT Campo)</span></label><div class="cost-min"><input id="caLink" value="${esc(STATE.campoLinkDraft??P.LINK_APP_CAMPO??'')}" placeholder="https://script.google.com/macros/s/.../exec" oninput="STATE.campoLinkDraft=this.value" onchange="campoSaveLink(true)"><button class="btn btn-secondary btn-sm" type="button" onclick="campoSaveLink()">Salvar link</button></div></div></div>
+    <div class="field span3"><label>Link do app de campo <span class="hint">(o mesmo para todos — o endereço do app de campo, que termina em /campo/)</span></label><div class="cost-min"><input id="caLink" value="${esc(STATE.campoLinkDraft??P.LINK_APP_CAMPO??'')}" placeholder="https://.../campo/" oninput="STATE.campoLinkDraft=this.value" onchange="campoSaveLink(true)"><button class="btn btn-secondary btn-sm" type="button" onclick="campoSaveLink()">Salvar link</button></div></div></div>
    <div class="toolbar" style="justify-content:flex-end;margin-top:10px"><span class="hint" style="margin-right:auto">A senha fica guardada de forma protegida — depois de salvar ela não aparece mais. Para reenviar, gere uma nova.</span><button class="btn btn-primary" onclick="campoAccessSave('${type}')">💾 Salvar acesso</button><button class="btn btn-wa" id="caWaBtn" onclick="campoAccessWhats('${type}')" title="${st.senhaSalva?'Abre o WhatsApp com o link, o usuário e a senha':'Gera uma senha nova, salva e abre o WhatsApp'}">📲 Enviar pelo WhatsApp</button></div><div id="caWaLink"></div></div>`}
 function truthyStr(v){return v===true||['TRUE','SIM','1','S','YES'].includes(String(v).trim().toUpperCase())}
 function campoCleanLink(v){v=String(v||'').trim();const m=v.match(/https:\/\/[^\s"'<>]+/);return m?m[0]:v}
@@ -4261,7 +4238,7 @@ function openStockMovement(id){const x=(STATE.fluxoEstoque||[]).find(v=>String(v
 function goToCutFromMovement(lote){closeModal('stockMovementModal');showView('estoque');$('stockSearch').value=lote||'';renderStock()}
 
 function setupVoice(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('micBtn').title='Reconhecimento de voz não disponível neste navegador';$('micBtn').onclick=()=>toast('Use Chrome/Edge para comando de voz.',true);return}const rec=new SR();rec.lang='pt-BR';rec.interimResults=false;rec.onresult=e=>{$('commandInput').value=e.results[0][0].transcript;processCommand()};rec.onerror=e=>toast('Voz: '+e.error,true);$('micBtn').onclick=()=>rec.start();$('commandBtn').onclick=processCommand;$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter')processCommand()})}
-async function processCommand(){const t=$('commandInput').value.trim();if(!t)return;const s=t.toLowerCase();const rules=[['dashboard facção','dash-faccoes'],['dashboard faccao','dash-faccoes'],['painel facção','dash-faccoes'],['painel faccao','dash-faccoes'],['dashboard interno','dash-interna'],['painel interno','dash-interna'],['dashboard produção','dash-interna'],['dashboard producao','dash-interna'],['dashboard','dashboard'],['painel','dashboard'],['compras','compras'],['compra','compras'],['estoque de materiais','materiais'],['matéria-prima','materiais'],['materia-prima','materiais'],['novo corte','corte'],['corte','corte'],['estoque de corte','estoque'],['estoque pa','estoque-pa'],['produto acabado','estoque-pa'],['estoque de produto acabado','estoque-pa'],['volume','volumes'],['produção interna','interna'],['producao interna','interna'],['romaneio','romaneios'],['romaneios','romaneios'],['facção','faccoes'],['faccao','faccoes'],['bipagem','bipagem'],['cadastro','cadastros'],['estoque','materiais']];const hit=rules.find(([k])=>s.includes(k));if(hit){showView(hit[1]);toast('Comando: '+t);return}busy(true);try{const r=await callServer('interpretarComandoIA',t);if(!r.configured){toast('Comando entendido por regras locais. Para IA, configure OPENAI_API_KEY.');return}const x=r.result||{};if(x.intent==='NAVIGATE'&&x.target)showView(x.target);if(x.intent==='DASHBOARD_DATE'&&x.date){if($('dashDateStart'))$('dashDateStart').value=x.date;$('dashDate').value=x.date;showView('dashboard');await refreshDashboard()}toast(x.reply||'Comando interpretado.')}catch(e){toast(e.message,true)}finally{busy(false)}}
+async function processCommand(){const t=$('commandInput').value.trim();if(!t)return;const s=t.toLowerCase();const rules=[['dashboard facção','dash-faccoes'],['dashboard faccao','dash-faccoes'],['painel facção','dash-faccoes'],['painel faccao','dash-faccoes'],['dashboard interno','dash-interna'],['painel interno','dash-interna'],['dashboard produção','dash-interna'],['dashboard producao','dash-interna'],['dashboard','dashboard'],['painel','dashboard'],['compras','compras'],['compra','compras'],['estoque de materiais','materiais'],['matéria-prima','materiais'],['materia-prima','materiais'],['novo corte','corte'],['corte','corte'],['estoque de corte','estoque'],['estoque pa','estoque-pa'],['produto acabado','estoque-pa'],['estoque de produto acabado','estoque-pa'],['volume','volumes'],['produção interna','interna'],['producao interna','interna'],['romaneio','romaneios'],['romaneios','romaneios'],['facção','faccoes'],['faccao','faccoes'],['bipagem','bipagem'],['cadastro','cadastros'],['estoque','materiais']];const hit=rules.find(([k])=>s.includes(k));if(hit){showView(hit[1]);toast('Comando: '+t);return}toast('Comando não reconhecido. Tente: abrir bipagem, mostrar dashboard, volumes, facção, estoque...',true)}
 // GUT 4: requisições recuperáveis e coleta persistente por operador/remessa.
 const RPC={inflight:new Map(),pending:{},fresh:false,restored:false};
 const PERSIST_KEY='GUT_PPCP_4_1eihZ8DT7mp9iMqCBQF7rYJSNUgl9oWP3ttaWVbdHtLA';

@@ -55,6 +55,18 @@ const q = s => `$q$${s}$q$`;
     ok(/permission denied/.test(erro), 'o navegador não chama os ajudantes privados direto');
     try { erro = ''; pg.psql(`select set_config('gut.uid', '', false); select public.web_ler('gut', array['cad_cores']);`); } catch (e) { erro = e.message; }
     ok(/Faça login/.test(erro), 'sem login, web_ler recusa');
+    // backup diário dentro do Supabase (fase 6)
+    const bk = JSON.parse(pg.psql(`select backup.fazer()::text;`));
+    const linhas = Number(pg.psql(`select count(*) from public.cad_fornecedores;`));
+    const baixa = JSON.parse(pg.psql(pg.comoUsuario(`select public.web_backup_baixar('gut')::text;`)).split('\n').pop());
+    ok(bk.ok && bk.tabelas > 40 && baixa.tabelas.cad_fornecedores.length === linhas && !JSON.stringify(baixa).includes('senha_salt'), `backup.fazer copiou ${bk.tabelas} tabelas (${bk.linhas} linhas) e o dono baixa a cópia sem senhas`);
+    pg.psql(`delete from public.cad_fornecedores;`);
+    const rest = JSON.parse(pg.psql(`select backup.restaurar_tabela(private.web_hoje(), '${pg.EMP}', 'cad_fornecedores')::text;`));
+    ok(rest.linhas === linhas && Number(pg.psql(`select count(*) from public.cad_fornecedores;`)) === linhas, 'restaurar_tabela devolve a tabela apagada');
+    try { erro = ''; pg.psql(pg.comoUsuario(`select public.gut_ler('x', array['cad_cores']);`)); } catch (e) { erro = e.message; }
+    ok(/permission denied/.test(erro), 'GUT API desligada: gut_ler não pode mais ser chamada de fora');
+    try { erro = ''; pg.psql(pg.comoUsuario(`select count(*) from backup.copias;`)); } catch (e) { erro = e.message; }
+    ok(/permission denied/.test(erro), 'a cópia de segurança não é acessível pelo navegador');
   } finally { pg.descer(true); }
   const f = results.filter(x => !x).length; console.log(`\n${results.length - f}/${results.length}`); process.exit(f ? 1 : 0);
 })().catch(e => { console.error(e); pg.descer(true); process.exit(2); });

@@ -6,19 +6,12 @@
  * Arquivos necessários no projeto Apps Script:
  *   1) Code.gs   (este arquivo)
  *   2) index.html
- *
- * OpenAI opcional:
- *   Em Configurações do projeto > Propriedades do script:
- *     OPENAI_API_KEY = sua chave
- *     OPENAI_MODEL   = gpt-6-luna   (ou outro modelo disponível na sua conta)
  */
 
 const CFG = Object.freeze({
   SPREADSHEET_ID: '1eihZ8DT7mp9iMqCBQF7rYJSNUgl9oWP3ttaWVbdHtLA',
   TZ: 'America/Sao_Paulo',
   APP_NAME: 'GUT PPCP',
-  OPENAI_URL: 'https://api.openai.com/v1/responses',
-  OPENAI_MODEL_FALLBACK: 'gpt-6-luna',
   MAX_LIST: 500,
   DEFAULT_MINUTES_DAY: 540,
   SCAN_CACHE_SECONDS: 90,
@@ -5240,61 +5233,6 @@ function liberarVolumeEstoquePAImpl_(payload) {
 }
 
 // -----------------------------------------------------------------------------
-// OPENAI / COMANDO DE VOZ (OPCIONAL)
-// -----------------------------------------------------------------------------
-
-function interpretarComandoIAImpl_(texto) {
-  texto = String(texto || '').trim();
-  if (!texto) throw new Error('Comando vazio.');
-
-  const props = PropertiesService.getScriptProperties();
-  const apiKey = props.getProperty('OPENAI_API_KEY');
-  const model = props.getProperty('OPENAI_MODEL') || CFG.OPENAI_MODEL_FALLBACK;
-  if (!apiKey) {
-    return {
-      ok: false,
-      configured: false,
-      message: 'OPENAI_API_KEY não configurada nas Propriedades do script.'
-    };
-  }
-
-  const instruction = [
-    'Você interpreta comandos para um sistema PPCP de confecção.',
-    'Retorne APENAS JSON válido, sem markdown.',
-    'Não execute nem sugira alterações destrutivas.',
-    'Intenções permitidas: NAVIGATE, DASHBOARD_DATE, SEARCH, UNKNOWN.',
-    'targets permitidos: dashboard, corte, estoque, volumes, interna, faccoes, bipagem, cadastros.',
-    'Formato: {"intent":"NAVIGATE|DASHBOARD_DATE|SEARCH|UNKNOWN","target":"","date":"yyyy-MM-dd ou vazio","query":"","reply":"mensagem curta em português"}.',
-    'Hoje é ' + todayKey_() + '.',
-    'Comando do usuário: ' + texto
-  ].join('\n');
-
-  const payload = {
-    model: model,
-    input: instruction,
-  };
-
-  const resp = UrlFetchApp.fetch(CFG.OPENAI_URL, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + apiKey },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
-  });
-  const status = resp.getResponseCode();
-  const body = resp.getContentText();
-  if (status < 200 || status >= 300) throw new Error('OpenAI API: HTTP ' + status + ' - ' + body.slice(0, 500));
-
-  const json = JSON.parse(body);
-  const out = extractResponseText_(json);
-  try {
-    return { ok: true, configured: true, result: JSON.parse(cleanJson_(out)) };
-  } catch (e) {
-    return { ok: true, configured: true, result: { intent: 'UNKNOWN', target: '', date: '', query: '', reply: out || texto } };
-  }
-}
-
-// -----------------------------------------------------------------------------
 // DASHBOARD / DERIVADOS
 // -----------------------------------------------------------------------------
 
@@ -6441,7 +6379,6 @@ function routes_() { return {
   confirmarEnvioRemessaManual: confirmarEnvioRemessaManualImpl_,
   getExternalScanCatalog: getExternalScanCatalogImpl_,
   registrarBipagensExternasEmLote: registrarBipagensExternasEmLoteImpl_,
-  interpretarComandoIA: interpretarComandoIAImpl_,
   getBootstrapData: getBootstrapDataImpl_,
   getOperationalData: getOperationalDataImpl_,
   getFinanceiroFaccao: getFinanceiroFaccaoImpl_,
@@ -6529,7 +6466,6 @@ function getRemessasInternas() { return apiCall("getRemessasInternas", Array.pro
 function confirmarEnvioRemessaManual() { return apiCall("confirmarEnvioRemessaManual", Array.prototype.slice.call(arguments)); }
 function getExternalScanCatalog() { return apiCall("getExternalScanCatalog", Array.prototype.slice.call(arguments)); }
 function registrarBipagensExternasEmLote() { return apiCall("registrarBipagensExternasEmLote", Array.prototype.slice.call(arguments)); }
-function interpretarComandoIA() { return apiCall("interpretarComandoIA", Array.prototype.slice.call(arguments)); }
 function getFinanceiroFaccao() { return apiCall("getFinanceiroFaccao", Array.prototype.slice.call(arguments)); }
 function registrarPagamentoFaccao() { return apiCall("registrarPagamentoFaccao", Array.prototype.slice.call(arguments)); }
 function cancelarLancamentoFaccao() { return apiCall("cancelarLancamentoFaccao", Array.prototype.slice.call(arguments)); }

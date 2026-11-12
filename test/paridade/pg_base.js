@@ -59,6 +59,9 @@ create or replace function storage.foldername(name text) returns text[] language
 create table public.plataforma_admins (user_id uuid primary key, criado_em timestamptz default now());
 ${ddlTabelas()}
 -- funções de base que já existem no Supabase (gut_002/003/006/008)
+create table private.tokens_importacao (token_hash text primary key, empresa_id uuid, revogado boolean default false, expira_em timestamptz);
+create or replace function public.sou_dono(p_empresa uuid) returns boolean language sql stable security definer set search_path to '' as $f$
+  select exists (select 1 from public.usuarios_empresa where user_id = auth.uid() and empresa_id = p_empresa and papel = 'DONO' and ativo) $f$;
 create or replace function public.minhas_empresas() returns setof uuid language sql stable security definer set search_path to '' as $f$
   select empresa_id from public.usuarios_empresa where user_id = auth.uid() and ativo $f$;
 create or replace function private.tabela_importavel(p_tabela text) returns boolean language sql stable security definer set search_path to '' as $f$

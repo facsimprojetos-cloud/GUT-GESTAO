@@ -17,7 +17,7 @@ const SRC = ['apps-script/principal/Code.gs', 'apps-script/principal/Supabase.gs
 const OUT = path.join(ROOT, 'site/sistema/gut-motor.js');
 const SHIM = path.join(__dirname, 'gut-motor-shim.js');
 
-// Ações que continuam na GUT API porque usam serviços do Google (fotos no Drive, OpenAI pelo UrlFetchApp).
+// Ações do Code.gs que usam o Google Drive (fotos): na tela web elas são feitas pelo Supabase Storage (gutFotos no index.html).
 const GOOGLE_ACOES = require('./motor_google.json');
 
 // Rotinas de manutenção do editor do Apps Script: nunca entram no navegador.

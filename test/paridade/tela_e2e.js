@@ -51,7 +51,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       return r.fulfill({ body: '' });
     });
     await page.goto('http://app.local/sistema/'); await page.waitForTimeout(3500);
-    ok(RPC.includes('web_ler') && !API.includes('getBootstrapData') && !API.includes('getOperationalData'), 'abrir o sistema lê do banco, sem a GUT API (API: ' + ([...new Set(API)].join(',') || 'nada') + ')');
+    ok(RPC.includes('web_ler') && !API.length, 'abrir o sistema lê do banco, sem o Google (API: ' + ([...new Set(API)].join(',') || 'nada') + ')');
     const st = await page.evaluate(() => ({ vol: (STATE.volumes || []).length, rem: (STATE.remessas || []).length, prod: (STATE.cad?.produtos || []).length, mat: (STATE.estoqueMateriais || []).length }));
     ok(st.vol >= 6 && st.rem >= 2 && st.prod === 2 && st.mat >= 1, 'dados carregados na tela: ' + JSON.stringify(st));
     await page.click('#nav button[data-view="volumes"]'); await page.waitForTimeout(800);
@@ -79,16 +79,19 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       return { id: r.FILE_ID, ok: g.fotos.FRENTE === png };
     });
     ok(/^sb:4eb0139a-[^/]+\/[^/]+\/frente-\d+\.png$/.test(foto.id) && foto.ok && !API.length && /^sb:/.test(pg.psql(`select foto_frente from cad_produtos where foto_frente <> '' limit 1`)), 'foto vai para o Storage e volta igual: ' + foto.id);
-    // banco fora → volta para a GUT API
+    // banco fora: a tela avisa o erro (não existe mais GUT API); nada vai para o Google
     bancoFora = true; API.length = 0;
-    const d = await page.evaluate(() => callServer('getDashboard', { DATA_INICIAL: localDateKey(), DATA_FINAL: localDateKey() }));
-    ok(API.includes('getDashboard') && d && d.cards, 'se o banco falha antes de começar, a leitura volta para a GUT API sozinha');
+    const errFora = await page.evaluate(() => callServer('getDashboard', { DATA_INICIAL: localDateKey(), DATA_FINAL: localDateKey() }).then(() => '', e => e.message));
+    ok(/banco fora do ar/.test(errFora) && !API.length, 'se o banco falha, a tela mostra o erro e não chama o Google: ' + errFora);
     bancoFora = false;
-    const par = await page.evaluate(() => gutParidade([['getVolumes', []], ['getFinanceiroFaccao', []], ['getInitialData', [localDateKey()]]]));
-    ok(par.every(x => x.igual === 'sim'), 'gutParidade() no navegador: ' + par.map(x => x.ação + '=' + x.igual).join(', '));
+    const semIA = await page.evaluate(() => { $('commandInput').value = 'qualquer coisa estranha'; return processCommand().then(() => true); });
+    ok(semIA && !API.length && !RPC.some(f => /comando/i.test(f)), 'caixa de comando só navega (comando por IA retirado)');
+    ok(!/script\.google\.com/.test(html), 'a tela não tem mais o endereço da GUT API');
+    pg.psql('select backup.fazer();');
+    const bk = await page.evaluate(async () => { if (!$('cadForms')) { const d = document.createElement('div'); d.id = 'cadForms'; document.body.appendChild(d); } custosRender(); const tem = !!$('gutBackupBox'); let nome = ''; const o = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { nome = this.download; }; await gutBaixarBackup(); HTMLAnchorElement.prototype.click = o; return { tem, nome }; });
+    ok(bk.tem && /^gut-ppcp-copia-\d{4}-\d{2}-\d{2}\.json$/.test(bk.nome), 'botão de cópia de segurança aparece e baixa o arquivo: ' + bk.nome);
     ok(errors.length === 0, 'sem erro de JavaScript ' + errors.join(' | '));
-    const motorFalhou = avisos.filter(a => /Leitura direta do banco falhou/.test(a) && !/banco fora do ar/.test(a));
-    ok(motorFalhou.length === 0, 'nenhuma leitura precisou voltar para a GUT API (fora o teste do banco fora) ' + motorFalhou.join(' | ').slice(0, 400));
+    ok(!API.length, 'nenhuma chamada ao Google em todo o teste');
   } finally { if (browser) await browser.close(); pg.descer(true); }
   const f = results.filter(x => !x).length; console.log(`\n${results.length - f}/${results.length}`); process.exit(f ? 1 : 0);
 })().catch(e => { console.error(e); pg.descer(true); process.exit(2); });

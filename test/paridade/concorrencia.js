@@ -56,7 +56,7 @@ const n = q => Number(pg.psql(q));
     ok(/não permitida/.test(erro), 'web_aplicar não mexe em tabelas de controle (empresas)');
     // 7) a ação que precisa do Google não roda no navegador (a tela manda para a GUT API)
     try { erro = ''; await m.api('salvarFotoProduto', [{}], { requestId: 'req-foto-000000000001' }); } catch (e) { erro = e.message; }
-    ok(/não roda no navegador/.test(erro), 'fotos (Drive) ficam na GUT API por enquanto');
+    ok(/não roda no navegador/.test(erro), 'as ações de foto do Code.gs (Drive) não rodam no motor (a tela usa o Storage)');
     ok(n(`select count(*) from app_operacoes where id_operacao like 'req-ruim%'`) === 0, 'operação recusada não fica registrada');
   } finally { pg.descer(true); }
   const f = results.filter(x => !x).length; console.log(`\n${results.length - f}/${results.length}`); process.exit(f ? 1 : 0);
