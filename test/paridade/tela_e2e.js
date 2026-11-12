@@ -20,6 +20,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     const html = fs.readFileSync(path.join(ROOT, 'site/sistema/index.html'), 'utf8');
     const motorJs = fs.readFileSync(path.join(ROOT, 'site/sistema/gut-motor.js'), 'utf8');
     const API = [], RPC = [], FN = []; let bancoFora = false, servidorFora = false;
+    pg.psql(`update public.empresas set maquinas_dono = 5 where id = '${pg.EMP}';`);   // a parte das máquinas (no fim) testa o limite de 1
     const srv = await carregarServidor();
     const mockSb = `window.supabase={createClient(){const s={access_token:'tok-ok',user:{email:'carla@gut.com'}};
       return {auth:{async getSession(){return {data:{session:s}}},async signInWithPassword(){return {error:null}},async signOut(){},async resetPasswordForEmail(){return {error:null}}},
@@ -140,23 +141,29 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(!(await page.$('#gwGestao')), 'botão de Gestão não aparece para quem não é administrador');
     const dev = await page.evaluate(() => gutDispositivo());
     ok(pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and empresa_id = '${pg.EMP}' and ativo`) === '1', 'ao entrar, a máquina fica registrada (' + pg.psql(`select nome from private.sessoes_maquina where dispositivo = '${dev}' and ativo limit 1`) + ')');
+    // outro computador abriu o mesmo acesso enquanto este ficou parado: este é barrado e fica bloqueado
     pg.psql(`update public.empresas set maquinas_dono = 1 where id = '${pg.EMP}'; update private.sessoes_maquina set ativo = false where dispositivo = '${dev}';
-      update private.sessoes_maquina set ativo = true where id = (select id from private.sessoes_maquina where empresa_id = '${pg.EMP}' and dispositivo = 'maquina-de-teste-0001' order by criado_em desc limit 1);`);
+      update private.sessoes_maquina set ativo = true, ultimo_uso = now() where id = (select id from private.sessoes_maquina where empresa_id = '${pg.EMP}' and dispositivo = 'maquina-de-teste-0001' order by criado_em desc limit 1);`);
     const barrado = await page.evaluate(() => callServer('getCadastros').then(() => '', e => e.message));
     await page.waitForTimeout(800);
     const aviso = await page.evaluate(() => (document.getElementById('gutEscolha') || {}).textContent || '');
-    ok(/outra máquina/.test(barrado) && /Acesso aberto em outra máquina/.test(aviso) && /Teste/.test(aviso), 'outra máquina pegou o acesso: esta é barrada e mostra onde está aberto');
+    ok(/não está liberado/.test(barrado) && /Acesso em uso em outro computador/.test(aviso) && /Teste/.test(aviso) && !/Usar nesta/.test(aviso), 'outro computador está com o acesso: este é barrado e fica bloqueado (sem opção de derrubar o outro)');
+    await page.click('#gmUsar'); await page.waitForTimeout(800);
+    ok(/Ainda em uso/.test(await page.textContent('#gmErr')), '"Tentar de novo" continua bloqueado enquanto o outro está em uso');
+    pg.psql(`update private.sessoes_maquina set ativo = false, encerrado_motivo = 'saiu' where dispositivo = 'maquina-de-teste-0001';`);
     await page.click('#gmUsar'); await page.waitForTimeout(2500);
-    ok(await page.evaluate(() => GUT_STARTED && GUT_EMPRESA_SLUG === 'gut' && !document.getElementById('gutEscolha')) && pg.psql(`select count(*) from private.sessoes_maquina where empresa_id = '${pg.EMP}' and ativo`) === '1' && pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and ativo`) === '1', '"Usar nesta máquina" volta para o sistema e desconecta a outra');
+    ok(await page.evaluate(() => GUT_STARTED && GUT_EMPRESA_SLUG === 'gut' && !document.getElementById('gutEscolha')) && pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and empresa_id = '${pg.EMP}' and ativo`) === '1', 'quando o outro sai, "Tentar de novo" entra');
     await page.evaluate(() => localStorage.setItem('gut-dispositivo', 'm-outra-maquina-000000000001'));
     await page.goto('http://app.local/sistema/gut'); await page.waitForTimeout(1500);
     const nova = await page.evaluate(() => ({ txt: (document.getElementById('gutEscolha') || {}).textContent || '', entrou: GUT_STARTED }));
-    ok(/Acesso aberto em outra máquina/.test(nova.txt) && !nova.entrou, 'entrar numa máquina nova com o limite cheio: pergunta antes (não abre o sistema)');
+    ok(/Acesso em uso em outro computador/.test(nova.txt) && !nova.entrou, 'abrir o sistema num segundo computador: bloqueado (não abre)');
+    ok(pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and empresa_id = '${pg.EMP}' and ativo`) === '1', 'e o primeiro computador continua com o acesso');
+    pg.psql(`update private.sessoes_maquina set ultimo_uso = now() - interval '6 minutes' where dispositivo = '${dev}';`);
     await page.click('#gmUsar'); await page.waitForTimeout(2500);
-    ok(await page.evaluate(() => GUT_STARTED) && pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and ativo`) === '0', 'confirmando, entra e a máquina anterior sai');
+    ok(await page.evaluate(() => GUT_STARTED), 'o primeiro ficou 5 min sem o sistema aberto: o segundo consegue entrar');
     await page.evaluate(() => gutSair()); await page.waitForTimeout(800);
-    ok(pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = 'm-outra-maquina-000000000001' and encerrado_motivo = 'saiu'`) === '1', 'Sair libera a máquina');
-    pg.psql(`update public.empresas set maquinas_dono = 3 where id = '${pg.EMP}';`);
+    ok(pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = 'm-outra-maquina-000000000001' and encerrado_motivo = 'saiu'`) === '1', 'Sair libera o acesso');
+    pg.psql(`update public.empresas set maquinas_dono = 1 where id = '${pg.EMP}';`);
     ok(errors.length === 0, 'sem erro de JavaScript ' + errors.join(' | '));
     ok(!API.length, 'nenhuma chamada ao Google em todo o teste');
   } finally { if (browser) await browser.close(); pg.descer(true); }

@@ -59,23 +59,27 @@ const sqlErro = q => { try { pg.psql(q); return ''; } catch (e) { return e.messa
     ok(pg.psql(`select count(*) from cad_cores where cor in ('DIRETO','SEM CHAVE','INVASORA','X')`) === '0', 'nada do que foi recusado chegou ao banco');
     ok(pg.comoUsuario && pg.psql(pg.comoUsuario(`select count(*) from public.cad_cores;`)).split('\n').pop() === '1', 'leitura direta (RLS) continua só da própria empresa');
 
-    // máquinas (gut_021): o mesmo login em outra máquina — limite por empresa; entrar numa nova desconecta a mais antiga
+    // máquinas (gut_021/022): o mesmo acesso em outro computador fica BLOQUEADO até o primeiro sair ou ficar 5 min sem uso
     const rpcU = (fn, a, uid = pg.USER) => chamarRpc('gut', fn, a, uid);
     const DISP_B = 'maquina-de-teste-0002', DISP_C = 'maquina-de-teste-0003';
-    pg.psql(`update public.empresas set maquinas_dono = 1, maquinas_por_usuario = 1 where id = '${pg.EMP}';`);
+    ok(pg.psql(`select maquinas_dono from public.empresas where id = '${pg.EMP}'`) === '1', 'padrão: 1 computador por acesso, também para o dono');
     const semEntrar = await carregarServidor({ dispositivo: DISP_B, entrar: false });
     const rM = await semEntrar.pedir('getCadastros', [], {});
-    ok(rM.__error && rM.maquina && /outra máquina/.test(rM.message), 'máquina que não entrou é barrada pelo servidor (aviso de outra máquina)');
+    ok(rM.__error && rM.maquina && /não está liberado nesta máquina/.test(rM.message), 'computador que não entrou é barrado pelo servidor');
     const tenta = rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_B, p_nome: 'Notebook', p_assumir: false });
-    ok(tenta.ok === false && tenta.limite === 1 && tenta.em_uso.length === 1 && tenta.em_uso[0].nome === 'Teste', 'com o limite cheio, a segunda máquina vê onde o acesso está aberto');
-    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_B, p_nome: 'Notebook', p_assumir: true }).ok, '"usar nesta máquina" libera a nova');
-    ok(!(await semEntrar.pedir('getCadastros', [], {})).__error, 'a nova máquina passa a funcionar');
-    const velha = await carla.pedir('getCadastros', [], {}, 'gut', 'maquina-de-teste-0001');
-    ok(velha.__error && velha.maquina, 'a máquina antiga foi desconectada');
+    ok(tenta.ok === false && tenta.bloqueado && tenta.em_uso.length === 1 && tenta.em_uso[0].nome === 'Teste' && tenta.libera_em_min >= 1, 'segundo computador fica bloqueado e vê onde o acesso está aberto');
+    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_B, p_nome: 'Notebook', p_assumir: true }).ok === false, 'nem pedindo para assumir: o primeiro computador não é derrubado');
+    ok(!(await carla.pedir('getCadastros', [], {}, 'gut', 'maquina-de-teste-0001')).__error, 'o primeiro computador continua funcionando');
+    ok(pg.psql(`select count(*) from auditoria where acao = 'MAQUINA_BLOQUEADA'`) === '2', 'tentativas bloqueadas ficam na auditoria');
+    rpcU('web_maquina_sair', { p_slug: 'gut', p_dispositivo: 'maquina-de-teste-0001' });
+    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_B, p_nome: 'Notebook', p_assumir: false }).ok, 'depois que o primeiro sai, o segundo entra');
+    ok(!(await semEntrar.pedir('getCadastros', [], {})).__error && (await carla.pedir('getCadastros', [], {}, 'gut', 'maquina-de-teste-0001')).maquina, 'agora o segundo funciona e o primeiro não');
+    pg.psql(`update private.sessoes_maquina set ultimo_uso = now() - interval '6 minutes' where dispositivo = '${DISP_B}' and ativo;`);
+    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_C, p_nome: 'Celular', p_assumir: false }).ok, 'computador parado há mais de 5 min libera o acesso sozinho');
+    ok((await semEntrar.pedir('getCadastros', [], {})).maquina, 'e o parado, ao voltar, fica bloqueado');
     pg.psql(`update public.empresas set maquinas_dono = 2 where id = '${pg.EMP}';`);
-    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_C, p_nome: 'Celular', p_assumir: false }).ok, 'com limite 2, a segunda máquina entra sem derrubar ninguém');
-    ok(!(await semEntrar.pedir('getCadastros', [], {})).__error, 'e a primeira continua funcionando');
-    ok(rpcU('web_maquina_sair', { p_slug: 'gut', p_dispositivo: DISP_C }).ok && (await carla.pedir('getCadastros', [], {}, 'gut', DISP_C)).maquina, 'sair libera a vaga e a máquina deixa de funcionar');
+    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_B, p_nome: 'Notebook', p_assumir: false }).ok, 'com limite 2, o segundo computador entra');
+    ok(rpcU('web_maquina_sair', { p_slug: 'gut', p_dispositivo: DISP_C }).ok && (await carla.pedir('getCadastros', [], {}, 'gut', DISP_C)).maquina, 'sair libera a vaga e o computador deixa de funcionar');
     ok(/permission denied/.test(sqlErro(pg.comoUsuario(`select count(*) from private.sessoes_maquina;`))), 'o navegador não vê a lista de máquinas direto');
     ok(/administrador/.test(sqlErro(pg.comoUsuario(`select public.gestao_maquinas('${pg.EMP}');`))), 'só o administrador lista e desconecta máquinas no app de gestão');
     // limite de acessos da empresa e vincular usuário só pelo servidor (correção de segurança)
