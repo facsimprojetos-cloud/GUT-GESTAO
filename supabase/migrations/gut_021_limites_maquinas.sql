@@ -251,3 +251,4 @@ revoke execute on function public.gestao_vincular(uuid, uuid, text, text, text, 
 revoke execute on function public.gestao_usuario_por_email(text) from public, anon, authenticated;
 grant execute on function public.gestao_vincular(uuid, uuid, text, text, text, jsonb) to service_role;
 grant execute on function public.gestao_usuario_por_email(text) to service_role;
+revoke all on function private.maquinas_limite(uuid, uuid), private.maquina_confere(uuid, text), private.limite_usuarios_confere(uuid, uuid) from public, anon, authenticated;
