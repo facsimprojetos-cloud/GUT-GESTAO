@@ -239,7 +239,7 @@ async function abaEmpresas() {
         <div class="sub">${esc(e.cnpj || 'sem CNPJ')} • plano ${esc(e.plano || '—')}${e.contato ? ' • ' + esc(e.contato) : ''}</div>
         <div class="stats"><div><b>${e.usuarios}</b>usuários</div><div><b>${e.operadores_app}/${e.operadores}</b>operadores no app</div><div><b>${e.faccoes_app}/${e.faccoes}</b>facções no app</div></div>
         <div class="sub" style="margin-top:8px">Último uso do sistema: ${dt(e.ultimo_uso, true)}</div>
-        <div class="acts" style="justify-content:flex-start"><button class="btn ghost sm" onclick="editarEmpresa('${e.id}')">✏️ Editar</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','equipe')">👥 Acessos</button></div></div>`; }).join('') || '<div class="card empty">Nenhuma empresa ainda.</div>'}</div>`;
+        <div class="acts" style="justify-content:flex-start"><button class="btn ghost sm" onclick="editarEmpresa('${e.id}')">✏️ Editar</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','equipe')">👥 Acessos</button><a class="btn ghost sm" href="sistema/${encodeURIComponent(e.slug)}" target="_blank" rel="noopener">🧵 Abrir sistema</a></div></div>`; }).join('') || '<div class="card empty">Nenhuma empresa ainda.</div>'}</div>`;
 }
 function abrirEmpresa(id, tab) { S.emp = id; try { localStorage.setItem('gutGestaoEmp', id); } catch (e) {} S.usuarios = []; S.campo = null; S.tab = tab; render(); }
 function editarEmpresa(id) {

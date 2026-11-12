@@ -805,7 +805,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.19.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.20.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1287,6 +1287,7 @@ function toggleTheme(){applyTheme(themeIsDark()?'light':'dark',true)}
 function uiGuard(label,fn){try{return fn()}catch(e){console.error('[GUT UI] '+label,e);return undefined}}
 function bindNav(){document.querySelectorAll('#nav button[data-view]').forEach(b=>{b.disabled=false;b.onclick=()=>{if(b.dataset.view==='faccoes')uiGuard('limpar escopo QR',()=>clearExternalScanScope());showView(b.dataset.view)}});}
 function showView(v){
+  if(!gutPodeVer(v)){toast('Você não tem acesso a esta tela. Peça ao dono da empresa para liberar.',true);return}
   if(v!=='dash-interna'&&typeof closeCouponDrawer==='function'&&document.body.classList.contains('scan-drawer-open'))closeCouponDrawer();
   const target=document.getElementById('view-'+v);if(!target)return;
   uiGuard('sair do foco',()=>{if(document.body.classList.contains('dashboard-focus')&&STATE.dashboardFocusView&&STATE.dashboardFocusView!==v)exitDashboardFocus(false)});
@@ -1364,7 +1365,7 @@ function gutWebLogin(msg){
       if(!em||!pw){er.textContent='Preencha e-mail e senha.';return}er.textContent='Entrando…';
       const {error}=await GUT_SB.auth.signInWithPassword({email:em,password:pw});
       if(error){er.textContent=/invalid/i.test(error.message)?'E-mail ou senha incorretos.':error.message;return}
-      er.textContent='';ov.style.display='none';if(!GUT_STARTED){GUT_STARTED=true;startShell();gutWebExtras()}else location.reload()};
+      er.textContent='';ov.style.display='none';if(!GUT_STARTED)gutEntrar();else location.reload()};
     document.getElementById('gwGo').onclick=go;document.getElementById('gwPw').onkeydown=e=>{if(e.key==='Enter')go()};
     ['keyup','keydown'].forEach(ev=>document.getElementById('gwPw').addEventListener(ev,e=>{const er=document.getElementById('gwErr');if(e.getModifierState&&e.getModifierState('CapsLock'))er.textContent='⚠️ Caps Lock está ligado';else if(er.textContent.indexOf('Caps')>=0)er.textContent=''}));
     document.getElementById('gwEsq').onclick=async()=>{const em=document.getElementById('gwEm').value.trim(),er=document.getElementById('gwErr');if(!em){er.textContent='Digite o seu e-mail acima.';return}
@@ -1373,13 +1374,52 @@ function gutWebLogin(msg){
   ov.style.display='grid';const er=document.getElementById('gwErr');if(er)er.textContent=msg&&!/^Entre no sistema/.test(msg)?msg:'';setTimeout(()=>{const f=document.getElementById('gwEm');if(f&&!f.value)f.focus();else{const p=document.getElementById('gwPw');if(p)p.focus()}},50);
 }
 async function gutSair(){try{await GUT_SB.auth.signOut()}catch(e){}location.reload()}
-function gutWebExtras(){if(!GUT_WEB)return;const tb=document.querySelector('.topbar');if(tb&&!document.getElementById('gwSair')){const b=document.createElement('button');b.id='gwSair';b.className='btn btn-secondary';b.type='button';b.textContent='Sair';b.title='Sair do sistema';b.onclick=gutSair;tb.appendChild(b)}}
+function gutWebExtras(){if(!GUT_WEB)return;const tb=document.querySelector('.topbar');
+  if(tb&&GUT_EMPRESA&&!document.getElementById('gwEmpresa')){const c=document.createElement('button');c.id='gwEmpresa';c.className='btn btn-secondary';c.type='button';c.textContent='🏢 '+GUT_EMPRESA.nome;
+    const varias=((GUT_EU&&GUT_EU.empresas)||[]).length>1;c.title=varias?'Trocar de empresa':'Empresa';if(varias)c.onclick=()=>{location.href=gutBaseSistema()+'?escolher=1'};else c.style.cursor='default';tb.appendChild(c)}
+  if(tb&&!document.getElementById('gwSair')){const b=document.createElement('button');b.id='gwSair';b.className='btn btn-secondary';b.type='button';b.textContent='Sair';b.title='Sair do sistema';b.onclick=gutSair;tb.appendChild(b)}}
 function gutBoot(){if(!GUT_WEB){GUT_STARTED=true;return startShell()}
   if(!GUT_SB){document.body.innerHTML='<p style="font-family:sans-serif;padding:24px">Não foi possível carregar o login. Verifique a internet e recarregue a página.</p>';return}
-  GUT_SB.auth.getSession().then(({data})=>{if(data&&data.session){GUT_STARTED=true;startShell();gutWebExtras()}else gutWebLogin()})}
+  GUT_SB.auth.getSession().then(({data})=>{if(data&&data.session)gutEntrar();else gutWebLogin()})}
+// ===== v4.20.0: várias empresas — empresa no endereço, escolha da empresa, empresa suspensa e menus por permissão =====
+function gutBaseSistema(){const p=location.pathname,i=p.indexOf('/sistema/');return i>=0?p.slice(0,i+9):p.replace(/[^/]*$/,'')}
+function gutSlugDaUrl(){const q=new URLSearchParams(location.search).get('e');if(q)return q.trim().toLowerCase();
+  const p=location.pathname,i=p.indexOf('/sistema/');if(i<0)return '';const s=decodeURIComponent(p.slice(i+9).split('/')[0]||'');return /^(index\.html?)?$/i.test(s)?'':s.trim().toLowerCase()}
+// módulos do app de gestão que cada tela usa (sem acesso ao módulo = menu escondido; "ver" mostra, e o servidor não deixa alterar)
+const GUT_VIEW_MODULO={'dash-faccoes':'faccoes','dash-interna':'producao',compras:'estoque',materiais:'estoque',corte:'corte',estoque:'corte',volumes:'corte','estoque-pa':'producao',interna:'producao',faccoes:'faccoes',romaneios:'faccoes',financeiro:'financeiro',bipagem:'producao',cadastros:'cadastros'};
+function gutPodeVer(view){const e=GUT_EMPRESA;if(!e||!GUT_WEB)return true;if(['DONO','ADMIN'].includes(String(e.papel||'').toUpperCase())||(GUT_EU&&GUT_EU.admin))return true;
+  const m=GUT_VIEW_MODULO[view];if(!m)return true;const n=String((e.permissoes||{})[m]||'').toLowerCase();return n==='ver'||n==='editar'}
+function gutAplicarPermissoes(){document.querySelectorAll('#nav [data-view]').forEach(b=>{b.style.display=gutPodeVer(b.dataset.view)?'':'none'})}
+function gutTelaEmpresa(titulo,texto,lista){
+  let ov=document.getElementById('gutEscolha');if(!ov){ov=document.createElement('div');ov.id='gutEscolha';ov.setAttribute('style','position:fixed;inset:0;z-index:9998;display:grid;place-items:center;padding:16px;background:#f4f6fb;font-family:Inter,system-ui,sans-serif');document.body.appendChild(ov)}
+  const base=gutBaseSistema(),est={ATIVA:'',TESTE:'teste',SUSPENSA:'suspensa',CANCELADA:'cancelada'};
+  ov.innerHTML='<div style="width:100%;max-width:460px;background:#fff;border:1px solid rgba(15,23,42,.08);border-radius:24px;padding:26px 22px;box-shadow:0 18px 40px -16px rgba(30,27,75,.28)">'+
+    '<div style="font-size:21px;font-weight:800;color:#1e1b4b">'+esc(titulo)+'</div>'+(texto?'<p style="color:#6b7a90;margin:8px 0 0">'+esc(texto)+'</p>':'')+
+    ((lista||[]).length?'<div style="display:grid;gap:10px;margin-top:16px">'+lista.map(e=>'<a href="'+base+encodeURIComponent(e.slug)+'" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border:1px solid rgba(15,23,42,.12);border-radius:14px;text-decoration:none;color:#1e1b4b;font-weight:700">'+
+      '<span>'+esc(e.nome)+'</span><span style="font-size:12px;color:'+(/SUSPENSA|CANCELADA/.test(e.status)?'#dc2626':'#6b7a90')+';font-weight:600">'+esc(est[e.status]!=null?est[e.status]:String(e.status||'').toLowerCase())+'</span></a>').join('')+'</div>':'')+
+    '<div style="text-align:center;margin-top:16px"><button onclick="gutSair()" style="border:0;background:none;color:#4f46e5;font-weight:600;cursor:pointer">Sair</button></div></div>';
+  ov.style.display='grid';
+}
+async function gutEntrar(){
+  let eu;try{const {data,error}=await GUT_SB.rpc('gestao_eu');if(error)throw new Error(error.message);eu=data}catch(e){return gutWebLogin(/login|entre no sistema|JWT/i.test(e.message)?'Entre novamente.':e.message)}
+  GUT_EU=eu;const lista=(eu&&eu.empresas)||[],pedido=gutSlugDaUrl();
+  let lembrada='';try{lembrada=localStorage.getItem('gut-empresa')||''}catch(e){}
+  let emp=pedido?lista.find(e=>e.slug===pedido):(lista.length===1?lista[0]:null);
+  if(!emp&&!pedido&&lembrada&&lista.length>1&&!new URLSearchParams(location.search).has('escolher'))emp=lista.find(e=>e.slug===lembrada);
+  if(!lista.length)return gutTelaEmpresa('Sem empresa','Seu usuário ainda não está ligado a nenhuma empresa. Peça ao dono da empresa para te convidar.',[]);
+  if(pedido&&!emp)return gutTelaEmpresa('Empresa não encontrada','Você não tem acesso à empresa "'+pedido+'". Escolha uma das suas:',lista);
+  if(!emp)return gutTelaEmpresa('Escolha a empresa','Você tem acesso a mais de uma empresa.',lista);
+  if(/SUSPENSA|CANCELADA/.test(String(emp.status||'').toUpperCase()))return gutTelaEmpresa(emp.nome,'O acesso desta empresa está '+String(emp.status).toLowerCase()+'. Fale com o suporte do GUT PPCP.',lista.length>1?lista.filter(e=>e.slug!==emp.slug):[]);
+  GUT_EMPRESA=emp;GUT_EMPRESA_SLUG=emp.slug;try{localStorage.setItem('gut-empresa',emp.slug)}catch(e){}
+  const bonito=gutBaseSistema()+encodeURIComponent(emp.slug);if(location.pathname!==bonito||location.search)try{history.replaceState(null,'',bonito+location.hash)}catch(e){}
+  const ov=document.getElementById('gutEscolha');if(ov)ov.remove();
+  document.title=emp.nome+' • GUT PPCP';gutAplicarPermissoes();
+  GUT_STARTED=true;startShell();gutWebExtras();
+}
 // ===== v4.14.0: Kanbans direto no Supabase (modo web). Os cards são montados aqui com as mesmas regras do Apps Script
 // (getInternalProductionBoardImpl_ / getRemessasExternasImpl_) e o quadro se atualiza sozinho quando o banco avisa. =====
-const GUT_EMPRESA_SLUG='gut';
+// v4.20.0: a empresa vem do endereço (/sistema/<empresa>); sem empresa no endereço: a única do usuário ou a escolhida na lista
+let GUT_EMPRESA_SLUG='', GUT_EMPRESA=null, GUT_EU=null;
 const WEBQ={empresa:'',canal:null,sujo:{interno:false,faccao:false},em:0,skip:false,ok:{}};
 const WQ_TZ=-3*3600000; // Brasília (sem horário de verão)
 function wqVal(v){if(v===null||v===undefined)return '';if(typeof v==='string'){const m=v.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/);if(m)return wqFmt(Date.parse(v));if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v+'T00:00:00'}return v}
@@ -1540,7 +1580,7 @@ const GUT_MOTOR_ON=GUT_WEB;
 let GUT_MOTOR_P=null;
 function gutMotor(){
   if(GUT_MOTOR_P)return GUT_MOTOR_P;
-  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.19.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor do sistema.'));document.head.appendChild(sc)})
+  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.20.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor do sistema.'));document.head.appendChild(sc)})
     .then(m=>GUT_SB.auth.getSession().then(({data})=>{m.configurar({slug:GUT_EMPRESA_SLUG,email:(data&&data.session&&data.session.user&&data.session.user.email)||'',
       rpc:async(fn,args)=>{const {data:r,error}=await GUT_SB.rpc(fn,args);if(error){const e=new Error(error.message||'Falha ao falar com o banco.');e.code=error.code||'';throw e}return r}});return m}))
     .catch(e=>{GUT_MOTOR_P=null;throw e});

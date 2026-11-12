@@ -44,7 +44,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       if (u.startsWith('https://ipjsogzbdkqprrtuquok.supabase.co/functions/v1/gut')) {
         const h = r.request().headers(), b = JSON.parse(r.request().postData() || '{}'); FN.push(b.acao);
         if (servidorFora) return r.fulfill({ status: 503, body: 'fora' });
-        if (!/^Bearer tok-ok$/.test(h.authorization || '') || b.slug !== 'gut') return r.fulfill({ status: 401, contentType: 'application/json', body: '{"msg":"Invalid JWT"}' });
+        if (!/^Bearer tok-ok$/.test(h.authorization || '')) return r.fulfill({ status: 401, contentType: 'application/json', body: '{"msg":"Invalid JWT"}' });
         return r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(await srv.pedir(b.acao, b.args, b.meta, b.slug)) });
       }
       if (u.startsWith('https://script.google.com/')) {
@@ -103,6 +103,39 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     pg.psql('select backup.fazer();');
     const bk = await page.evaluate(async () => { if (!$('cadForms')) { const d = document.createElement('div'); d.id = 'cadForms'; document.body.appendChild(d); } custosRender(); const tem = !!$('gutBackupBox'); let nome = ''; const o = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { nome = this.download; }; await gutBaixarBackup(); HTMLAnchorElement.prototype.click = o; return { tem, nome }; });
     ok(bk.tem && /^gut-ppcp-copia-\d{4}-\d{2}-\d{2}\.json$/.test(bk.nome), 'botão de cópia de segurança aparece e baixa o arquivo: ' + bk.nome);
+    // ---- várias empresas (v4.20.0) ----
+    ok(/\/sistema\/gut$/.test(new URL(page.url()).pathname), 'o endereço mostra a empresa: ' + new URL(page.url()).pathname);
+    ok(/GUT Confecções/.test(await page.textContent('#gwEmpresa').catch(() => '')), 'o nome da empresa aparece no topo');
+    const EMP2 = '22222222-0000-4000-8000-000000000002';
+    pg.psql(`insert into public.empresas (id, nome, slug, status) values ('${EMP2}', 'Malharia Dois', 'dois', 'ATIVA');
+      insert into public.app_controle (empresa_id, versao_schema, revisao) values ('${EMP2}', '4.6.0', 'r0');
+      insert into public.usuarios_empresa (user_id, empresa_id, papel, nome, email) values ('${pg.USER}', '${EMP2}', 'DONO', 'Carla', 'carla@gut.com');`);
+    await page.evaluate(() => localStorage.removeItem('gut-empresa'));
+    await page.goto('http://app.local/sistema/'); await page.waitForTimeout(1500);
+    const escolha = await page.evaluate(() => { const o = document.getElementById('gutEscolha'); return o && o.style.display !== 'none' ? [...o.querySelectorAll('a')].map(a => a.textContent + '|' + a.getAttribute('href')) : null; });
+    ok(escolha && escolha.length === 2 && escolha.some(x => /Malharia Dois.*\/sistema\/dois$/.test(x)), 'com duas empresas e sem empresa no endereço: aparece a lista para escolher ' + JSON.stringify(escolha));
+    await page.goto('http://app.local/sistema/?e=dois'); await page.waitForTimeout(2500);
+    const naDois = await page.evaluate(() => ({ slug: GUT_EMPRESA_SLUG, url: location.pathname, cores: (STATE.cad?.cores || []).length, prod: (STATE.cad?.produtos || []).length }));
+    ok(naDois.slug === 'dois' && /\/sistema\/dois$/.test(naDois.url) && naDois.prod === 0 && naDois.cores === 0, 'na empresa 2 a tela só tem os dados dela: ' + JSON.stringify(naDois));
+    await page.evaluate(() => callServer('salvarCadastro', 'cor', { COR: 'COR DA DOIS' }));
+    ok(pg.psql(`select count(*) from cad_cores where cor = 'COR DA DOIS' and empresa_id = '${EMP2}'`) === '1' && pg.psql(`select count(*) from cad_cores where cor = 'COR DA DOIS' and empresa_id = '${pg.EMP}'`) === '0', 'gravação na empresa 2 fica só na empresa 2');
+    await page.goto('http://app.local/sistema/'); await page.waitForTimeout(1500);
+    ok(await page.evaluate(() => GUT_EMPRESA_SLUG) === 'dois', 'sem empresa no endereço, volta para a última usada');
+    await page.goto('http://app.local/sistema/?e=nao-existe'); await page.waitForTimeout(1200);
+    ok(/não tem acesso à empresa "nao-existe"/.test(await page.textContent('#gutEscolha').catch(() => '')), 'empresa que o usuário não tem: aviso e a lista das dele');
+    pg.psql(`update public.empresas set status = 'SUSPENSA' where id = '${EMP2}';`);
+    await page.goto('http://app.local/sistema/dois'); await page.waitForTimeout(1200);
+    const susp = await page.evaluate(() => ({ txt: (document.getElementById('gutEscolha') || {}).textContent || '', entrou: GUT_STARTED }));
+    ok(/suspensa/.test(susp.txt) && !susp.entrou, 'empresa suspensa: fica fora, com aviso (não abre o sistema)');
+    pg.psql(`update public.empresas set status = 'ATIVA' where id = '${EMP2}';`);
+    // menus conforme as permissões (operador só com produção)
+    pg.psql(`update public.usuarios_empresa set papel = 'OPERADOR', permissoes = '{"producao":"editar","cadastros":"ver"}' where user_id = '${pg.USER}' and empresa_id = '${pg.EMP}';`);
+    await page.goto('http://app.local/sistema/gut'); await page.waitForTimeout(2500);
+    const menus = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#nav [data-view]')].map(b => [b.dataset.view, b.style.display !== 'none'])));
+    ok(menus.interna && menus.bipagem && menus.cadastros && menus.dashboard && !menus.financeiro && !menus.compras && !menus.faccoes && !menus.corte, 'operador vê só os menus dos módulos dele: ' + Object.keys(menus).filter(k => menus[k]).join(','));
+    const negado = await page.evaluate(() => callServer('salvarCadastro', 'cor', { COR: 'OPERADOR TENTOU' }).then(() => '', e => e.message));
+    ok(/permissão para alterar em cadastros/.test(negado), 'com "ver" em cadastros, a tela mostra o cadastro mas o servidor não deixa alterar: ' + negado);
+    pg.psql(`update public.usuarios_empresa set papel = 'DONO', permissoes = '{}' where user_id = '${pg.USER}' and empresa_id = '${pg.EMP}';`);
     ok(errors.length === 0, 'sem erro de JavaScript ' + errors.join(' | '));
     ok(!API.length, 'nenhuma chamada ao Google em todo o teste');
   } finally { if (browser) await browser.close(); pg.descer(true); }

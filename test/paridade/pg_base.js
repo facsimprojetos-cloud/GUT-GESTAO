@@ -66,6 +66,19 @@ create or replace function public.sou_dono(p_empresa uuid) returns boolean langu
   select exists (select 1 from public.usuarios_empresa where user_id = auth.uid() and empresa_id = p_empresa and papel = 'DONO' and ativo) $f$;
 create or replace function public.minhas_empresas() returns setof uuid language sql stable security definer set search_path to '' as $f$
   select empresa_id from public.usuarios_empresa where user_id = auth.uid() and ativo $f$;
+create or replace function public.gestao_eu() returns jsonb language plpgsql stable security definer set search_path to '' as $f$
+declare v_admin boolean; r jsonb;
+begin
+  if auth.uid() is null then raise exception 'Entre no sistema primeiro.'; end if;
+  v_admin := private.sou_admin();
+  select jsonb_build_object('user', jsonb_build_object('id', auth.uid(), 'email', private.meu_email()), 'admin', v_admin,
+    'empresas', coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'nome', e.nome, 'slug', e.slug, 'status', e.status, 'plano', e.plano,
+        'papel', case when v_admin then coalesce(u.papel, 'ADMIN') else u.papel end, 'permissoes', coalesce(u.permissoes, '{}'::jsonb)) order by e.nome), '[]'::jsonb))
+  into r from public.empresas e left join public.usuarios_empresa u on u.empresa_id = e.id and u.user_id = auth.uid()
+  where v_admin or (u.user_id is not null and u.ativo);
+  return r;
+end $f$;
+grant execute on function public.gestao_eu() to authenticated;
 create or replace function private.tabela_importavel(p_tabela text) returns boolean language sql stable security definer set search_path to '' as $f$
   select exists(select 1 from information_schema.columns c where c.table_schema = 'public' and c.table_name = p_tabela and c.column_name = 'empresa_id')
      and p_tabela not in ('empresas','usuarios_empresa') $f$;

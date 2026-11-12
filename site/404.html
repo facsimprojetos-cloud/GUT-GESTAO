@@ -1,7 +1,9 @@
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GUT</title>
 <script>
 // GitHub Pages não tem "redirecionamento": /campo/<empresa> cai aqui e vai para o app de campo com ?e=<empresa>
+// O mesmo para o sistema: /sistema/<empresa> vai para /sistema/?e=<empresa> (a tela volta a mostrar /sistema/<empresa>)
 (function(){var p=location.pathname,i=p.indexOf('/campo/');if(i>=0){var slug=p.slice(i+7).split('/')[0];location.replace(p.slice(0,i+7)+(slug?'?e='+encodeURIComponent(slug):'')+location.hash);return}
+var j=p.indexOf('/sistema/');if(j>=0){var s2=p.slice(j+9).split('/')[0];location.replace(p.slice(0,j+9)+(s2?'?e='+encodeURIComponent(s2):'')+location.hash);return}
 document.addEventListener('DOMContentLoaded',function(){document.getElementById('m').style.display='block'})})();
 </script>
 <style>body{font:16px system-ui,sans-serif;background:#f4f6fb;color:#1e1b4b;display:grid;place-items:center;min-height:100vh;margin:0}#m{display:none;text-align:center}</style>
