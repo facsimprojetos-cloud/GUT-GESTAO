@@ -94,10 +94,28 @@ return motorPublico_(${JSON.stringify(GOOGLE_ACOES)});
 })();
 `;
   // trava de segurança: o arquivo vai para o ar (GitHub Pages) — nada de token do servidor, chave secreta ou senha
-  const segredo = out.match(/gutsrv_[0-9a-f]{8,}|gutimp_[0-9a-f]{8,}|OPENAI_API_KEY\s*[:=]\s*['"][^'"]+|sk-[A-Za-z0-9]{20,}|service_role/);
+  const segredo = out.match(/gutchave_[0-9a-f]{8,}|gutsrv_[0-9a-f]{8,}|gutimp_[0-9a-f]{8,}|OPENAI_API_KEY\s*[:=]\s*['"][^'"]+|sk-[A-Za-z0-9]{20,}|service_role/);
   if (segredo) throw new Error('O motor gerado teria um segredo (' + segredo[0].slice(0, 12) + '…). Troque a constante em tools/motor_trocadas.json + gut-motor-shim.js.');
   fs.writeFileSync(OUT, out);
   console.log('gerado ' + path.relative(ROOT, OUT) + ': ' + sel.length + ' blocos, ' + (out.length / 1024).toFixed(0) + ' KB');
+  // a mesma coisa para o servidor (Edge Function "gut"): no Deno não há window
+  // O arquivo é publicado no site (site/servidor/motor-<hash>.js) e a Edge Function o baixa uma vez e confere o hash
+  // (assim a função publicada no Supabase fica pequena; trocar o motor = publicar o site + publicar a função com o hash novo).
+  const srv = '// @ts-nocheck\nvar window = globalThis;\n' + out.replace('window.GUT_MOTOR = (function () {', 'globalThis.GUT_MOTOR = (function () {');
+  const OUT_SRV = path.join(ROOT, 'supabase/functions/gut/motor.js');
+  fs.mkdirSync(path.dirname(OUT_SRV), { recursive: true });
+  fs.writeFileSync(OUT_SRV, srv);
+  const sha = require('crypto').createHash('sha256').update(srv, 'utf8').digest('hex');
+  const pasta = path.join(ROOT, 'site/servidor');
+  fs.mkdirSync(pasta, { recursive: true });
+  const nome = 'motor-' + sha.slice(0, 12) + '.js';
+  // guarda o atual e o anterior (a função em produção pode ainda apontar para o anterior durante a troca)
+  const antigos = fs.readdirSync(pasta).filter(f => /^motor-[0-9a-f]{12}\.js$/.test(f) && f !== nome).map(f => ({ f, t: fs.statSync(path.join(pasta, f)).mtimeMs })).sort((a, b) => b.t - a.t);
+  antigos.slice(1).forEach(a => fs.unlinkSync(path.join(pasta, a.f)));
+  fs.writeFileSync(path.join(pasta, nome), srv);
+  fs.writeFileSync(path.join(ROOT, 'supabase/functions/gut/versao.ts'),
+    `// GERADO por tools/gerar_motor.js — qual motor a Edge Function "gut" usa.\nexport const MOTOR_URL = "https://facsimprojetos-cloud.github.io/GUT-GESTAO/servidor/${nome}";\nexport const MOTOR_SHA256 = "${sha}";\n`);
+  console.log('gerado ' + path.relative(ROOT, OUT_SRV) + ' + site/servidor/' + nome);
 }
 if (require.main === module) main();
 module.exports = { build, chunks };

@@ -43,7 +43,9 @@ create extension if not exists pgcrypto;
 create schema if not exists extensions; create schema if not exists auth; create schema if not exists private; create schema if not exists realtime;
 do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
 do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
+do $$ begin create role service_role nologin; exception when duplicate_object then null; end $$;
 create or replace function extensions.digest(data bytea, type text) returns bytea language sql immutable as $f$ select public.digest(data, type) $f$;
+create or replace function extensions.digest(data text, type text) returns bytea language sql immutable as $f$ select public.digest(data, type) $f$;
 create table auth.users (id uuid primary key, email text);
 create or replace function auth.uid() returns uuid language sql stable as $f$ select nullif(current_setting('gut.uid', true), '')::uuid $f$;
 create or replace function realtime.send(payload jsonb, event text, topic text, private boolean) returns void language sql as $f$ select $f$;
@@ -82,6 +84,13 @@ create or replace function private.toca_revisao(p_emp uuid) returns void languag
   update public.app_controle set revisao = 'gestao-' || gen_random_uuid()::text, atualizado_em = now() where empresa_id = p_emp $f$;
 create or replace function private.campo_trava(p_emp uuid) returns void language sql as $f$ select pg_advisory_xact_lock(hashtextextended('gut-campo:' || p_emp::text, 0)) $f$;
 create or replace function private.hoje_sp() returns date language sql stable as $f$ select (now() at time zone 'America/Sao_Paulo')::date $f$;
+-- como no Supabase: o usuário logado tem permissão de tabela e o RLS "tudo na própria empresa" (gut_002)
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+do $g$ declare t text; begin
+  for t in select table_name from information_schema.columns where table_schema = 'public' and column_name = 'empresa_id' and table_name not in ('usuarios_empresa') group by table_name loop
+    execute format('create policy %I on public.%I for all to authenticated using (empresa_id in (select public.minhas_empresas())) with check (empresa_id in (select public.minhas_empresas()))', t || ': só a própria empresa', t);
+  end loop; end $g$;
 create or replace function private.r2(x numeric) returns numeric language sql immutable as $f$ select round(coalesce(x,0), 2) $f$;
 `;
 
@@ -178,6 +187,7 @@ function migracoes() {
   return lista.join('\n');
 }
 
+const CHAVE_TESTE = 'chave-de-teste-do-servidor';
 const EMP = '4eb0139a-ddcb-4e95-bd06-087534e7257a', USER = '11111111-1111-4111-8111-111111111111';
 function criarBanco(nome) {
   psql('create database ' + nome + ';', { banco: 'postgres' });
@@ -187,6 +197,8 @@ function criarBanco(nome) {
   psql(`insert into public.empresas (id, nome, slug, status) values ('${EMP}', 'GUT Confecções (teste)', 'gut', 'TESTE');
         insert into auth.users values ('${USER}', 'carla@gut.com');
         insert into public.usuarios_empresa (user_id, empresa_id, papel, nome, email) values ('${USER}', '${EMP}', 'DONO', 'Carla', 'carla@gut.com');`, { banco: nome });
+  // chave do servidor de teste (a de verdade fica só nos segredos da Edge Function)
+  psql(`update private.servidor_config set chave = '${CHAVE_TESTE}';`, { banco: nome });
 }
 async function subir({ bancos = ['gut'] } = {}) {
   descer(true);
@@ -202,4 +214,4 @@ function descer(silencioso) {
 function comoUsuario(sqlText, uid = USER) {
   return `begin; set local role authenticated; select set_config('gut.uid', '${uid}', true);\n${sqlText}\ncommit;`;
 }
-module.exports = { criarBanco, subir, descer, psql, comoUsuario, EMP, USER, SCHEMA };
+module.exports = { CHAVE_TESTE, criarBanco, subir, descer, psql, comoUsuario, EMP, USER, SCHEMA };

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Teste da tela /sistema no navegador (Playwright) com o banco local:
-//  • as leituras (abrir o sistema, telas) saem do banco pelo motor, sem passar pela GUT API;
-//  • as gravações também vão direto ao banco (web_aplicar), sem a GUT API, e a leitura seguinte já vê o dado novo;
+//  • tudo (leituras e gravações) passa pelo servidor (Edge Function "gut"), nada pelo Google;
+//  • a leitura seguinte já vê o dado novo; o navegador não grava direto;
 //  • fotos vão para o Storage;
-//  • se o banco falhar, a mesma leitura volta para a GUT API sozinha.
+//  • se o servidor não responder, a leitura usa o motor do navegador (plano B); a gravação não.
 process.env.TZ = 'America/Sao_Paulo';
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
-const pg = require('./pg_base'), criarGas = require('./gas_sim'), { cenario, executorA, chamarRpc } = require('./rodar');
+const pg = require('./pg_base'), criarGas = require('./gas_sim'), { cenario, executorA, chamarRpc, carregarServidor } = require('./rodar');
 const { criarRelogio } = require('./relogio');
 const ROOT = path.join(__dirname, '..', '..');
 const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '  ✓ ' : '  ✗ ') + m); };
@@ -19,7 +19,8 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     const gas = criarGas(pg); await cenario(executorA(gas, criarRelogio(Date.now() - 3600000), []));
     const html = fs.readFileSync(path.join(ROOT, 'site/sistema/index.html'), 'utf8');
     const motorJs = fs.readFileSync(path.join(ROOT, 'site/sistema/gut-motor.js'), 'utf8');
-    const API = [], RPC = []; let bancoFora = false;
+    const API = [], RPC = [], FN = []; let bancoFora = false, servidorFora = false;
+    const srv = await carregarServidor();
     const mockSb = `window.supabase={createClient(){const s={access_token:'tok-ok',user:{email:'carla@gut.com'}};
       return {auth:{async getSession(){return {data:{session:s}}},async signInWithPassword(){return {error:null}},async signOut(){},async resetPasswordForEmail(){return {error:null}}},
         storage:{from(){const S=window.__fotos||(window.__fotos={});return {async upload(p,b){S[p]=b;return {error:null}},async download(p){return S[p]?{data:S[p],error:null}:{data:null,error:{message:'não achei'}}},async remove(l){(l||[]).forEach(p=>delete S[p]);return {error:null}}}}},
@@ -40,6 +41,12 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
           return r.fulfill({ contentType: 'application/json', body: JSON.stringify(chamarRpc('gut', fn, args)) });
         } catch (e) { return r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: e.message.split('\n')[0], code: e.code || '' }) }); }
       }
+      if (u.startsWith('https://ipjsogzbdkqprrtuquok.supabase.co/functions/v1/gut')) {
+        const h = r.request().headers(), b = JSON.parse(r.request().postData() || '{}'); FN.push(b.acao);
+        if (servidorFora) return r.fulfill({ status: 503, body: 'fora' });
+        if (!/^Bearer tok-ok$/.test(h.authorization || '') || b.slug !== 'gut') return r.fulfill({ status: 401, contentType: 'application/json', body: '{"msg":"Invalid JWT"}' });
+        return r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(await srv.pedir(b.acao, b.args, b.meta, b.slug)) });
+      }
       if (u.startsWith('https://script.google.com/')) {
         const b = JSON.parse(r.request().postData() || '{}'); API.push(b.action);
         let out; try { out = gas.api(b.action, b.args, b.meta || {}); } catch (e) { out = { __error: true, message: String(e.message || e) }; }
@@ -51,7 +58,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       return r.fulfill({ body: '' });
     });
     await page.goto('http://app.local/sistema/'); await page.waitForTimeout(3500);
-    ok(RPC.includes('web_ler') && !API.length, 'abrir o sistema lê do banco, sem o Google (API: ' + ([...new Set(API)].join(',') || 'nada') + ')');
+    ok(FN.includes('getBootstrapData') && !RPC.includes('web_ler') && !API.length, 'abrir o sistema passa pelo servidor (Edge Function), sem o Google e sem ler tabelas no navegador: ' + [...new Set(FN)].join(','));
     const st = await page.evaluate(() => ({ vol: (STATE.volumes || []).length, rem: (STATE.remessas || []).length, prod: (STATE.cad?.produtos || []).length, mat: (STATE.estoqueMateriais || []).length }));
     ok(st.vol >= 6 && st.rem >= 2 && st.prod === 2 && st.mat >= 1, 'dados carregados na tela: ' + JSON.stringify(st));
     await page.click('#nav button[data-view="volumes"]'); await page.waitForTimeout(800);
@@ -63,7 +70,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     API.length = 0;
     await page.evaluate(() => callServer('salvarCadastro', 'cor', { COR: 'VERDE MUSGO' }));
     const cad = await page.evaluate(() => callServer('getCadastros'));
-    ok(!API.length && RPC.includes('web_aplicar') && (cad.cores || []).some(c => c.COR === 'VERDE MUSGO') && pg.psql(`select count(*) from cad_cores where cor = 'VERDE MUSGO'`) === '1', 'gravação vai direto ao banco (sem GUT API) e a leitura seguinte já vê a cor nova');
+    ok(!API.length && FN.includes('salvarCadastro') && !RPC.includes('web_aplicar') && (cad.cores || []).some(c => c.COR === 'VERDE MUSGO') && pg.psql(`select count(*) from cad_cores where cor = 'VERDE MUSGO'`) === '1', 'gravação passa pelo servidor e a leitura seguinte já vê a cor nova');
     // a gravação repetida (mesmo requestId) não duplica
     const rep = await page.evaluate(async () => { const id = 'reqteste000000000001'; const a = await serverApi('salvarCadastro', ['cor', { COR: 'LILAS' }], { requestId: id }); const b = await serverApi('salvarCadastro', ['cor', { COR: 'LILAS' }], { requestId: id }); return [!!a.ok, !!b.__replayed]; });
     ok(rep[0] && rep[1] && pg.psql(`select count(*) from cad_cores where cor = 'LILAS'`) === '1', 'mesmo pedido duas vezes grava uma vez só');
@@ -79,11 +86,17 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       return { id: r.FILE_ID, ok: g.fotos.FRENTE === png };
     });
     ok(/^sb:4eb0139a-[^/]+\/[^/]+\/frente-\d+\.png$/.test(foto.id) && foto.ok && !API.length && /^sb:/.test(pg.psql(`select foto_frente from cad_produtos where foto_frente <> '' limit 1`)), 'foto vai para o Storage e volta igual: ' + foto.id);
-    // banco fora: a tela avisa o erro (não existe mais GUT API); nada vai para o Google
-    bancoFora = true; API.length = 0;
-    const errFora = await page.evaluate(() => callServer('getDashboard', { DATA_INICIAL: localDateKey(), DATA_FINAL: localDateKey() }).then(() => '', e => e.message));
-    ok(/banco fora do ar/.test(errFora) && !API.length, 'se o banco falha, a tela mostra o erro e não chama o Google: ' + errFora);
-    bancoFora = false;
+    // servidor fora do ar: leitura usa o motor do navegador (plano B); gravação não grava pelo navegador
+    servidorFora = true; RPC.length = 0;
+    const lidoB = await page.evaluate(() => callServer('getCadastros').then(r => (r.cores || []).length, e => 'ERRO ' + e.message));
+    ok(typeof lidoB === 'number' && lidoB > 0 && RPC.includes('web_ler'), 'servidor fora: a leitura sai pelo plano B do navegador (' + lidoB + ' cores)');
+    const gravaB = await page.evaluate(() => serverApi('salvarCadastro', ['cor', { COR: 'SEM SERVIDOR' }], { requestId: 'reqteste000000000099' }).then(r => JSON.stringify(r), e => 'ERRO ' + e.message));
+    ok(/^ERRO/.test(gravaB) && pg.psql(`select count(*) from cad_cores where cor = 'SEM SERVIDOR'`) === '0', 'servidor fora: a gravação não acontece pelo navegador (a tela guarda e tenta de novo)');
+    servidorFora = false;
+    // sessão inválida: o servidor recusa e a tela pede login
+    const exp = await page.evaluate(async () => { const o = GUT_SB.auth.getSession; GUT_SB.auth.getSession = async () => ({ data: { session: { access_token: 'vencido', user: {} } } }); const r = await serverApi('getCadastros', [], {}); GUT_SB.auth.getSession = o; return { r, login: !!document.getElementById('gutWebLogin') }; });
+    ok(exp.r.__error && exp.login, 'token vencido: a tela mostra o login de novo');
+    await page.evaluate(() => { const l = document.getElementById('gutWebLogin'); if (l) l.remove(); });
     const semIA = await page.evaluate(() => { $('commandInput').value = 'qualquer coisa estranha'; return processCommand().then(() => true); });
     ok(semIA && !API.length && !RPC.some(f => /comando/i.test(f)), 'caixa de comando só navega (comando por IA retirado)');
     ok(!/script\.google\.com/.test(html), 'a tela não tem mais o endereço da GUT API');

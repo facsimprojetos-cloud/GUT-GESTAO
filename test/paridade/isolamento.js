@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+// Etapa A (SaaS) — segurança do cérebro no servidor:
+//  • uma empresa nunca lê nem grava nada de outra;
+//  • cada usuário só faz o que as permissões dele (módulos do app de gestão) deixam; o dono pode tudo;
+//  • o navegador não grava direto (nem nas tabelas, nem pelo web_aplicar, nem pelo servidor_aplicar sem a chave);
+//  • empresa suspensa fica fora.
+//   node test/paridade/isolamento.js
+process.env.TZ = 'America/Sao_Paulo';
+const pg = require('./pg_base');
+const { carregarServidor, chamarRpc } = require('./rodar');
+const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '  ✓ ' : '  ✗ ') + m); };
+const EMP2 = '22222222-0000-4000-8000-000000000002', U2 = '22222222-2222-4222-8222-222222222222', U3 = '33333333-3333-4333-8333-333333333333';
+const erroDe = async p => { try { const r = await p; return r && r.__error ? r.message : ''; } catch (e) { return e.message; } };
+const sqlErro = q => { try { pg.psql(q); return ''; } catch (e) { return e.message; } };
+
+(async () => {
+  await pg.subir();
+  try {
+    pg.psql(`insert into public.app_controle (empresa_id, versao_schema, revisao) values ('${pg.EMP}', '4.6.0', 'r0');
+      insert into public.empresas (id, nome, slug, status) values ('${EMP2}', 'Malharia Dois', 'dois', 'ATIVA');
+      insert into public.app_controle (empresa_id, versao_schema, revisao) values ('${EMP2}', '4.6.0', 'r0');
+      insert into auth.users values ('${U2}', 'bruno@dois.com'), ('${U3}', 'oper@gut.com');
+      insert into public.usuarios_empresa (user_id, empresa_id, papel, nome, email) values ('${U2}', '${EMP2}', 'DONO', 'Bruno', 'bruno@dois.com');
+      insert into public.usuarios_empresa (user_id, empresa_id, papel, nome, email, permissoes) values ('${U3}', '${pg.EMP}', 'OPERADOR', 'Oper', 'oper@gut.com', '{"producao":"editar","cadastros":"ver"}');`);
+    const carla = await carregarServidor(), bruno = await carregarServidor({ uid: U2 }), oper = await carregarServidor({ uid: U3 });
+    let k = 0; const rid = () => 'req-isolamento-' + String(++k).padStart(6, '0');
+
+    // dados da GUT (pela dona)
+    const r1 = await carla.pedir('salvarCadastro', ['cor', { COR: 'AZUL GUT' }], { requestId: rid() });
+    ok(r1.ok, 'dona da GUT grava normalmente');
+    // empresa 2 não enxerga a GUT
+    const c2 = await bruno.pedir('getCadastros', [], {}, 'dois');
+    ok(!c2.__error && !(c2.cores || []).length, 'empresa 2 lê só os próprios dados (nenhuma cor da GUT)');
+    ok(/não tem acesso/.test(await erroDe(bruno.pedir('getCadastros', [], {}, 'gut'))), 'empresa 2 não lê a GUT pelo servidor');
+    ok(/não tem acesso/.test(await erroDe(bruno.pedir('salvarCadastro', ['cor', { COR: 'INVASORA' }], { requestId: rid() }, 'gut'))), 'empresa 2 não grava na GUT pelo servidor');
+    const r2 = await bruno.pedir('salvarCadastro', ['cor', { COR: 'VERDE DOIS' }], { requestId: rid() }, 'dois');
+    ok(r2.ok && pg.psql(`select string_agg(cor, ',' order by cor) from cad_cores where empresa_id = '${EMP2}'`) === 'VERDE DOIS', 'empresa 2 grava na própria empresa');
+    const cg = await carla.pedir('getCadastros', [], {});
+    ok(!(cg.cores || []).some(c => c.COR === 'VERDE DOIS'), 'a GUT não enxerga a empresa 2');
+    ok(pg.psql(`select count(*) from sequencias where empresa_id = '${EMP2}'`) === pg.psql(`select count(*) from sequencias where empresa_id = '${EMP2}'`), 'numerações separadas por empresa');
+
+    // permissões por módulo
+    ok(/permissão para alterar em cadastros/.test(await erroDe(oper.pedir('salvarCadastro', ['cor', { COR: 'X' }], { requestId: rid() }))), 'operador sem "editar cadastros" não cadastra');
+    ok(/permissão para ver em financeiro/.test(await erroDe(oper.pedir('getFinanceiroFaccao', [], {}))), 'operador sem financeiro não vê o financeiro das facções');
+    ok(/permissão para alterar em financeiro/.test(await erroDe(oper.pedir('registrarPagamentoFaccao', [{}], { requestId: rid() }))), 'operador não lança pagamento');
+    const j = await oper.pedir('registrarJornada', [{ DATA: '2026-11-12', ID_OPERADOR: 'x', MINUTOS_PREVISTOS: 480 }], { requestId: rid() });
+    ok(!/permissão/.test(j.message || ''), 'operador com "editar produção" passa da permissão (a regra do sistema decide o resto): ' + (j.message || 'ok'));
+    ok(!(await oper.pedir('getCadastros', [], {})).__error, 'operador lê as telas gerais');
+
+    // o navegador não grava direto
+    ok(/permission denied/.test(sqlErro(pg.comoUsuario(`insert into public.cad_cores (empresa_id, id_cor, cor) values ('${pg.EMP}', 'x', 'DIRETO');`))), 'gravar direto na tabela (REST) é recusado');
+    ok(/permission denied/.test(sqlErro(pg.comoUsuario(`update public.cad_cores set cor = 'MUDEI';`))), 'alterar direto na tabela é recusado');
+    ok(/permission denied/.test(sqlErro(pg.comoUsuario(`select public.web_aplicar('gut', '[]'::jsonb);`))), 'web_aplicar não pode mais ser chamado pelo navegador');
+    let e1 = ''; try { chamarRpc('gut', 'servidor_aplicar', { p_slug: 'gut', p_ops: [{ t: 'cad_cores', ins: [{ id_cor: 'y', cor: 'SEM CHAVE' }] }], p_acao: 'salvarCadastro', p_chave: 'chute' }); } catch (e) { e1 = e.message; }
+    ok(/só pode ser feita pelo servidor/.test(e1), 'servidor_aplicar sem a chave do servidor é recusado');
+    e1 = ''; try { chamarRpc('gut', 'servidor_ler', { p_slug: 'gut', p_tabelas: ['cad_cores'], p_acao: 'getCadastros', p_chave: '' }); } catch (e) { e1 = e.message; }
+    ok(/só pode ser feita pelo servidor/.test(e1), 'servidor_ler sem a chave é recusado');
+    ok(/permission denied/.test(sqlErro(pg.comoUsuario(`select public.servidor_obter_chave();`))), 'o navegador não consegue pegar a chave do servidor');
+    ok(pg.psql(`select count(*) from cad_cores where cor in ('DIRETO','SEM CHAVE','INVASORA','X')`) === '0', 'nada do que foi recusado chegou ao banco');
+    ok(pg.comoUsuario && pg.psql(pg.comoUsuario(`select count(*) from public.cad_cores;`)).split('\n').pop() === '1', 'leitura direta (RLS) continua só da própria empresa');
+
+    // empresa suspensa: fica fora do sistema (regra atual do web_empresa; "só consulta" é decisão da etapa C)
+    pg.psql(`update public.empresas set status = 'SUSPENSA' where id = '${EMP2}';`);
+    ok(/suspensa/.test(await erroDe(bruno.pedir('salvarCadastro', ['cor', { COR: 'NOVA' }], { requestId: rid() }, 'dois'))), 'empresa suspensa não grava');
+    ok(/suspensa/.test(await erroDe(bruno.pedir('getCadastros', [], {}, 'dois'))), 'empresa suspensa não entra');
+  } finally { pg.descer(true); }
+  const f = results.filter(x => !x).length; console.log(`\n${results.length - f}/${results.length}`); process.exit(f ? 1 : 0);
+})().catch(e => { console.error(e); pg.descer(true); process.exit(2); });

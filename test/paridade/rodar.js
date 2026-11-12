@@ -18,14 +18,30 @@ const ROOT = path.join(__dirname, '..', '..');
 const { comparar } = require('./comparar');
 
 // ---------- caminho B: o motor do navegador ----------
-function chamarRpc(banco, fn, args) {
+function chamarRpc(banco, fn, args, uid = pg.USER) {
   const a = Object.entries(args).map(([k, v]) => {
     if (Array.isArray(v) && k !== 'p_ops') return `${k} => array(select jsonb_array_elements_text($j$${JSON.stringify(v)}$j$::jsonb))`;
     if (typeof v === 'object' && v !== null) return `${k} => $j$${JSON.stringify(v)}$j$::jsonb`;
     return `${k} => $j$${v}$j$`;
   });
-  const out = pg.psql(pg.comoUsuario(`select coalesce(to_jsonb(public.${fn}(${a.join(', ')}))::text, 'null');`), { banco });
+  const out = pg.psql(pg.comoUsuario(`select coalesce(to_jsonb(public.${fn}(${a.join(', ')}))::text, 'null');`, uid), { banco });
   return JSON.parse(out.split('\n').pop());
+}
+// caminho do servidor (Edge Function "gut"): motor.js + servidor.mjs, com o banco chamado como o usuário logado
+async function carregarServidor({ banco = 'gut', relogio = null, uid = pg.USER, chave = pg.CHAVE_TESTE, antesDe = null } = {}) {
+  const ctx = vm.createContext({ console, Intl, setTimeout, Promise, TextEncoder, TextDecoder, btoa, atob, Proxy, crypto: require('crypto').webcrypto });
+  if (relogio) ctx.Date = dataFalsa(vm.runInContext('Date', ctx), relogio);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'supabase/functions/gut/motor.js'), 'utf8'), ctx, { filename: 'motor.js' });
+  const M = ctx.GUT_MOTOR;
+  if (relogio) M.configurar({ uuid: relogio.uuid, antes: relogio.reinicia });
+  const { atender } = await import(path.join(ROOT, 'supabase/functions/gut/servidor.mjs'));
+  let viagens = 0;
+  const chamar = async (nome, corpo) => { viagens++; if (antesDe) await antesDe(nome, corpo); try { return chamarRpc(banco, nome, corpo, uid); } catch (e) { const err = new Error(e.message); err.code = e.code; throw err; } };
+  return {
+    M, viagens: () => viagens, zerar: () => { viagens = 0; },
+    pedir: (acao, args, meta, slug = 'gut') => atender(M, { acao, args, meta, slug }, chamar, chave),
+    gravacao: acao => M.gravacao(acao)
+  };
 }
 function carregarMotor({ banco = 'gut', relogio = null } = {}) {
   const store = {};
@@ -256,11 +272,12 @@ function executorA(gas, rel, log) {
   };
   return { api, grava: async (acao, ...args) => { const r = await api(acao, args); if (r && r.__error) throw new Error(acao + ': ' + r.message); return r; }, sql: q => pg.psql(q, { banco: 'gut' }) };
 }
-function executorB(motor, rel, log) {
+function executorB(srv, rel, log) {
   let i = 0;
   const api = async (acao, args = [], meta = {}) => {
-    rel.acao(++i); const m = Object.assign({}, meta); if (motor.m.gravacao(acao)) m.requestId = rel.requestId();
-    let r; try { r = JSON.parse(JSON.stringify(await motor.m.api(acao, JSON.parse(JSON.stringify(args)), m))); } catch (e) { r = { __error: true, motor: true, message: 'MOTOR: ' + e.message }; }
+    rel.acao(++i); const m = Object.assign({}, meta); if (srv.gravacao(acao)) m.requestId = rel.requestId();
+    let r = JSON.parse(JSON.stringify(await srv.pedir(acao, JSON.parse(JSON.stringify(args)), m)));
+    if (r && r.__error && r.code !== undefined) delete r.code;   // o servidor devolve também o código do erro do banco
     log.push({ i, acao, args, r });
     return r;
   };
@@ -290,10 +307,10 @@ async function main() {
     const T0 = Date.parse(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()) + 'T10:00:00-03:00');
     const relA = criarRelogio(T0), relB = criarRelogio(T0), logA = [], logB = [];
     const gas = criarGas(pg, { banco: 'gut', relogio: relA });
-    const motor = carregarMotor({ banco: 'gut_b', relogio: relB });
+    const motor = await carregarServidor({ banco: 'gut_b', relogio: relB });
     const A = await cenario(executorA(gas, relA, logA));
     const B = await cenario(executorB(motor, relB, logB));
-    console.log('Cenário (A = Apps Script, B = navegador):');
+    console.log('Cenário (A = regras como na antiga GUT API, B = servidor novo: Edge Function "gut"):');
     A.passos.forEach((p, k) => { const q = B.passos[k] || {}; console.log((p.ok && q.ok ? '  ✓ ' : '  ✗ ') + p.nome + (p.ok ? '' : ' — A: ' + p.erro) + (q.ok ? '' : ' — B: ' + q.erro)); if (!p.ok || !q.ok) falhas++; });
     const cont = pg.psql(`select string_agg(t || '=' || n, ' ') from (select 'volumes' t, count(*) n from volumes union all select 'cupons', count(*) from cupons_producao union all select 'remessas', count(*) from remessas union all select 'retornos', count(*) from retornos_externos union all select 'financeiro', count(*) from financeiro_faccao union all select 'apontamentos', count(*) from apontamentos_producao union all select 'mov_estoque', count(*) from mov_estoque union all select 'auditoria', count(*) from auditoria) x;`);
     console.log('  linhas: ' + cont);
@@ -324,13 +341,13 @@ async function main() {
     Object.keys(dA).forEach(t => { const d = comparar(dA[t], dB[t]); if (d.length) { difT++; console.log('  ✗ ' + t + ': ' + d.slice(0, 4).join(' | ')); } });
     if (difT) falhas++; else console.log('  ✓ as ' + Object.keys(dA).length + ' tabelas são idênticas (' + Object.values(dA).reduce((n, r) => n + r.length, 0) + ' linhas)');
 
-    console.log('\nLeituras — Apps Script (banco A) × navegador (banco B):');
+    console.log('\nLeituras — regras antigas (banco A) × servidor novo (banco B):');
     for (const [acao, args] of leituras(A.ids)) {
       relA.acao(9000); relB.acao(9000);
       const a = gas.api(acao, args, {});
       tabelas[acao] = [...new Set([...(tabelas[acao] || []), ...Object.keys(gas.ctx.__SUPA_USED || {}).filter(t => t !== 'app_operacoes')])].sort();
       motor.zerar();
-      let b; try { b = JSON.parse(JSON.stringify(await motor.m.api(acao, args, {}))); } catch (e) { b = { __error: true, message: 'MOTOR: ' + e.message }; }
+      let b = JSON.parse(JSON.stringify(await motor.pedir(acao, args, {}))); if (b && b.__error) delete b.code;
       const dif = comparar(a, b), txtB = JSON.stringify(b);
       if (/h4sh|s4lt/.test(txtB)) dif.push('SEGURANÇA: a resposta do navegador contém senha do app de campo');
       if (acao === 'getCadastros' && !/"TEM_SENHA":true/.test(txtB)) dif.push('getCadastros deveria marcar TEM_SENHA de quem tem senha');
@@ -348,4 +365,4 @@ async function main() {
   process.exit(falhas ? 1 : 0);
 }
 if (require.main === module) main().catch(e => { console.error(e); pg.descer(true); process.exit(2); });
-module.exports = { cenario, carregarMotor, leituras, executorA, chamarRpc };
+module.exports = { cenario, carregarMotor, carregarServidor, leituras, executorA, executorB, chamarRpc };
