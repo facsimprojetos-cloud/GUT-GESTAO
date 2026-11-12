@@ -114,7 +114,7 @@ return motorPublico_(${JSON.stringify(GOOGLE_ACOES)});
   antigos.slice(1).forEach(a => fs.unlinkSync(path.join(pasta, a.f)));
   fs.writeFileSync(path.join(pasta, nome), srv);
   fs.writeFileSync(path.join(ROOT, 'supabase/functions/gut/versao.ts'),
-    `// GERADO por tools/gerar_motor.js — qual motor a Edge Function "gut" usa.\nexport const MOTOR_URL = "https://facsimprojetos-cloud.github.io/GUT-GESTAO/servidor/${nome}";\nexport const MOTOR_SHA256 = "${sha}";\n`);
+    `// GERADO por tools/gerar_motor.js — qual motor a Edge Function "gut" usa.\nexport const MOTOR_URL = "https://gutgestao.com.br/servidor/${nome}";\nexport const MOTOR_SHA256 = "${sha}";\n`);
   console.log('gerado ' + path.relative(ROOT, OUT_SRV) + ' + site/servidor/' + nome);
 }
 if (require.main === module) main();
