@@ -9,13 +9,14 @@ export async function atender(M, pedido, chamar, chave) {
   const args = Array.isArray(pedido && pedido.args) ? pedido.args : [];
   const meta = (pedido && typeof pedido.meta === 'object' && pedido.meta) || {};
   const slug = String((pedido && pedido.slug) || '').trim().toLowerCase();
+  const dispositivo = String((pedido && pedido.dispositivo) || '').slice(0, 80);
   if (!acao || !slug) return { __error: true, retryable: false, message: 'Pedido incompleto (ação ou empresa).' };
   if (!M.tem(acao)) return { __error: true, retryable: false, message: 'Esta ação não existe no sistema: ' + acao };
   const quem = { email: '' };
   const rpc = async (fn, a) => {
     let nome = fn; const corpo = Object.assign({}, a);
-    if (fn === 'web_ler') { nome = 'servidor_ler'; corpo.p_acao = acao; corpo.p_chave = chave; }
-    else if (fn === 'web_aplicar') { nome = 'servidor_aplicar'; corpo.p_acao = acao; corpo.p_chave = chave; }
+    if (fn === 'web_ler') { nome = 'servidor_ler'; corpo.p_acao = acao; corpo.p_chave = chave; corpo.p_dispositivo = dispositivo; }
+    else if (fn === 'web_aplicar') { nome = 'servidor_aplicar'; corpo.p_acao = acao; corpo.p_chave = chave; corpo.p_dispositivo = dispositivo; }
     else if (fn !== 'web_schema') throw new Error('Chamada não permitida: ' + fn);
     const r = await chamar(nome, corpo);
     if (nome === 'servidor_ler' && r && r.__email) quem.email = String(r.__email);
@@ -26,6 +27,8 @@ export async function atender(M, pedido, chamar, chave) {
     return await M.api(acao, args, meta, ctx);
   } catch (e) {
     const code = (e && e.code) || '';
+    // GT001 = este acesso foi aberto em outra máquina (ou a máquina foi desconectada) → a tela volta para a entrada
+    if (code === 'GT001') return { __error: true, retryable: false, maquina: true, message: String((e && e.message) || e), code };
     // erro do banco (sem permissão, sem login, conflito...) → nada foi gravado; sem código = falha de comunicação
     return { __error: true, retryable: !code, auth: code === '28000' || code === 'PGRST301' || code === '401' || /fa[çc]a login|JWT/i.test(String(e && e.message)), message: String((e && e.message) || e), code };
   }

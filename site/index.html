@@ -237,8 +237,9 @@ async function abaEmpresas() {
     <div class="grid">${S.empresas.map(e => { const st = STATUS[e.status] || ['', e.status];
       return `<div class="card"><div class="row"><p class="ttl" style="flex:1">${esc(e.nome)}</p><span class="chip ${st[0]}">${st[1]}</span></div>
         <div class="sub">${esc(e.cnpj || 'sem CNPJ')} • plano ${esc(e.plano || '—')}${e.contato ? ' • ' + esc(e.contato) : ''}</div>
-        <div class="stats"><div><b>${e.usuarios}</b>usuários</div><div><b>${e.operadores_app}/${e.operadores}</b>operadores no app</div><div><b>${e.faccoes_app}/${e.faccoes}</b>facções no app</div></div>
-        <div class="sub" style="margin-top:8px">Último uso do sistema: ${dt(e.ultimo_uso, true)}</div>
+        <div class="stats"><div><b${e.limite_usuarios != null && e.usuarios >= e.limite_usuarios ? ' style="color:#dc2626"' : ''}>${e.usuarios}${e.limite_usuarios != null ? '/' + e.limite_usuarios : ''}</b>acessos</div><div><b>${e.maquinas || 0}</b>máquinas abertas</div><div><b>${e.operadores_app}/${e.operadores}</b>operadores no app</div><div><b>${e.faccoes_app}/${e.faccoes}</b>facções no app</div></div>
+        <div class="sub" style="margin-top:8px">${e.limite_usuarios != null ? 'Até ' + e.limite_usuarios + ' acesso(s)' : 'Acessos sem limite'} • ${e.maquinas_por_usuario || 1} máquina(s) por login (dono: ${e.maquinas_dono || 3})</div>
+        <div class="sub" style="margin-top:4px">Último uso do sistema: ${dt(e.ultimo_uso, true)}</div>
         <div class="acts" style="justify-content:flex-start"><button class="btn ghost sm" onclick="editarEmpresa('${e.id}')">✏️ Editar</button><button class="btn ghost sm" onclick="abrirEmpresa('${e.id}','equipe')">👥 Acessos</button><a class="btn ghost sm" href="sistema/${encodeURIComponent(e.slug)}" target="_blank" rel="noopener">🧵 Abrir sistema</a></div></div>`; }).join('') || '<div class="card empty">Nenhuma empresa ainda.</div>'}</div>`;
 }
 function abrirEmpresa(id, tab) { S.emp = id; try { localStorage.setItem('gutGestaoEmp', id); } catch (e) {} S.usuarios = []; S.campo = null; S.tab = tab; render(); }
@@ -251,14 +252,16 @@ function editarEmpresa(id) {
     <label>E-mail</label><input id="eMail" type="email" value="${esc(e.email || '')}">
     <div class="f2"><div><label>Situação</label><select id="eSt">${Object.keys(STATUS).map(k => `<option value="${k}" ${e.status === k ? 'selected' : ''}>${STATUS[k][1]}</option>`).join('')}</select></div>
       <div><label>Plano</label><select id="ePl">${['TESTE', 'BASICO', 'PROFISSIONAL', 'PREMIUM'].map(k => `<option ${e.plano === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div></div>
-    <div class="f2"><div><label>Início</label><input id="eIni" type="date" value="${esc(e.inicio || '')}"></div><div></div></div>
+    <div class="f2"><div><label>Início</label><input id="eIni" type="date" value="${esc(e.inicio || '')}"></div><div><label>Limite de acessos</label><input id="eLim" type="number" min="1" value="${e.limite_usuarios ?? ''}" placeholder="sem limite"></div></div>
+    <div class="f2"><div><label>Máquinas por login</label><input id="eMaq" type="number" min="1" value="${e.maquinas_por_usuario ?? 1}"></div><div><label>Máquinas do dono</label><input id="eMaqD" type="number" min="1" value="${e.maquinas_dono ?? 3}"></div></div>
+    <div class="sub" style="margin-top:4px">Limite de acessos = quantas pessoas do escritório podem entrar no sistema. Máquinas por login = em quantos computadores/celulares o mesmo login fica aberto ao mesmo tempo; ao entrar em mais um, a pessoa escolhe desconectar o mais antigo.</div>
     <label>Observação</label><textarea id="eObs" rows="2">${esc(e.observacao || '')}</textarea>
     <div class="err" id="eErr"></div>
     <div class="acts"><button class="btn ghost" onclick="fechar(this)">Cancelar</button><button class="btn pri" id="eSv">Salvar</button></div>`, m => {
     m.querySelector('#eSv').onclick = async () => {
       busy(true);
       try {
-        await rpc('gestao_empresa_salvar', { p: { id: id || '', nome: $('eNome').value, cnpj: $('eCnpj').value, slug: $('eSlug').value, contato: $('eCont').value, telefone: $('eTel').value, email: $('eMail').value, status: $('eSt').value, plano: $('ePl').value, inicio: $('eIni').value, observacao: $('eObs').value } });
+        await rpc('gestao_empresa_salvar', { p: { id: id || '', nome: $('eNome').value, cnpj: $('eCnpj').value, slug: $('eSlug').value, contato: $('eCont').value, telefone: $('eTel').value, email: $('eMail').value, status: $('eSt').value, plano: $('ePl').value, inicio: $('eIni').value, observacao: $('eObs').value, limite_usuarios: $('eLim').value, maquinas_por_usuario: $('eMaq').value, maquinas_dono: $('eMaqD').value } });
         m.remove(); toast('Empresa salva ✓'); S.eu = await rpc('gestao_eu'); render();
       } catch (er) { $('eErr').textContent = er.message; } finally { busy(false); }
     };
@@ -269,8 +272,13 @@ function editarEmpresa(id) {
 async function abaEquipe() {
   const m = $('main'), e = empAtual();
   m.innerHTML = '<div class="empty">Carregando…</div>';
-  try { S.usuarios = await rpc('gestao_usuarios', { p_emp: S.emp }); } catch (er) { m.innerHTML = `<div class="card empty">${esc(er.message)}</div>`; return; }
-  m.innerHTML = `<div class="head"><div><h2>Acessos do escritório</h2><p>${esc(e.nome)} • ${S.usuarios.length} pessoa(s)</p></div><button class="btn pri" onclick="editarUsuario()">+ Convidar pessoa</button></div>
+  let maqs = [];
+  try { [S.usuarios, maqs] = await Promise.all([rpc('gestao_usuarios', { p_emp: S.emp }), rpc('gestao_maquinas', { p_emp: S.emp }).catch(() => [])]); } catch (er) { m.innerHTML = `<div class="card empty">${esc(er.message)}</div>`; return; }
+  if (!(S.empresas || []).length && S.eu && S.eu.admin) { try { S.empresas = await rpc('gestao_empresas'); } catch (er) {} }
+  const ex = Object.assign({}, e, (S.empresas || []).find(x => x.id === S.emp) || {});
+  const ativos = S.usuarios.filter(u => u.ativo).length, lim = ex.limite_usuarios;
+  const nomeDe = uid => { const u = S.usuarios.find(x => x.user_id === uid); return u ? (u.nome || u.email) : 'administrador'; };
+  m.innerHTML = `<div class="head"><div><h2>Acessos do escritório</h2><p>${esc(e.nome)} • ${S.usuarios.length} pessoa(s)${lim != null ? ` • <b${ativos >= lim ? ' style="color:#dc2626"' : ''}>${ativos} de ${lim} acessos usados</b>` : ''}</p></div><button class="btn pri" onclick="editarUsuario()">+ Convidar pessoa</button></div>
     <div class="note">Quem entra no sistema principal desta empresa e o que cada um pode fazer. Os acessos do app de campo (costureiras e facções) são cadastrados pela própria empresa, no sistema principal. As permissões passam a valer quando o sistema principal sair do Google.</div>
     <div class="tw"><table class="table"><thead><tr><th>Pessoa</th><th>Papel</th><th class="hide-m">Acesso</th><th class="hide-m">Último acesso</th><th></th></tr></thead><tbody>
     ${S.usuarios.map(u => `<tr><td><b>${esc(u.nome || u.email)}</b>${u.sou_eu ? ' <span class="chip info">você</span>' : ''}<div class="sub">${esc(u.email)}</div></td>
@@ -278,7 +286,16 @@ async function abaEquipe() {
       <td class="hide-m">${!u.ativo ? '<span class="chip bad">Bloqueado</span>' : u.confirmado ? '<span class="chip ok">Ativo</span>' : '<span class="chip warn">Convite pendente</span>'}</td>
       <td class="hide-m sub">${dt(u.ultimo_acesso, true)}</td>
       <td style="text-align:right"><button class="btn ghost sm" onclick="editarUsuario('${u.user_id}')">Editar</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Ninguém ainda. Convide a primeira pessoa.</td></tr>'}
+    </tbody></table></div>
+    <div class="head" style="margin-top:22px"><div><h2 style="font-size:18px">💻 Máquinas abertas agora</h2><p>Cada login pode ficar aberto em ${ex.maquinas_por_usuario || 1} máquina(s) (dono: ${ex.maquinas_dono || 3}). Desconectar faz a máquina pedir para entrar de novo.</p></div></div>
+    <div class="tw"><table class="table"><thead><tr><th>Pessoa</th><th>Máquina</th><th class="hide-m">Desde</th><th>Último uso</th><th></th></tr></thead><tbody>
+    ${maqs.map(q => `<tr><td><b>${esc(nomeDe(q.user_id))}</b></td><td>${esc(q.nome)}</td><td class="hide-m sub">${dt(q.desde, true)}</td><td class="sub">${dt(q.ultimo_uso, true)}</td>
+      <td style="text-align:right"><button class="btn ghost sm" onclick="desconectarMaquina('${q.id}')">Desconectar</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Nenhuma máquina aberta.</td></tr>'}
     </tbody></table></div>`;
+}
+async function desconectarMaquina(id) {
+  if (!confirm('Desconectar esta máquina? Ela vai pedir para entrar de novo.')) return;
+  busy(true); try { await rpc('gestao_maquina_desconectar', { p_emp: S.emp, p_id: id }); toast('Máquina desconectada ✓'); abaEquipe(); } catch (er) { toast(er.message, true); } finally { busy(false); }
 }
 function permHtml(perm) {
   return `<div class="perm">${MODULOS.map(([k, l, d]) => `<div><b style="font-size:14px">${l}</b><div class="sub">${d}</div></div>

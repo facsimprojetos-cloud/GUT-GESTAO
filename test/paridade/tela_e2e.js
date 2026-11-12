@@ -45,7 +45,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
         const h = r.request().headers(), b = JSON.parse(r.request().postData() || '{}'); FN.push(b.acao);
         if (servidorFora) return r.fulfill({ status: 503, body: 'fora' });
         if (!/^Bearer tok-ok$/.test(h.authorization || '')) return r.fulfill({ status: 401, contentType: 'application/json', body: '{"msg":"Invalid JWT"}' });
-        return r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(await srv.pedir(b.acao, b.args, b.meta, b.slug)) });
+        return r.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(await srv.pedir(b.acao, b.args, b.meta, b.slug, b.dispositivo)) });
       }
       if (u.startsWith('https://script.google.com/')) {
         const b = JSON.parse(r.request().postData() || '{}'); API.push(b.action);
@@ -136,6 +136,27 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     const negado = await page.evaluate(() => callServer('salvarCadastro', 'cor', { COR: 'OPERADOR TENTOU' }).then(() => '', e => e.message));
     ok(/permissão para alterar em cadastros/.test(negado), 'com "ver" em cadastros, a tela mostra o cadastro mas o servidor não deixa alterar: ' + negado);
     pg.psql(`update public.usuarios_empresa set papel = 'DONO', permissoes = '{}' where user_id = '${pg.USER}' and empresa_id = '${pg.EMP}';`);
+    // ---- máquinas (v4.21.0): o mesmo acesso em outra máquina ----
+    ok(!(await page.$('#gwGestao')), 'botão de Gestão não aparece para quem não é administrador');
+    const dev = await page.evaluate(() => gutDispositivo());
+    ok(pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and empresa_id = '${pg.EMP}' and ativo`) === '1', 'ao entrar, a máquina fica registrada (' + pg.psql(`select nome from private.sessoes_maquina where dispositivo = '${dev}' and ativo limit 1`) + ')');
+    pg.psql(`update public.empresas set maquinas_dono = 1 where id = '${pg.EMP}'; update private.sessoes_maquina set ativo = false where dispositivo = '${dev}';
+      update private.sessoes_maquina set ativo = true where id = (select id from private.sessoes_maquina where empresa_id = '${pg.EMP}' and dispositivo = 'maquina-de-teste-0001' order by criado_em desc limit 1);`);
+    const barrado = await page.evaluate(() => callServer('getCadastros').then(() => '', e => e.message));
+    await page.waitForTimeout(800);
+    const aviso = await page.evaluate(() => (document.getElementById('gutEscolha') || {}).textContent || '');
+    ok(/outra máquina/.test(barrado) && /Acesso aberto em outra máquina/.test(aviso) && /Teste/.test(aviso), 'outra máquina pegou o acesso: esta é barrada e mostra onde está aberto');
+    await page.click('#gmUsar'); await page.waitForTimeout(2500);
+    ok(await page.evaluate(() => GUT_STARTED && GUT_EMPRESA_SLUG === 'gut' && !document.getElementById('gutEscolha')) && pg.psql(`select count(*) from private.sessoes_maquina where empresa_id = '${pg.EMP}' and ativo`) === '1' && pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and ativo`) === '1', '"Usar nesta máquina" volta para o sistema e desconecta a outra');
+    await page.evaluate(() => localStorage.setItem('gut-dispositivo', 'm-outra-maquina-000000000001'));
+    await page.goto('http://app.local/sistema/gut'); await page.waitForTimeout(1500);
+    const nova = await page.evaluate(() => ({ txt: (document.getElementById('gutEscolha') || {}).textContent || '', entrou: GUT_STARTED }));
+    ok(/Acesso aberto em outra máquina/.test(nova.txt) && !nova.entrou, 'entrar numa máquina nova com o limite cheio: pergunta antes (não abre o sistema)');
+    await page.click('#gmUsar'); await page.waitForTimeout(2500);
+    ok(await page.evaluate(() => GUT_STARTED) && pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = '${dev}' and ativo`) === '0', 'confirmando, entra e a máquina anterior sai');
+    await page.evaluate(() => gutSair()); await page.waitForTimeout(800);
+    ok(pg.psql(`select count(*) from private.sessoes_maquina where dispositivo = 'm-outra-maquina-000000000001' and encerrado_motivo = 'saiu'`) === '1', 'Sair libera a máquina');
+    pg.psql(`update public.empresas set maquinas_dono = 3 where id = '${pg.EMP}';`);
     ok(errors.length === 0, 'sem erro de JavaScript ' + errors.join(' | '));
     ok(!API.length, 'nenhuma chamada ao Google em todo o teste');
   } finally { if (browser) await browser.close(); pg.descer(true); }

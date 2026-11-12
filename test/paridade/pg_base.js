@@ -104,6 +104,17 @@ do $g$ declare t text; begin
   for t in select table_name from information_schema.columns where table_schema = 'public' and column_name = 'empresa_id' and table_name not in ('usuarios_empresa') group by table_name loop
     execute format('create policy %I on public.%I for all to authenticated using (empresa_id in (select public.minhas_empresas())) with check (empresa_id in (select public.minhas_empresas()))', t || ': só a própria empresa', t);
   end loop; end $g$;
+-- app de gestão (gut_006/007): só o administrador gerencia; auditoria; procurar usuário por e-mail
+create or replace function private.exige_gerir(p_emp uuid) returns void language plpgsql stable security definer set search_path to '' as $f$
+begin
+  if auth.uid() is null then raise exception 'Entre no sistema primeiro.'; end if;
+  if not private.sou_admin() then raise exception 'Só o administrador da plataforma pode fazer isso.'; end if;
+end $f$;
+create or replace function private.audita(p_emp uuid, p_acao text, p_tabela text, p_id text, p_depois jsonb) returns void language sql security definer set search_path to '' as $f$
+  insert into public.auditoria (empresa_id, id_log, data_hora, id_usuario, acao, tabela, id_registro, dados_antes, dados_depois, observacao)
+  values (p_emp, gen_random_uuid()::text, now(), private.meu_email(), p_acao, p_tabela, p_id, '', p_depois::text, 'app de gestão') $f$;
+create or replace function public.gestao_usuario_por_email(p_email text) returns uuid language sql stable security definer set search_path to '' as $f$
+  select id from auth.users where lower(email) = lower(btrim(p_email)) limit 1 $f$;
 create or replace function private.r2(x numeric) returns numeric language sql immutable as $f$ select round(coalesce(x,0), 2) $f$;
 `;
 

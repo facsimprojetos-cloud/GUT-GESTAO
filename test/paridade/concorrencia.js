@@ -50,7 +50,7 @@ const n = q => Number(pg.psql(q));
     let erro = '';
     erro = (await (await carregarServidor({ uid: '22222222-2222-4222-8222-222222222222' })).pedir('salvarCadastro', ['cor', { COR: 'X' }], { requestId: 'req-estranho-000000001' })).message || '';
     ok(/não tem acesso/.test(erro), 'quem não é da empresa não grava pelo servidor');
-    try { erro = ''; chamarRpc('gut', 'servidor_aplicar', { p_slug: 'gut', p_ops: [{ t: 'empresas', ins: [{ id: 'x' }] }], p_acao: 'salvarCadastro', p_chave: pg.CHAVE_TESTE }); } catch (e) { erro = e.message; }
+    try { erro = ''; chamarRpc('gut', 'servidor_aplicar', { p_slug: 'gut', p_ops: [{ t: 'empresas', ins: [{ id: 'x' }] }], p_acao: 'salvarCadastro', p_chave: pg.CHAVE_TESTE, p_dispositivo: 'maquina-de-teste-0001' }); } catch (e) { erro = e.message; }
     ok(/não permitida/.test(erro), 'nem com a chave do servidor dá para mexer em tabelas de controle (empresas)');
     // 7) a ação que precisa do Google não roda no navegador (a tela manda para a GUT API)
     erro = (await m.api('salvarFotoProduto', [{}], { requestId: 'req-foto-000000000001' })).message || '';

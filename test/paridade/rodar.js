@@ -28,7 +28,12 @@ function chamarRpc(banco, fn, args, uid = pg.USER) {
   return JSON.parse(out.split('\n').pop());
 }
 // caminho do servidor (Edge Function "gut"): motor.js + servidor.mjs, com o banco chamado como o usuário logado
-async function carregarServidor({ banco = 'gut', relogio = null, uid = pg.USER, chave = pg.CHAVE_TESTE, antesDe = null } = {}) {
+async function carregarServidor({ banco = 'gut', relogio = null, uid = pg.USER, chave = pg.CHAVE_TESTE, antesDe = null, dispositivo = 'maquina-de-teste-0001', entrar = true } = {}) {
+  // cada login precisa da máquina liberada (gut_021): a tela chama web_maquina_entrar ao abrir
+  const entrou = new Set();
+  const entrarEm = slug => { if (!entrar || entrou.has(slug)) return; entrou.add(slug);
+    try { chamarRpc(banco, 'web_maquina_entrar', { p_slug: slug, p_dispositivo: dispositivo, p_nome: 'Teste', p_assumir: true }, uid); } catch (e) { /* sem acesso à empresa: os testes de isolamento conferem isso */ } };
+  entrarEm('gut');
   const ctx = vm.createContext({ console, Intl, setTimeout, Promise, TextEncoder, TextDecoder, btoa, atob, Proxy, crypto: require('crypto').webcrypto });
   if (relogio) ctx.Date = dataFalsa(vm.runInContext('Date', ctx), relogio);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'supabase/functions/gut/motor.js'), 'utf8'), ctx, { filename: 'motor.js' });
@@ -39,7 +44,7 @@ async function carregarServidor({ banco = 'gut', relogio = null, uid = pg.USER, 
   const chamar = async (nome, corpo) => { viagens++; if (antesDe) await antesDe(nome, corpo); try { return chamarRpc(banco, nome, corpo, uid); } catch (e) { const err = new Error(e.message); err.code = e.code; throw err; } };
   return {
     M, viagens: () => viagens, zerar: () => { viagens = 0; },
-    pedir: (acao, args, meta, slug = 'gut') => atender(M, { acao, args, meta, slug }, chamar, chave),
+    pedir: (acao, args, meta, slug = 'gut', disp = dispositivo) => (entrarEm(slug), atender(M, { acao, args, meta, slug, dispositivo: disp }, chamar, chave)),
     gravacao: acao => M.gravacao(acao)
   };
 }

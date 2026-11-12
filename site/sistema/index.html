@@ -805,7 +805,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.20.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.21.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1337,10 +1337,11 @@ function serverApi(fn,args,meta){
   const grava=(typeof MUTATION_ACTIONS!=='undefined'&&MUTATION_ACTIONS.includes(fn));
   return gutToken().then(tok=>{
     if(!tok){gutSessaoExpirada();throw new Error('Faça login para continuar.')}
-    return fetch(GUT_FN_URL,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok,apikey:GUT_PUB_KEY},body:JSON.stringify({acao:fn,args:args||[],meta:meta||{},slug:GUT_EMPRESA_SLUG})})
+    return fetch(GUT_FN_URL,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok,apikey:GUT_PUB_KEY},body:JSON.stringify({acao:fn,args:args||[],meta:meta||{},slug:GUT_EMPRESA_SLUG,dispositivo:gutDispositivo()})})
       .then(async r=>{
         const j=await r.json().catch(()=>null);
         if(r.status===401||(j&&j.__error&&j.auth)){gutSessaoExpirada();return {__error:true,retryable:false,message:(j&&j.message)||'Sua sessão expirou. Entre novamente.'}}
+        if(j&&j.__error&&j.maquina){gutMaquinaPerdida();return j}
         if(!j||(!r.ok&&!j.__error))throw new Error('O servidor respondeu '+r.status+'.');
         return j;
       });
@@ -1373,10 +1374,11 @@ function gutWebLogin(msg){
   }
   ov.style.display='grid';const er=document.getElementById('gwErr');if(er)er.textContent=msg&&!/^Entre no sistema/.test(msg)?msg:'';setTimeout(()=>{const f=document.getElementById('gwEm');if(f&&!f.value)f.focus();else{const p=document.getElementById('gwPw');if(p)p.focus()}},50);
 }
-async function gutSair(){try{await GUT_SB.auth.signOut()}catch(e){}location.reload()}
+async function gutSair(){try{if(GUT_EMPRESA_SLUG)await GUT_SB.rpc('web_maquina_sair',{p_slug:GUT_EMPRESA_SLUG,p_dispositivo:gutDispositivo()})}catch(e){}try{await GUT_SB.auth.signOut()}catch(e){}location.reload()}
 function gutWebExtras(){if(!GUT_WEB)return;const tb=document.querySelector('.topbar');
   if(tb&&GUT_EMPRESA&&!document.getElementById('gwEmpresa')){const c=document.createElement('button');c.id='gwEmpresa';c.className='btn btn-secondary';c.type='button';c.textContent='🏢 '+GUT_EMPRESA.nome;
     const varias=((GUT_EU&&GUT_EU.empresas)||[]).length>1;c.title=varias?'Trocar de empresa':'Empresa';if(varias)c.onclick=()=>{location.href=gutBaseSistema()+'?escolher=1'};else c.style.cursor='default';tb.appendChild(c)}
+  if(tb&&GUT_EU&&GUT_EU.admin&&!document.getElementById('gwGestao')){const g=document.createElement('a');g.id='gwGestao';g.className='btn btn-secondary';g.href='/';g.target='_blank';g.rel='noopener';g.textContent='⚙️ Gestão';g.title='Empresas, acessos e máquinas (administrador)';tb.appendChild(g)}
   if(tb&&!document.getElementById('gwSair')){const b=document.createElement('button');b.id='gwSair';b.className='btn btn-secondary';b.type='button';b.textContent='Sair';b.title='Sair do sistema';b.onclick=gutSair;tb.appendChild(b)}}
 function gutBoot(){if(!GUT_WEB){GUT_STARTED=true;return startShell()}
   if(!GUT_SB){document.body.innerHTML='<p style="font-family:sans-serif;padding:24px">Não foi possível carregar o login. Verifique a internet e recarregue a página.</p>';return}
@@ -1400,6 +1402,48 @@ function gutTelaEmpresa(titulo,texto,lista){
     '<div style="text-align:center;margin-top:16px"><button onclick="gutSair()" style="border:0;background:none;color:#4f46e5;font-weight:600;cursor:pointer">Sair</button></div></div>';
   ov.style.display='grid';
 }
+// ===== v4.21.0: máquinas — o mesmo acesso em outra máquina. Cada navegador tem um código (gut-dispositivo); a empresa
+// define em quantas máquinas o mesmo login pode ficar aberto. Ao passar do limite, a pessoa escolhe "usar nesta máquina"
+// e a mais antiga é desconectada (o servidor barra a antiga no próximo clique). =====
+function gutDispositivo(){let d='';try{d=localStorage.getItem('gut-dispositivo')||''}catch(e){}
+  if(d.length<16){d='m-'+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2));try{localStorage.setItem('gut-dispositivo',d)}catch(e){}}
+  return d}
+function gutNomeMaquina(){const u=navigator.userAgent||'';
+  const so=/Android/i.test(u)?'Android':/iPhone|iPad/i.test(u)?'iPhone/iPad':/Windows/i.test(u)?'Windows':/Mac OS/i.test(u)?'Mac':/CrOS/i.test(u)?'Chromebook':/Linux/i.test(u)?'Linux':'Computador';
+  const nav=/Edg\//.test(u)?'Edge':/OPR\//.test(u)?'Opera':/Firefox\//.test(u)?'Firefox':/Chrome\//.test(u)?'Chrome':/Safari\//.test(u)?'Safari':'navegador';
+  return (/Mobi|Android|iPhone/i.test(u)&&!/Android|iPhone|iPad/i.test(so)?'Celular ':'')+so+' • '+nav}
+async function gutMaquinaEntrar(slug,assumir){
+  try{const {data,error}=await GUT_SB.rpc('web_maquina_entrar',{p_slug:slug,p_dispositivo:gutDispositivo(),p_nome:gutNomeMaquina(),p_assumir:!!assumir});
+    if(error)return {erro:error.message};return data||{ok:true}}catch(e){return {erro:String(e.message||e)}}}
+function gutQuando(t){if(!t)return '';const d=new Date(t),m=Math.round((Date.now()-d)/60000);
+  return m<2?'agora há pouco':m<60?'há '+m+' min':m<1440?'há '+Math.round(m/60)+' h':d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+function gutTelaMaquina(emp,maq){
+  let ov=document.getElementById('gutEscolha');if(!ov){ov=document.createElement('div');ov.id='gutEscolha';ov.setAttribute('style','position:fixed;inset:0;z-index:9998;display:grid;place-items:center;padding:16px;background:#f4f6fb;font-family:Inter,system-ui,sans-serif');document.body.appendChild(ov)}
+  const lim=maq.limite||1,lista=(maq.em_uso||[]);
+  ov.innerHTML='<div style="width:100%;max-width:460px;background:#fff;border:1px solid rgba(15,23,42,.08);border-radius:24px;padding:26px 22px;box-shadow:0 18px 40px -16px rgba(30,27,75,.28)">'+
+    '<div style="font-size:21px;font-weight:800;color:#1e1b4b">💻 Acesso aberto em outra máquina</div>'+
+    '<p style="color:#6b7a90;margin:8px 0 0">O seu acesso à <b>'+esc(emp.nome)+'</b> pode ficar aberto em '+(lim===1?'1 máquina':lim+' máquinas')+' ao mesmo tempo. Agora ele está em:</p>'+
+    '<div style="display:grid;gap:8px;margin-top:12px">'+lista.map(m=>'<div style="display:flex;justify-content:space-between;gap:10px;padding:11px 14px;border:1px solid rgba(15,23,42,.12);border-radius:12px"><b style="color:#1e1b4b">'+esc(m.nome||'Máquina')+'</b><span style="color:#6b7a90;font-size:13px">usado '+esc(gutQuando(m.ultimo_uso))+'</span></div>').join('')+'</div>'+
+    '<p style="color:#6b7a90;font-size:13px;margin:12px 0 0">Se continuar aqui, '+(lista.length>1?'a máquina usada há mais tempo será desconectada':'a outra máquina será desconectada')+' e vai pedir para entrar de novo.</p>'+
+    '<div id="gmErr" style="color:#dc2626;font-weight:600;font-size:14px;min-height:18px;margin-top:8px"></div>'+
+    '<button id="gmUsar" style="width:100%;margin-top:4px;padding:14px;border:0;border-radius:12px;color:#fff;font-weight:700;font-size:15px;background:linear-gradient(135deg,#4f46e5,#7c3aed);cursor:pointer">Usar nesta máquina</button>'+
+    '<div style="text-align:center;margin-top:10px"><button onclick="gutSair()" style="border:0;background:none;color:#4f46e5;font-weight:600;cursor:pointer">Agora não (sair)</button></div></div>';
+  ov.style.display='grid';
+  document.getElementById('gmUsar').onclick=async()=>{const b=document.getElementById('gmUsar');b.disabled=true;b.textContent='Liberando…';
+    const r=await gutMaquinaEntrar(emp.slug,true);
+    if(r&&r.ok){if(GUT_STARTED)location.reload();else{ov.remove();gutEntrar()}}
+    else{b.disabled=false;b.textContent='Usar nesta máquina';document.getElementById('gmErr').textContent=(r&&r.erro)||'Não foi possível liberar esta máquina.'}};
+}
+// a máquina foi desconectada (outra entrou ou o administrador desconectou): mostra a escolha por cima da tela
+let GUT_MAQ_AVISO=false;
+async function gutMaquinaPerdida(){if(GUT_MAQ_AVISO||!GUT_EMPRESA)return;GUT_MAQ_AVISO=true;
+  const r=await gutMaquinaEntrar(GUT_EMPRESA.slug,false);
+  if(r&&r.ok){GUT_MAQ_AVISO=false;return}          // havia vaga: esta máquina voltou sozinha
+  if(r&&r.erro){GUT_MAQ_AVISO=false;return gutTelaEmpresa(GUT_EMPRESA.nome,r.erro,[])}
+  gutTelaMaquina(GUT_EMPRESA,r)}
+// confere de tempos em tempos (as telas que só leem, como os quadros, também param se a máquina for desconectada)
+function gutMaquinaVigia(){if(window.__gutVigia)return;window.__gutVigia=setInterval(()=>{if(document.hidden||!GUT_EMPRESA||GUT_MAQ_AVISO)return;
+  GUT_SB.rpc('web_maquina_entrar',{p_slug:GUT_EMPRESA.slug,p_dispositivo:gutDispositivo(),p_nome:gutNomeMaquina(),p_assumir:false}).then(({data})=>{if(data&&data.ok===false)gutMaquinaPerdida()}).catch(()=>{})},180000)}
 async function gutEntrar(){
   let eu;try{const {data,error}=await GUT_SB.rpc('gestao_eu');if(error)throw new Error(error.message);eu=data}catch(e){return gutWebLogin(/login|entre no sistema|JWT/i.test(e.message)?'Entre novamente.':e.message)}
   GUT_EU=eu;const lista=(eu&&eu.empresas)||[],pedido=gutSlugDaUrl();
@@ -1410,7 +1454,11 @@ async function gutEntrar(){
   if(pedido&&!emp)return gutTelaEmpresa('Empresa não encontrada','Você não tem acesso à empresa "'+pedido+'". Escolha uma das suas:',lista);
   if(!emp)return gutTelaEmpresa('Escolha a empresa','Você tem acesso a mais de uma empresa.',lista);
   if(/SUSPENSA|CANCELADA/.test(String(emp.status||'').toUpperCase()))return gutTelaEmpresa(emp.nome,'O acesso desta empresa está '+String(emp.status).toLowerCase()+'. Fale com o suporte do GUT PPCP.',lista.length>1?lista.filter(e=>e.slug!==emp.slug):[]);
+  const maq=await gutMaquinaEntrar(emp.slug,false);
+  if(maq&&maq.erro)return gutTelaEmpresa(emp.nome,maq.erro,[]);
+  if(maq&&maq.ok===false)return gutTelaMaquina(emp,maq);
   GUT_EMPRESA=emp;GUT_EMPRESA_SLUG=emp.slug;try{localStorage.setItem('gut-empresa',emp.slug)}catch(e){}
+  gutMaquinaVigia();
   const bonito=gutBaseSistema()+encodeURIComponent(emp.slug);if(location.pathname!==bonito||location.search)try{history.replaceState(null,'',bonito+location.hash)}catch(e){}
   const ov=document.getElementById('gutEscolha');if(ov)ov.remove();
   document.title=emp.nome+' • GUT PPCP';gutAplicarPermissoes();

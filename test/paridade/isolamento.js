@@ -59,6 +59,33 @@ const sqlErro = q => { try { pg.psql(q); return ''; } catch (e) { return e.messa
     ok(pg.psql(`select count(*) from cad_cores where cor in ('DIRETO','SEM CHAVE','INVASORA','X')`) === '0', 'nada do que foi recusado chegou ao banco');
     ok(pg.comoUsuario && pg.psql(pg.comoUsuario(`select count(*) from public.cad_cores;`)).split('\n').pop() === '1', 'leitura direta (RLS) continua só da própria empresa');
 
+    // máquinas (gut_021): o mesmo login em outra máquina — limite por empresa; entrar numa nova desconecta a mais antiga
+    const rpcU = (fn, a, uid = pg.USER) => chamarRpc('gut', fn, a, uid);
+    const DISP_B = 'maquina-de-teste-0002', DISP_C = 'maquina-de-teste-0003';
+    pg.psql(`update public.empresas set maquinas_dono = 1, maquinas_por_usuario = 1 where id = '${pg.EMP}';`);
+    const semEntrar = await carregarServidor({ dispositivo: DISP_B, entrar: false });
+    const rM = await semEntrar.pedir('getCadastros', [], {});
+    ok(rM.__error && rM.maquina && /outra máquina/.test(rM.message), 'máquina que não entrou é barrada pelo servidor (aviso de outra máquina)');
+    const tenta = rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_B, p_nome: 'Notebook', p_assumir: false });
+    ok(tenta.ok === false && tenta.limite === 1 && tenta.em_uso.length === 1 && tenta.em_uso[0].nome === 'Teste', 'com o limite cheio, a segunda máquina vê onde o acesso está aberto');
+    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_B, p_nome: 'Notebook', p_assumir: true }).ok, '"usar nesta máquina" libera a nova');
+    ok(!(await semEntrar.pedir('getCadastros', [], {})).__error, 'a nova máquina passa a funcionar');
+    const velha = await carla.pedir('getCadastros', [], {}, 'gut', 'maquina-de-teste-0001');
+    ok(velha.__error && velha.maquina, 'a máquina antiga foi desconectada');
+    pg.psql(`update public.empresas set maquinas_dono = 2 where id = '${pg.EMP}';`);
+    ok(rpcU('web_maquina_entrar', { p_slug: 'gut', p_dispositivo: DISP_C, p_nome: 'Celular', p_assumir: false }).ok, 'com limite 2, a segunda máquina entra sem derrubar ninguém');
+    ok(!(await semEntrar.pedir('getCadastros', [], {})).__error, 'e a primeira continua funcionando');
+    ok(rpcU('web_maquina_sair', { p_slug: 'gut', p_dispositivo: DISP_C }).ok && (await carla.pedir('getCadastros', [], {}, 'gut', DISP_C)).maquina, 'sair libera a vaga e a máquina deixa de funcionar');
+    ok(/permission denied/.test(sqlErro(pg.comoUsuario(`select count(*) from private.sessoes_maquina;`))), 'o navegador não vê a lista de máquinas direto');
+    ok(/administrador/.test(sqlErro(pg.comoUsuario(`select public.gestao_maquinas('${pg.EMP}');`))), 'só o administrador lista e desconecta máquinas no app de gestão');
+    // limite de acessos da empresa e vincular usuário só pelo servidor (correção de segurança)
+    ok(/permission denied/.test(sqlErro(pg.comoUsuario(`select public.gestao_vincular('${EMP2}', '${pg.USER}', 'carla@gut.com', 'Carla', 'DONO', '{}');`))), 'ninguém logado consegue se vincular a outra empresa (só o servidor de convites)');
+    pg.psql(`update public.empresas set limite_usuarios = 1 where id = '${EMP2}';`);
+    ok(/1 acessos do plano/.test(sqlErro(`select public.gestao_vincular('${EMP2}', '${U3}', 'oper@gut.com', 'Oper', 'OPERADOR', '{}');`)), 'empresa com limite de 1 acesso não aceita o segundo');
+    pg.psql(`update public.empresas set limite_usuarios = 2 where id = '${EMP2}';`);
+    ok(!sqlErro(`select public.gestao_vincular('${EMP2}', '${U3}', 'oper@gut.com', 'Oper', 'OPERADOR', '{}');`), 'com limite 2, o segundo acesso entra');
+    pg.psql(`delete from public.usuarios_empresa where user_id = '${U3}' and empresa_id = '${EMP2}'; update public.empresas set limite_usuarios = null where id = '${EMP2}';`);
+
     // empresa suspensa: fica fora do sistema (regra atual do web_empresa; "só consulta" é decisão da etapa C)
     pg.psql(`update public.empresas set status = 'SUSPENSA' where id = '${EMP2}';`);
     ok(/suspensa/.test(await erroDe(bruno.pedir('salvarCadastro', ['cor', { COR: 'NOVA' }], { requestId: rid() }, 'dois'))), 'empresa suspensa não grava');
