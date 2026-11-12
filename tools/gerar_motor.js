@@ -17,13 +17,11 @@ const SRC = ['apps-script/principal/Code.gs', 'apps-script/principal/Supabase.gs
 const OUT = path.join(ROOT, 'site/sistema/gut-motor.js');
 const SHIM = path.join(__dirname, 'gut-motor-shim.js');
 
-// Ações de leitura que o navegador passa a resolver sozinho (fase 1).
-const ACOES = require('./motor_acoes.json');
+// Ações que continuam na GUT API porque usam serviços do Google (fotos no Drive, OpenAI pelo UrlFetchApp).
+const GOOGLE_ACOES = require('./motor_google.json');
 
-// Funções que nunca podem entrar (gravam, falam com o Google ou com a GUT API). Se alguma for puxada,
-// o gerador para — sinal de que uma leitura grava algo e precisa ser tratada à parte.
-const PROIBIDAS = ['commitTransaction_', 'supaAplicar_', 'appendObject_', 'appendObjects_', 'updateRowsByNumber_', 'deleteRowsByNumber_',
-  'stageOperation_', 'withLock_', 'apiCall', 'instalarAtualizacao', 'migrarParaSupabase', 'backupSupabaseParaPlanilha'];
+// Rotinas de manutenção do editor do Apps Script: nunca entram no navegador.
+const PROIBIDAS = ['instalarAtualizacao', 'migrarParaSupabase', 'continuarMigracaoSupabase', 'backupSupabaseParaPlanilha', 'instalarBackupDiario', 'ativarSupabase', 'voltarParaPlanilha'];
 // Funções que existem no Code.gs mas são trocadas por versões do shim (no navegador não há planilha nem Drive).
 const TROCADAS = require('./motor_trocadas.json');
 // Tabelas que cada ação lê (medido pela paridade: test/paridade/rodar.js grava este arquivo). Baixadas numa viagem só.
@@ -62,11 +60,8 @@ function build() {
   const add = (n, de) => { if (!want.has(n) && byName.has(n) && !TROCADAS.includes(n)) { want.add(n); queue.push(n); pai.set(n, de || '(entrada)'); } };
   // identificadores do código, sem textos entre aspas e sem comentários (mensagens citam nomes de funções)
   const semTexto = s => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g, "''").replace(/\/\/[^\n]*/g, ' ');
-  // entradas: as Impl_ das ações + o que o motor chama diretamente
-  ACOES.forEach(a => add(a.impl));
-  ['serialize_', 'finalizeResponse_', 'resetRequestState_', 'supaBegin_', 'supaResetRequest_', 'routes_'].forEach(add);
-  // routes_ referencia todas as Impl_ — não seguir por ela
-  want.delete('routes_'); queue.splice(queue.indexOf('routes_'), 1);
+  // entrada: o apiCall (o mesmo que a GUT API roda) e tudo o que ele alcança pelas rotas
+  ['apiCall', 'routes_', 'mutationActions_'].forEach(n => add(n));
   while (queue.length) {
     const n = queue.shift();
     byName.get(n).forEach(c => (semTexto(c.src).match(ident) || []).forEach(x => add(x, n)));
@@ -87,18 +82,15 @@ function main() {
   if (process.argv.includes('--listar')) { console.log([...want].sort().join('\n')); console.log('\n' + want.size + ' nomes, ' + sel.length + ' blocos'); return; }
   const shim = fs.readFileSync(SHIM, 'utf8');
   const corpo = sel.map(c => '// ' + c.file.split('/').pop() + ':' + c.line + '\n' + c.src).join('\n');
-  const acoes = JSON.stringify(Object.fromEntries(ACOES.map(a => [a.acao, a.impl])));
-  const out = `/* GUT PPCP — motor de leituras do sistema web. ARQUIVO GERADO por tools/gerar_motor.js a partir do Apps Script.
+  const out = `/* GUT PPCP — motor do sistema web (leituras e gravações). ARQUIVO GERADO por tools/gerar_motor.js a partir do Apps Script.
    Não edite à mão: mude o Code.gs e gere de novo. */
 window.GUT_MOTOR = (function () {
 ${shim}
 // ======================= código do Apps Script (somente leituras) =======================
 ${corpo}
 // ======================= fim do código do Apps Script =======================
-const ACOES = ${acoes};
 __MOTOR.tabelas = ${JSON.stringify(TABELAS)};
-const IMPL = { ${ACOES.map(a => a.impl + ': ' + a.impl).join(', ')} };
-return motorPublico_(ACOES, IMPL);
+return motorPublico_(${JSON.stringify(GOOGLE_ACOES)});
 })();
 `;
   // trava de segurança: o arquivo vai para o ar (GitHub Pages) — nada de token do servidor, chave secreta ou senha

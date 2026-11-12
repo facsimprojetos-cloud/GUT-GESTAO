@@ -5,7 +5,7 @@
 process.env.TZ = 'America/Sao_Paulo';
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
-const pg = require('./pg_base'), criarGas = require('./gas_sim'), { cenario } = require('./rodar');
+const pg = require('./pg_base'), criarGas = require('./gas_sim'), { cenario, executorA } = require('./rodar'), { criarRelogio } = require('./relogio');
 const ROOT = path.join(__dirname, '..', '..');
 const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '  ✓ ' : '  ✗ ') + m); };
 const E = pg.EMP;
@@ -36,7 +36,7 @@ insert into apontamentos_producao(empresa_id,id_apontamento,data_hora,data_produ
   await pg.subir();
   let browser;
   try {
-    const gas = criarGas(pg); cenario(gas); cenarioTv();
+    const gas = criarGas(pg); await cenario(executorA(gas, criarRelogio(Date.now() - 3600000), [])); cenarioTv();
     // 1) a função no banco
     const d = pg.psql(pg.comoUsuario(`select public.web_paineis_tv('gut','${ontem}','${hoje}')::text;`)).split('\n').pop();
     const D = JSON.parse(d), tv = D.apontamentos.filter(a => /^[YH]\d$/.test(a.id));

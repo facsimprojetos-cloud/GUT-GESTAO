@@ -15,7 +15,7 @@ const bytes = buf => Array.from(buf).map(b => (b > 127 ? b - 256 : b));
 const buf = arr => Buffer.from(arr.map(b => (b < 0 ? b + 256 : b)));
 function blob(b) { return { getBytes: () => bytes(b), getDataAsString: () => b.toString('utf8'), _b: b }; }
 
-function criar(pg, { email = 'carla@gut.com' } = {}) {
+function criar(pg, { email = 'carla@gut.com', banco = 'gut', relogio = null } = {}) {
   const props = { GUT_STORAGE: 'SUPABASE' };
   const chamadas = [];
   const sqlLit = (v, tag = 'gutj') => `$${tag}$${v}$${tag}$`;
@@ -27,7 +27,7 @@ function criar(pg, { email = 'carla@gut.com' } = {}) {
       if (v === null || v === undefined) return `${k} => null`;
       return `${k} => ${sqlLit(String(v))}`;
     });
-    return pg.psql(`select coalesce(public.${fn}(${args.join(', ')})::text, 'null');`);
+    return pg.psql(`select coalesce(public.${fn}(${args.join(', ')})::text, 'null');`, { banco });
   }
   const Utilities = {
     formatDate(d, tz, pat) {
@@ -39,7 +39,7 @@ function criar(pg, { email = 'carla@gut.com' } = {}) {
       // no Apps Script o fuso do projeto é o mesmo de CFG.TZ, e o Node aqui roda em America/Sao_Paulo
       return new ctx.Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)); // Date do próprio Apps Script
     },
-    getUuid: () => crypto.randomUUID(),
+    getUuid: () => (relogio ? relogio.uuid() : crypto.randomUUID()),
     DigestAlgorithm: { SHA_256: 'sha256', MD5: 'md5', SHA_1: 'sha1' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (alg, s) => bytes(crypto.createHash(alg).update(typeof s === 'string' ? Buffer.from(s, 'utf8') : buf(s)).digest()),
     computeHmacSha256Signature: (v, k) => bytes(crypto.createHmac('sha256', k).update(v).digest()),
@@ -70,6 +70,7 @@ function criar(pg, { email = 'carla@gut.com' } = {}) {
   };
   vm.createContext(ctx);
   ctx.Date = vm.runInContext('Date', ctx);
+  if (relogio) ctx.Date = require('./relogio').dataFalsa(ctx.Date, relogio);
   const src = ['apps-script/principal/Code.gs', 'apps-script/principal/Supabase.gs'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
   vm.runInContext(src + '\n;this.__api = apiCall; this.__chamar = function(n, a){ return this[n].apply(null, a); };', ctx, { filename: 'Code.gs' });
 

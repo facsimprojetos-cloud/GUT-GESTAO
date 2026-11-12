@@ -805,7 +805,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.16.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.17.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1328,6 +1328,13 @@ let GUT_STARTED=false;
 async function gutToken(){try{const {data}=await GUT_SB.auth.getSession();return data&&data.session?data.session.access_token:''}catch(e){return ''}}
 function serverApi(fn,args,meta){
   if(!GUT_WEB)return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej).apiCall(fn,args,meta));
+  // v4.17.0: tudo roda no navegador direto no Supabase; a GUT API só entra se o motor não conseguir nem começar
+  // (nesse caso nada foi gravado) ou para as ações que ainda dependem do Google.
+  if(GUT_MOTOR_ON&&!WEBQ.skip)return gutMotor().then(m=>{if(!m.tem(fn))return serverApiGoogle(fn,args,meta);return m.api(fn,JSON.parse(JSON.stringify(args||[])),meta)})
+    .catch(e=>{console.warn('[GUT] O sistema no navegador não conseguiu rodar '+fn+'; usando a GUT API:',e);return serverApiGoogle(fn,args,meta)});
+  return serverApiGoogle(fn,args,meta);
+}
+function serverApiGoogle(fn,args,meta){
   if(!GUT_API_URL||GUT_API_URL.indexOf('__')===0)return Promise.reject(new Error('Endereço da GUT API não configurado.'));
   return gutToken().then(token=>fetch(GUT_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:fn,args:args,meta:meta,token:token}),redirect:'follow'}))
     .then(r=>{if(!r.ok)throw new Error('O servidor respondeu '+r.status+'. Tente de novo.');return r.json()})
@@ -1516,22 +1523,21 @@ async function wqCorteExclusao(fn,id,token){
   return {ok:true,mensagem:'Exclusão concluída.',resultado:data};
 }
 const WEBQ_FAST={getInternalProductionBoard:wqQuadroInterno,getRemessasExternas:wqRemessasExternas};
-// ===== v4.15.0 (fase 1 do "tudo no Supabase"): leituras direto do banco =====
-// As telas que pediam dados para a GUT API (abrir o sistema, cadastros, estoque, volumes, remessas, financeiro,
-// dashboard...) agora montam a mesma resposta aqui no navegador: gut-motor.js é o próprio código de leitura do
-// Apps Script (gerado por tools/gerar_motor.js) e lê as tabelas numa viagem só (RPC web_ler).
-// Se algo falhar, a chamada volta para a GUT API sozinha. Desligar: localStorage 'gut-motor' = 'off' ou ?motor=0.
+// ===== v4.17.0 ("tudo no Supabase", fases 1 a 5): o sistema roda no navegador, direto no banco =====
+// gut-motor.js é o código de regras do sistema (gerado do Code.gs por tools/gerar_motor.js). Cada ação — leitura ou
+// gravação — roda aqui: lê as tabelas numa viagem (RPC web_ler) e grava tudo numa transação só (RPC web_aplicar,
+// com trava contra dois usuários mexendo no mesmo registro). Fotos vão para o Supabase Storage.
+// Se o motor não conseguir nem começar, a chamada volta para a GUT API. Desligar: localStorage 'gut-motor' = 'off' ou ?motor=0.
 const GUT_MOTOR_ON=GUT_WEB&&!/[?&]motor=0\b/.test(location.search)&&(()=>{try{return localStorage.getItem('gut-motor')!=='off'}catch(e){return true}})();
 let GUT_MOTOR_P=null;
 function gutMotor(){
   if(GUT_MOTOR_P)return GUT_MOTOR_P;
-  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.15.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor de leituras.'));document.head.appendChild(sc)})
+  GUT_MOTOR_P=new Promise((res,rej)=>{if(window.GUT_MOTOR)return res(window.GUT_MOTOR);const sc=document.createElement('script');sc.src='gut-motor.js?v=4.17.0';sc.onload=()=>window.GUT_MOTOR?res(window.GUT_MOTOR):rej(new Error('motor vazio'));sc.onerror=()=>rej(new Error('Não foi possível carregar o motor do sistema.'));document.head.appendChild(sc)})
     .then(m=>GUT_SB.auth.getSession().then(({data})=>{m.configurar({slug:GUT_EMPRESA_SLUG,email:(data&&data.session&&data.session.user&&data.session.user.email)||'',
-      rpc:async(fn,args)=>{const {data:r,error}=await GUT_SB.rpc(fn,args);if(error)throw new Error(error.message||'Falha ao ler o banco.');return r}});return m}))
+      rpc:async(fn,args)=>{const {data:r,error}=await GUT_SB.rpc(fn,args);if(error){const e=new Error(error.message||'Falha ao falar com o banco.');e.code=error.code||'';throw e}return r}});return m}))
     .catch(e=>{GUT_MOTOR_P=null;throw e});
   return GUT_MOTOR_P;
 }
-const GUT_MOTOR_ACOES=['getBootstrapData','getInitialData','getOperationalData','getCadastros','getCorte','getDashboard','getFinanceiroFaccao','getFluxoEstoque','getInternalProductionPerformance','getRemessasExternas','getRemessasInternas','getEstoqueMateriais','getComprasRecentes','getCortesProgramados','getEstoqueCorte','getSeparacoesVolume','getPrecosFaccao','getVolumes','getCuponsVolume','getScanCatalog','getExternalScanCatalog','previewTempoPadraoMarcacao','prepararRomaneioRemessa','prepararRomaneioInterno'];
 function gutMotorLer(fn,args){
   const meta={fluxoDias:STATE.fluxoDias};
   return gutMotor().then(m=>m.executar(fn,JSON.parse(JSON.stringify(args||[])),meta)).then(r=>{applyListDelta(r,{});return r});
@@ -1547,7 +1553,7 @@ async function gutParidade(acoes){
     if(ta==='number'&&Math.abs(a-b)<1e-9)return o;if(typeof a==='string'&&ISO.test(a)&&ISO.test(b)&&Math.abs(Date.parse(a)-Date.parse(b))<=5000)return o;if(a!==b)o.push(c+': '+JSON.stringify(a)+' × '+JSON.stringify(b));return o};
   for(const [fn,args] of lista){
     let a,b,t1,t2;const i0=performance.now();
-    try{a=await serverApi(fn,args,{forceFresh:true,fluxoDias:STATE.fluxoDias})}catch(e){a={__error:true,message:e.message}}t1=performance.now()-i0;
+    try{a=await serverApiGoogle(fn,args,{forceFresh:true,fluxoDias:STATE.fluxoDias})}catch(e){a={__error:true,message:e.message}}t1=performance.now()-i0;
     const i1=performance.now();try{b=await gutMotorLer(fn,args)}catch(e){b={__error:true,message:e.message}}t2=performance.now()-i1;
     a=JSON.parse(JSON.stringify(a||null));b=JSON.parse(JSON.stringify(b||null));const d=dif(a,b,'',[]);
     out.push({ação:fn,igual:d.length?'NÃO':'sim',diferenças:d.slice(0,3).join(' | '),'GUT API (ms)':Math.round(t1),'banco (ms)':Math.round(t2)});
@@ -1555,6 +1561,57 @@ async function gutParidade(acoes){
   console.table(out);return out;
 }
 window.gutParidade=gutParidade;
+// ===== v4.17.0: fotos dos produtos no Supabase Storage (bucket "produtos", pasta da empresa) =====
+// CAD_PRODUTOS.FOTO_* guarda 'sb:<caminho>'. Foto antiga (id do Google Drive) é buscada uma vez pela GUT API
+// e copiada para o Storage na hora — depois disso não depende mais do Google.
+const GUT_FOTO_ACOES=['salvarFotoProduto','removerFotoProduto','getFotosProduto'];
+let GUT_EMP_ID=null;
+async function gutEmpresaId(){if(GUT_EMP_ID)return GUT_EMP_ID;const {data,error}=await GUT_SB.rpc('web_empresa_id',{p_slug:GUT_EMPRESA_SLUG});if(error||!data)throw new Error((error&&error.message)||'Empresa não encontrada.');return (GUT_EMP_ID=String(data))}
+function gutDataUrlBlob(u){const m=String(u||'').match(/^data:([^;,]+)?(;base64)?,(.*)$/);if(!m)throw new Error('Imagem inválida.');const bin=atob(m[3]),a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:m[1]||'image/jpeg'})}
+function gutBlobDataUrl(b){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(new Error('Não foi possível ler a foto.'));fr.readAsDataURL(b)})}
+async function gutFotoGravar(idProduto,lado,dataUrl){
+  const emp=await gutEmpresaId(),blob=gutDataUrlBlob(dataUrl);
+  if(blob.size>5*1024*1024)throw new Error('Imagem muito grande. Use uma foto menor que 5 MB.');
+  const ext=blob.type==='image/png'?'png':blob.type==='image/webp'?'webp':'jpg',caminho=`${emp}/${idProduto}/${String(lado).toLowerCase()}-${Date.now()}.${ext}`;
+  const up=await GUT_SB.storage.from('produtos').upload(caminho,blob,{contentType:blob.type,upsert:false});if(up.error)throw new Error('Não foi possível enviar a foto: '+up.error.message);
+  const {data,error}=await GUT_SB.rpc('web_foto_produto',{p_slug:GUT_EMPRESA_SLUG,p_id_produto:String(idProduto),p_lado:lado,p_valor:'sb:'+caminho});
+  if(error){await GUT_SB.storage.from('produtos').remove([caminho]);throw new Error(error.message)}
+  if(data&&/^sb:/.test(data.antigo||''))GUT_SB.storage.from('produtos').remove([data.antigo.slice(3)]).catch(()=>{});
+  return 'sb:'+caminho;
+}
+async function gutFotos(fn,p){
+  p=p||{};
+  if(fn==='salvarFotoProduto'){
+    const lado=String(p.LADO||'').toUpperCase();if(!FOTO_COL[lado])throw new Error('Lado da foto inválido (use FRENTE ou COSTAS).');
+    if(!p.BASE64)throw new Error('Imagem vazia.');
+    const id=await gutFotoGravar(p.ID_PRODUTO,lado,/^data:/.test(p.BASE64)?p.BASE64:'data:'+(p.MIME||'image/jpeg')+';base64,'+p.BASE64);
+    return {ok:true,LADO:lado,FILE_ID:id,cadastros:await callServer('getCadastros')};
+  }
+  if(fn==='removerFotoProduto'){
+    const lado=String(p.LADO||'').toUpperCase();
+    const {data,error}=await GUT_SB.rpc('web_foto_produto',{p_slug:GUT_EMPRESA_SLUG,p_id_produto:String(p.ID_PRODUTO||''),p_lado:lado,p_valor:''});
+    if(error)throw new Error(error.message);
+    if(data&&/^sb:/.test(data.antigo||''))GUT_SB.storage.from('produtos').remove([data.antigo.slice(3)]).catch(()=>{});
+    return {ok:true,cadastros:await callServer('getCadastros')};
+  }
+  // getFotosProduto(idProduto)
+  const id=String(p),prod=prodRec(id)||((await callServer('getCadastros')).produtos||[]).find(x=>String(x.ID_PRODUTO)===id);
+  if(!prod)throw new Error('Produto não encontrado.');
+  const fotos={};let drive=null;
+  for(const lado of Object.keys(FOTO_COL)){
+    const v=String(prod[FOTO_COL[lado]]||'');if(!v)continue;
+    try{
+      if(/^sb:/.test(v)){const {data,error}=await GUT_SB.storage.from('produtos').download(v.slice(3));if(error)throw error;fotos[lado]=await gutBlobDataUrl(data)}
+      else{ // foto antiga no Drive: pega pela GUT API e já copia para o Storage
+        if(!drive)drive=await serverApiGoogle('getFotosProduto',[id],{});
+        fotos[lado]=(drive&&drive.fotos&&drive.fotos[lado])||'';
+        if(fotos[lado])gutFotoGravar(id,lado,fotos[lado]).then(nv=>{fotoCache()[nv]=fotos[lado];const r=prodRec(id);if(r)r[FOTO_COL[lado]]=nv}).catch(e=>console.warn('[GUT] cópia da foto para o Storage',e));
+      }
+    }catch(e){console.warn('[GUT] foto',lado,e);fotos[lado]=''}
+  }
+  return {ok:true,ID_PRODUTO:id,fotos};
+}
+
 // ao vivo: o banco avisa no canal da empresa a cada gravação (app de campo, outro computador ou este)
 const WQ_TAB_INTERNO=['cupons_producao','volumes','remessas','remessa_itens'],WQ_TAB_FACCAO=['remessas','remessa_itens','faccao_avisos','retornos_externos','volumes'];
 function wqAoVivo(emp){
@@ -4062,7 +4119,7 @@ function fotoSlotHtml(f,lado){const p=f.id?prodRec(f.id):null,fid=p?.[FOTO_COL[l
 function pickFoto(lado){const f=STATE.ficha;if(!f?.id)return toast('Salve a ficha antes de colocar fotos.',true);const i=document.createElement('input');i.type='file';i.accept='image/'+'*';i.onchange=()=>{const file=i.files?.[0];if(file)uploadFoto(lado,file)};i.click()}
 function resizeImage(file,max=1400,q=.82){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=()=>rej(new Error('Não foi possível ler a imagem.'));fr.onload=()=>{const img=new Image();img.onerror=()=>rej(new Error('Arquivo não é uma imagem válida.'));img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),w=Math.round(img.width*k),h=Math.round(img.height*k),c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(img,0,0,w,h);res(c.toDataURL('image/jpeg',q))};img.src=fr.result};fr.readAsDataURL(file)})}
 async function uploadFoto(lado,file){const f=STATE.ficha;if(!f?.id)return;busy(true);try{const data=await resizeImage(file);const r=await callServer('salvarFotoProduto',{ID_PRODUTO:f.id,LADO:lado,BASE64:data,MIME:'image/jpeg'});STATE.cad=r.cadastros||STATE.cad;fotoCache()[r.FILE_ID]=data;fichaRender();toast(`Foto (${lado==='FRENTE'?'frente':'costas'}) salva.`)}catch(e){toast(e.message,true)}finally{busy(false)}}
-async function removeFoto(lado){const f=STATE.ficha;if(!f?.id)return;if(!(await uiConfirm('A foto será removida da ficha (o arquivo vai para a lixeira do Drive).',{title:`Remover a foto ${lado==='FRENTE'?'da frente':'das costas'}?`,ok:'Remover'})))return;busy(true);try{const r=await callServer('removerFotoProduto',{ID_PRODUTO:f.id,LADO:lado});STATE.cad=r.cadastros||STATE.cad;fichaRender()}catch(e){toast(e.message,true)}finally{busy(false)}}
+async function removeFoto(lado){const f=STATE.ficha;if(!f?.id)return;if(!(await uiConfirm('A foto será removida da ficha.',{title:`Remover a foto ${lado==='FRENTE'?'da frente':'das costas'}?`,ok:'Remover'})))return;busy(true);try{const r=await callServer('removerFotoProduto',{ID_PRODUTO:f.id,LADO:lado});STATE.cad=r.cadastros||STATE.cad;fichaRender()}catch(e){toast(e.message,true)}finally{busy(false)}}
 async function fichaLoadFotos(){const f=STATE.ficha;if(!f?.id)return;const p=prodRec(f.id);if(!p)return;const c=fotoCache();if(Object.values(FOTO_COL).some(col=>p[col]&&c[p[col]]===undefined)){await ensureFotos(f.id);if(STATE.ficha&&String(STATE.ficha.id)===String(p.ID_PRODUTO)&&STATE.cadType==='ficha')fichaRender()}}
 async function printFichaTecnica(mode){
   const f=STATE.ficha;if(!f)return;const INT=mode==='INTERNA',C$=INT?fichaCosts(f):null;if(!f.prod.PRODUTO)return toast('Informe o produto antes de imprimir.',true);
@@ -4292,13 +4349,10 @@ function applyListDelta(result,snap){
   return ok;
 }
 function callServer(fn,...args){
+  if(GUT_WEB&&GUT_MOTOR_ON&&!WEBQ.skip&&GUT_FOTO_ACOES.includes(fn))return gutFotos(fn,args[0]);
   if(GUT_WEB&&(fn==='previewExclusao'||fn==='excluirEntidade')&&args[0]==='corte')return wqCorteExclusao(fn,args[1],args[2]);
   if(GUT_WEB&&!WEBQ.skip&&!args.length&&WEBQ_FAST[fn])return WEBQ_FAST[fn]().catch(e=>{console.warn('[GUT] Quadro direto do banco falhou, usando a GUT API:',e);WEBQ.skip=true;try{return callServer(fn,...args)}finally{WEBQ.skip=false}});
   const sig=JSON.stringify([fn,args]);if(RPC.inflight.has(sig))return RPC.inflight.get(sig);
-  if(GUT_MOTOR_ON&&!WEBQ.skip&&GUT_MOTOR_ACOES.includes(fn)){
-    const pm=gutMotorLer(fn,args).catch(e=>{RPC.inflight.delete(sig);console.warn('[GUT] Leitura direta do banco falhou ('+fn+'), usando a GUT API:',e);WEBQ.skip=true;try{return callServer(fn,...args)}finally{WEBQ.skip=false}}).finally(()=>RPC.inflight.delete(sig));
-    RPC.inflight.set(sig,pm);return pm;
-  }
   const mutation=MUTATION_ACTIONS.includes(fn),parallelSafe=fn==='iniciarMarcacaoProducao'||fn==='finalizarMarcacaoProducao';
   if(mutation&&!parallelSafe&&Object.values(RPC.pending).some(x=>x.fn===fn&&x.sig!==sig))return Promise.reject(new Error('Existe uma operação deste tipo aguardando confirmação. Use Verificar operação antes de criar outra.'));
   let p=mutation?Object.values(RPC.pending).find(x=>x.sig===sig):null;

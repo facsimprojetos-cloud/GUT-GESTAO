@@ -19,9 +19,12 @@ function comoPostgres(cmd, args, opts) {
 function psql(sqlText, { json = false, banco = 'gut' } = {}) {
   const f = path.join(DIR, 'q_' + process.pid + '.sql');
   fs.writeFileSync(f, sqlText); fs.chmodSync(f, 0o644);
-  const args = ['-h', SOCK, '-p', String(PORT), '-d', banco, '-v', 'ON_ERROR_STOP=1', '-X', '-q', '-t', '-A', '-f', f];
+  const args = ['-h', SOCK, '-p', String(PORT), '-d', banco, '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose', '-X', '-q', '-t', '-A', '-f', f];
   const r = spawnSync('runuser', ['-u', 'postgres', '--', BIN + '/psql', ...args], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-  if (r.status !== 0) { const e = new Error((r.stderr || '').trim()); e.sql = sqlText; throw e; }
+  if (r.status !== 0) {
+    const txt = (r.stderr || '').trim(), m = txt.match(/ERROR:\s+([0-9A-Z]{5}):\s*([^\n]*)/);
+    const e = new Error(m ? m[2] : txt); e.code = m ? m[1] : ''; e.sql = sqlText; e.completo = txt; throw e;
+  }
   const out = r.stdout.trim();
   return json ? (out ? JSON.parse(out.split('\n').pop()) : null) : out;
 }
@@ -48,9 +51,16 @@ create table public.empresas (id uuid primary key default gen_random_uuid(), nom
   criado_em timestamptz default now(), cnpj text, contato text, email text, telefone text, observacao text, inicio date, atualizado_em timestamptz);
 create table public.usuarios_empresa (user_id uuid, empresa_id uuid references public.empresas(id), papel text default 'OPERADOR', criado_em timestamptz default now(),
   nome text, email text, permissoes jsonb default '{}'::jsonb, ativo boolean default true, atualizado_em timestamptz, primary key (user_id, empresa_id));
+create schema if not exists storage;
+create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);
+alter table storage.objects enable row level security;
+create or replace function storage.foldername(name text) returns text[] language sql immutable as $f$ select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1] $f$;
 create table public.plataforma_admins (user_id uuid primary key, criado_em timestamptz default now());
 ${ddlTabelas()}
 -- funções de base que já existem no Supabase (gut_002/003/006/008)
+create or replace function public.minhas_empresas() returns setof uuid language sql stable security definer set search_path to '' as $f$
+  select empresa_id from public.usuarios_empresa where user_id = auth.uid() and ativo $f$;
 create or replace function private.tabela_importavel(p_tabela text) returns boolean language sql stable security definer set search_path to '' as $f$
   select exists(select 1 from information_schema.columns c where c.table_schema = 'public' and c.table_name = p_tabela and c.column_name = 'empresa_id')
      and p_tabela not in ('empresas','usuarios_empresa') $f$;
@@ -158,25 +168,29 @@ function migracoes() {
   const m10 = fs.readFileSync(path.join(ROOT, 'supabase/migrations/gut_010_quadros_web.sql'), 'utf8');
   // de gut_010 só as funções web_empresa e web_j (os gatilhos ao vivo dependem do app de campo)
   const pega = nome => { const i = m10.indexOf('create or replace function ' + nome); const f = m10.indexOf('$$;', m10.indexOf('$$', m10.indexOf('$$', i) + 2)); return m10.slice(i, f + 3); };
-  const lista = [pega('private.web_empresa'), pega('private.web_j')];
+  const fim = m10.indexOf('grant execute on function public.web_empresa_id(text) to authenticated;');
+  const lista = [pega('private.web_empresa'), pega('private.web_j'), m10.slice(m10.indexOf('create or replace function public.web_empresa_id'), fim) + 'grant execute on function public.web_empresa_id(text) to authenticated;'];
   fs.readdirSync(path.join(ROOT, 'supabase/migrations')).filter(f => /^gut_0(1[4-9]|[2-9]\d)_/.test(f)).sort()
     .forEach(f => lista.push('-- ' + f + '\n' + fs.readFileSync(path.join(ROOT, 'supabase/migrations', f), 'utf8')));
   return lista.join('\n');
 }
 
 const EMP = '4eb0139a-ddcb-4e95-bd06-087534e7257a', USER = '11111111-1111-4111-8111-111111111111';
-async function subir() {
+function criarBanco(nome) {
+  psql('create database ' + nome + ';', { banco: 'postgres' });
+  psql(STUB, { banco: nome });
+  psql(SERVIDOR, { banco: nome });
+  psql(migracoes(), { banco: nome });
+  psql(`insert into public.empresas (id, nome, slug, status) values ('${EMP}', 'GUT Confecções (teste)', 'gut', 'TESTE');
+        insert into auth.users values ('${USER}', 'carla@gut.com');
+        insert into public.usuarios_empresa (user_id, empresa_id, papel, nome, email) values ('${USER}', '${EMP}', 'DONO', 'Carla', 'carla@gut.com');`, { banco: nome });
+}
+async function subir({ bancos = ['gut'] } = {}) {
   descer(true);
   fs.rmSync(DIR, { recursive: true, force: true }); fs.mkdirSync(DIR, { recursive: true }); execFileSync('chown', ['postgres', DIR]);
   comoPostgres(BIN + '/initdb', ['-D', path.join(DIR, 'dados'), '-U', 'postgres', '--auth=trust', '-E', 'UTF8', '--locale=C.UTF-8']);
   comoPostgres(BIN + '/pg_ctl', ['-D', path.join(DIR, 'dados'), '-o', `-p ${PORT} -k ${SOCK} -c listen_addresses='' -c timezone=UTC -c fsync=off`, '-l', path.join(DIR, 'log.txt'), '-w', 'start']);
-  psql('create database gut;', { banco: 'postgres' });
-  psql(STUB);
-  psql(SERVIDOR);
-  psql(migracoes());
-  psql(`insert into public.empresas (id, nome, slug, status) values ('${EMP}', 'GUT Confecções (teste)', 'gut', 'TESTE');
-        insert into auth.users values ('${USER}', 'carla@gut.com');
-        insert into public.usuarios_empresa (user_id, empresa_id, papel, nome, email) values ('${USER}', '${EMP}', 'DONO', 'Carla', 'carla@gut.com');`);
+  bancos.forEach(criarBanco);
 }
 function descer(silencioso) {
   try { comoPostgres(BIN + '/pg_ctl', ['-D', path.join(DIR, 'dados'), '-m', 'immediate', 'stop']); } catch (e) { if (!silencioso) throw e; }
@@ -185,4 +199,4 @@ function descer(silencioso) {
 function comoUsuario(sqlText, uid = USER) {
   return `begin; set local role authenticated; select set_config('gut.uid', '${uid}', true);\n${sqlText}\ncommit;`;
 }
-module.exports = { subir, descer, psql, comoUsuario, EMP, USER, SCHEMA };
+module.exports = { criarBanco, subir, descer, psql, comoUsuario, EMP, USER, SCHEMA };
