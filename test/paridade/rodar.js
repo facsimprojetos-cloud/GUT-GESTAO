@@ -263,15 +263,19 @@ async function cenario(x) {
     if (Math.abs(it.PRECO_FACCAO_UNIT - esperado) > 0.001) throw new Error('preço proporcional: ' + it.PRECO_FACCAO_UNIT + ' (esperado ' + esperado + ')');
     await x.grava('confirmarEnvioRemessaManual', idr, []);
     await x.grava('registrarContagemRetorno', { ID_REMESSA: idr, itens: [{ ID_VOLUME: vols[5], QTD_CONTADA: it.QTD_ENVIADA }] });
+    // v4.26.0: o lote de finalização nasce já na contagem (provisório, antes da inspeção)
+    const prov = (await x.api('getVolumes', [])).find(v => v.ID_VOLUME_ORIGEM_PARCIAL === vols[5]);
+    if (!prov || prov.STATUS_VOLUME !== 'AGUARDANDO_DESTINO' || prov.QTD_VOLUME !== it.QTD_ENVIADA) throw new Error('lote provisório na contagem: ' + JSON.stringify(prov && [prov.STATUS_VOLUME, prov.QTD_VOLUME]));
     const ret = (await x.api('getRemessasExternas', [])).find(z => z.ID_REMESSA === idr).itens[0].retornos[0];
     const ins = await x.grava('registrarInspecaoRetorno', { ID_REMESSA: idr, ID_RETORNO: ret.ID_RETORNO, QTD_APROVADA: it.QTD_ENVIADA - 2, QTD_REPROVADA: 1, QTD_RETRABALHO: 1, QTD_EMBALADA: 0, RESPONSAVEL_INSPECAO: 'Carla', MOTIVO_DEFEITO: 'ponto solto' });
-    if ((ins.continuacoes || []).length !== 1 || (ins.retrabalhos || []).length !== 1) throw new Error('inspeção: ' + JSON.stringify([ins.continuacoes, ins.retrabalhos]));
+    if ((ins.continuacoes || []).length !== 0 || (ins.retrabalhos || []).length !== 0) throw new Error('inspeção não cria sacos novos (o lote já existe): ' + JSON.stringify([ins.continuacoes, ins.retrabalhos]));
     const vs = await x.api('getVolumes', []);
     cont = vs.find(v => v.ID_VOLUME_ORIGEM_PARCIAL === vols[5]);
-    const orig = vs.find(v => v.ID_VOLUME === vols[5]), rt = vs.find(v => v.ID_VOLUME_ORIGEM_RETRABALHO === vols[5]);
-    if (!cont || cont.STATUS_VOLUME !== 'AGUARDANDO_DESTINO' || cont.QTD_VOLUME !== it.QTD_ENVIADA - 2 || !/-C1$/.test(cont.COD_VOLUME) || cont.ID_DESTINO_PARCIAL !== D2) throw new Error('continuação: ' + JSON.stringify(cont));
+    const orig = vs.find(v => v.ID_VOLUME === vols[5]);
+    // refugo (1) sai do lote; retrabalho (1) fica no lote para consertar, marcado como problema da facção
+    if (!cont || cont.STATUS_VOLUME !== 'AGUARDANDO_DESTINO' || cont.QTD_VOLUME !== it.QTD_ENVIADA - 1 || Number(cont.QTD_OCORRENCIA_FACCAO) !== 1 || !/-C1$/.test(cont.COD_VOLUME) || cont.ID_DESTINO_PARCIAL !== D2) throw new Error('continuação: ' + JSON.stringify(cont));
     if (orig.STATUS_VOLUME !== 'CONTINUACAO_GERADA') throw new Error('saco de origem: ' + orig.STATUS_VOLUME);
-    if (!rt || rt.OPS_FEITAS !== (v5.OPS_FEITAS || '')) throw new Error('retrabalho herda o que já estava feito antes da facção');
+    if (vs.some(v => v.ID_VOLUME_ORIGEM_RETRABALHO === vols[5])) throw new Error('serviço parcial não cria saco de retrabalho: conserta no lote de finalização');
     const lib = await x.api('liberarVolumeEstoquePA', [{ ID_VOLUME: vols[5], ORIGEM: 'RETORNO' }]);
     if (!lib || !lib.__error || !/continuação/.test(lib.message)) throw new Error('liberar o saco de origem devia ser recusado');
     await x.grava('destinarVolumesInternos', [cont.ID_VOLUME]);
@@ -291,8 +295,8 @@ async function cenario(x) {
     const cc = await cad();
     const rot = (cc.roteiro || []).filter(r => String(r.ID_PRODUTO) === String(P1)).sort((a, b) => a.ORDEM_PROCESSO - b.ORDEM_PROCESSO);
     x.sql(`update public.roteiro_produto set so_interno = true where id_roteiro = '${rot[2].ID_ROTEIRO}';`);
-    const rt = (await x.api('getVolumes', [])).find(v => v.ID_VOLUME_ORIGEM_RETRABALHO === vols[5] && v.STATUS_VOLUME === 'AGUARDANDO_DESTINO');
-    if (!rt) throw new Error('sem saco de retrabalho aguardando destino');
+    const rt = (await x.api('getVolumes', [])).find(v => v.STATUS_VOLUME === 'AGUARDANDO_DESTINO' && !v.OPS_FEITAS && !v.ID_VOLUME_ORIGEM_RETRABALHO && String(v.COD_VOLUME || '').startsWith('03-11-2026.1'));
+    if (!rt) throw new Error('sem saco da camisa aguardando destino');
     const r = await x.grava('criarRemessaExterna', { volumeIds: [rt.ID_VOLUME], ID_DESTINO: D1, DATA_ENVIO: ontem(1), itemValues: {} });
     const it = (await x.api('getRemessasExternas', [])).find(z => z.ID_REMESSA === r.remessa.ID_REMESSA).itens[0];
     if (!it.SERVICO_PARCIAL || it.OPS_FACCAO_NOMES.length !== 2 || /OVERLOQUE/.test(it.OPS_FACCAO_NOMES.join())) throw new Error('peça pronta com finalização interna: ' + JSON.stringify(it.OPS_FACCAO_NOMES));
@@ -300,7 +304,7 @@ async function cenario(x) {
     await x.grava('registrarContagemRetorno', { ID_REMESSA: r.remessa.ID_REMESSA, itens: [{ ID_VOLUME: rt.ID_VOLUME, QTD_CONTADA: it.QTD_ENVIADA }] });
     const ret = (await x.api('getRemessasExternas', [])).find(z => z.ID_REMESSA === r.remessa.ID_REMESSA).itens[0].retornos[0];
     const ins = await x.grava('registrarInspecaoRetorno', { ID_REMESSA: r.remessa.ID_REMESSA, ID_RETORNO: ret.ID_RETORNO, QTD_APROVADA: it.QTD_ENVIADA, QTD_REPROVADA: 0, QTD_RETRABALHO: 0, QTD_EMBALADA: 0, RESPONSAVEL_INSPECAO: 'Carla' });
-    const fin = (await x.api('getVolumes', [])).find(v => v.ID_VOLUME === (ins.continuacoes || [])[0]?.ID_VOLUME);
+    const fin = (await x.api('getVolumes', [])).find(v => v.ID_VOLUME_ORIGEM_PARCIAL === rt.ID_VOLUME);
     if (!fin || fin.STATUS_VOLUME !== 'AGUARDANDO_DESTINO' || JSON.parse(fin.OPS_FEITAS).length !== 2) throw new Error('lote de finalização: ' + JSON.stringify(fin && [fin.STATUS_VOLUME, fin.OPS_FEITAS]));
     const outra = await x.api('criarRemessaExterna', [{ volumeIds: [fin.ID_VOLUME], ID_DESTINO: D2, itemValues: {} }]);
     if (!outra || !outra.__error || !/finalização interna/.test(outra.message)) throw new Error('mandar só a finalização para a facção devia pedir a produção interna');

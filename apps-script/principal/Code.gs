@@ -4135,10 +4135,12 @@ function registrarContagemRetornoImpl_(payload) {
     if (novosItens.length) appendObjects_(TAB.RETORNO_VOLUME_ITENS, novosItens);
     if (itemPatches.length) updateRowsByNumber_(TAB.REMESSA_ITENS, itemPatches);
     if (logs.length) appendObjects_(TAB.BIPAGENS_EXTERNAS, logs);
+    // v4.26.0: saco de serviço parcial já vira lote de finalização (provisório) na contagem
+    const continuacoes = garantirContinuacoesParciaisUnlocked_(idRemessa, remessa);
     Object.keys(afetados).forEach(idVolume => updateExternalVolumeStatusUnlocked_(idRemessa, idVolume));
     updateRemessaTotalsUnlocked_(idRemessa);
     audit_('CONTAGEM_RETORNO_FACCAO', TAB.REMESSAS, idRemessa, '', JSON.stringify({ sacos: linhas.length, pecasContadas, pecasBaixadas, valorLiberado: round2_(valorLiberado) }), user);
-    return { ok: true, pecasContadas, pecasBaixadas, valorLiberado: round2_(valorLiberado), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
+    return { ok: true, pecasContadas, pecasBaixadas, valorLiberado: round2_(valorLiberado), continuacoes: serialize_(continuacoes.map(v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME }))), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
 
@@ -4598,14 +4600,51 @@ function precoDebitoQualidade_(item, idVolume) {
 }
 
 /** Processa (uma única vez) os retornos com inspeção concluída da remessa. */
+/**
+ * v4.26.0 — saco de serviço parcial: o lote de finalização nasce JÁ NA CONTAGEM (provisório, antes da inspeção),
+ * para não travar o caminho nem o financeiro. A inspeção vem depois: refugo sai do lote; retrabalho é consertado
+ * dentro dele (marcado como problema da facção); os dois viram débito pelo valor acordado com a facção.
+ */
+function garantirContinuacoesParciaisUnlocked_(idRemessa, remessa) {
+  remessa = remessa || findById_(TAB.REMESSAS, 'ID_REMESSA', idRemessa);
+  if (!remessa || String(remessa.TIPO_DESTINO || '').toUpperCase() !== 'FACCAO') return [];
+  const itens = mapBy_(readTable_(TAB.REMESSA_ITENS).filter(i => String(i.ID_REMESSA) === String(idRemessa)), 'ID_ITEM_REMESSA');
+  if (!Object.values(itens).some(itemServicoParcial_)) return [];
+  const rets = readTable_(TAB.RETORNOS_EXTERNOS).filter(r => String(r.ID_REMESSA) === String(idRemessa) && !String(r.ID_VOLUME_CONTINUACAO || '') &&
+    String(r.TIPO_RETORNO || '').toUpperCase() !== 'FALTA' && num_(r.QTD_RETORNADA) > 0 && itemServicoParcial_(itens[String(r.ID_ITEM_REMESSA)]));
+  const criados = [];
+  rets.forEach(ret => {
+    const cont = criarVolumeContinuacaoUnlocked_(ret, itens[String(ret.ID_ITEM_REMESSA)], remessa, num_(ret.QTD_RETORNADA));
+    updateRowsByNumber_(TAB.RETORNOS_EXTERNOS, [{ row: ret._row, patch: { ID_VOLUME_CONTINUACAO: cont.ID_VOLUME, STATUS_EMBALAGEM: 'NAO_APLICAVEL' } }]);
+    ret.ID_VOLUME_CONTINUACAO = cont.ID_VOLUME;
+    criados.push(cont);
+  });
+  return criados;
+}
+/** Tira peças refugadas na inspeção do lote de finalização (volume, conteúdo e cupons ainda pendentes). */
+function reduzirVolumeContinuacao_(cont, qtd, motivo) {
+  const atual = num_(cont.QTD_VOLUME), nova = Math.max(0, atual - qtd), now = new Date();
+  if (nova === atual) return;
+  const conteudos = readTable_(TAB.VOLUME_ITENS).filter(c => String(c.ID_VOLUME) === String(cont.ID_VOLUME));
+  let tirar = atual - nova; const patches = [];
+  conteudos.slice().reverse().forEach(c => { if (tirar <= 0) return; const q = Math.min(tirar, num_(c.QTD_ITEM)); tirar -= q; patches.push({ row: c._row, patch: { QTD_ITEM: num_(c.QTD_ITEM) - q } }); });
+  if (patches.length) updateRowsByNumber_(TAB.VOLUME_ITENS, patches);
+  const cupons = readTable_(TAB.CUPONS).filter(c => String(c.ID_VOLUME) === String(cont.ID_VOLUME) && String(c.STATUS_CUPOM || '').toUpperCase() !== 'CONCLUIDO');
+  if (cupons.length) updateRowsByNumber_(TAB.CUPONS, cupons.map(c => ({ row: c._row, patch: { QTD_PROGRAMADA: nova, MINUTOS_PADRAO_TOTAL: round2_(nova * num_(c.TEMPO_PADRAO_SEG_UN) / 60) } })));
+  updateById_(TAB.VOLUMES, 'ID_VOLUME', cont.ID_VOLUME, { QTD_VOLUME: nova, ...(nova <= 0 ? { STATUS_VOLUME: 'BAIXADO_QUALIDADE', TIPO_LOCAL_ATUAL: 'QUALIDADE' } : {}),
+    OBSERVACAO: [cont.OBSERVACAO, 'Inspeção: ' + qtd + ' pç refugo' + (motivo ? ' (' + motivo + ')' : '')].filter(Boolean).join(' • '), ATUALIZADO_EM: now });
+}
+
 function processarQualidadeRetornosUnlocked_(idRemessa) {
   const remessa = findById_(TAB.REMESSAS, 'ID_REMESSA', idRemessa);
   if (!remessa || String(remessa.TIPO_DESTINO || '').toUpperCase() !== 'FACCAO') return [];
+  const provisorios = garantirContinuacoesParciaisUnlocked_(idRemessa, remessa);
   const pendentes = readTable_(TAB.RETORNOS_EXTERNOS).filter(r => String(r.ID_REMESSA) === String(idRemessa) &&
     String(r.STATUS_INSPECAO || '').toUpperCase() === 'CONCLUIDA' && String(r.QUALIDADE_PROCESSADA || '').toUpperCase() !== 'SIM');
-  const gerados = [];
+  const gerados = provisorios.slice();
   pendentes.forEach(ret => {
     const item = findById_(TAB.REMESSA_ITENS, 'ID_ITEM_REMESSA', ret.ID_ITEM_REMESSA) || {};
+    const contExist = itemServicoParcial_(item) && ret.ID_VOLUME_CONTINUACAO ? findById_(TAB.VOLUMES, 'ID_VOLUME', ret.ID_VOLUME_CONTINUACAO) : null;
     const refugo = num_(ret.QTD_REPROVADA), retrab = num_(ret.QTD_RETRABALHO);
     const culpa = String(ret.DEFEITO_FACCAO || '').toUpperCase() !== 'NAO';
     const preco = (refugo + retrab) > 0 && culpa ? precoDebitoQualidade_(item, ret.ID_VOLUME) : num_(item.PRECO_FACCAO_UNIT);
@@ -4613,19 +4652,27 @@ function processarQualidadeRetornosUnlocked_(idRemessa) {
     const patch = { QUALIDADE_PROCESSADA: 'SIM', DEFEITO_FACCAO: (refugo + retrab) > 0 ? (culpa ? 'SIM' : 'NAO') : '' };
     if (num_(ret.QTD_APROVADA) <= 0) patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
     // v4.23.0: serviço parcial — as aprovadas não vão para a embalagem: seguem num saco de continuação
-    if (itemServicoParcial_(item) && num_(ret.QTD_APROVADA) > 0) {
+    if (contExist) patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
+    else if (itemServicoParcial_(item) && num_(ret.QTD_APROVADA) > 0) {
       const cont = criarVolumeContinuacaoUnlocked_(ret, item, remessa, num_(ret.QTD_APROVADA));
       patch.ID_VOLUME_CONTINUACAO = cont.ID_VOLUME; patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
       gerados.push(cont);
     }
     const vOrig = findById_(TAB.VOLUMES, 'ID_VOLUME', ret.ID_VOLUME) || {};
     const base = { ID_DESTINO: remessa.ID_DESTINO, TIPO: 'DEBITO', ID_REMESSA: remessa.ID_REMESSA, NUM_REMESSA: remessa.NUM_REMESSA, ID_ITEM_REMESSA: ret.ID_ITEM_REMESSA, ID_RETORNO: ret.ID_RETORNO, VALOR_UNITARIO: preco, MOTIVO: motivo };
-    if (retrab > 0) {
+    if (retrab > 0 && contExist) {
+      // serviço parcial: as peças já estão no lote de finalização — o conserto é feito lá dentro
+      updateById_(TAB.VOLUMES, 'ID_VOLUME', contExist.ID_VOLUME, { QTD_OCORRENCIA_FACCAO: num_(contExist.QTD_OCORRENCIA_FACCAO) + retrab,
+        OBSERVACAO: [contExist.OBSERVACAO, '⚠ Inspeção: ' + retrab + ' pç para consertar' + (motivo ? ' (' + motivo + ')' : '')].filter(Boolean).join(' • '), ATUALIZADO_EM: new Date() });
+      contExist.OBSERVACAO = [contExist.OBSERVACAO, '⚠ Inspeção: ' + retrab + ' pç para consertar'].join(' • ');
+      if (culpa) lancarFinanceiroFaccao_({ ...base, ORIGEM: 'RETRABALHO', ID_VOLUME: contExist.ID_VOLUME, COD_VOLUME: contExist.COD_VOLUME, QTD: retrab, VALOR: retrab * preco, OBSERVACAO: 'Retrabalho achado na inspeção, consertado no lote de finalização (' + (ret.COD_VOLUME || '') + ')' });
+    } else if (retrab > 0) {
       const novo = criarVolumeRetrabalhoUnlocked_(ret, item, remessa, retrab, culpa, motivo);
       patch.ID_VOLUME_RETRABALHO = novo.ID_VOLUME;
       gerados.push(novo);
       if (culpa) lancarFinanceiroFaccao_({ ...base, ORIGEM: 'RETRABALHO', ID_VOLUME: novo.ID_VOLUME, COD_VOLUME: novo.COD_VOLUME, QTD: retrab, VALOR: retrab * preco, OBSERVACAO: 'Retrabalho gerado na inspeção (' + (ret.COD_VOLUME || '') + ')' });
     }
+    if (refugo > 0 && contExist) reduzirVolumeContinuacao_(contExist, refugo, motivo);
     if (refugo > 0) {
       movement_('REFUGO_QUALIDADE', vOrig.ID_ESTOQUE_CORTE || '', ret.ID_VOLUME, remessa.ID_REMESSA, 'INSPECAO', ret.ID_RETORNO, 'REFUGO', '', '', refugo, '', '', motivo || 'Refugo na inspeção');
       if (culpa) lancarFinanceiroFaccao_({ ...base, ORIGEM: 'REFUGO', ID_VOLUME: ret.ID_VOLUME, COD_VOLUME: ret.COD_VOLUME, QTD: refugo, VALOR: refugo * preco, OBSERVACAO: 'Refugo na inspeção' });
@@ -4808,7 +4855,7 @@ function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
     if (!allInspected) {
       status = 'AGUARDANDO_INSPECAO';
       local = 'INSPECAO';
-    } else if (aprovadas > 0 && itemServicoParcial_(item)) {
+    } else if (itemServicoParcial_(item) && (aprovadas > 0 || retornos.some(r => String(r.ID_VOLUME_CONTINUACAO || '')))) {
       // v4.23.0: as aprovadas seguiram num saco de continuação; este saco encerra aqui.
       status = 'CONTINUACAO_GERADA';
       local = 'FACCAO';
@@ -5252,6 +5299,8 @@ function registrarBipagensExternasEmLoteImpl_(idRemessa, tipo, codigos, opcoes) 
     if (scanRows.length) appendObjects_(TAB.BIPAGENS_EXTERNAS, scanRows);
     if (aceitos.length) updateById_(TAB.REMESSAS,'ID_REMESSA',idRemessa,{ATUALIZADO_EM:now});
 
+    // v4.26.0: recebimento de saco de serviço parcial já cria o lote de finalização provisório
+    if (tipo !== 'ENVIO' && aceitos.length) garantirContinuacoesParciaisUnlocked_(idRemessa, remessa);
     // v4.5.7: envio também atualiza status do saco (EM_FACCAO) e da remessa (ENVIO_PARCIAL/ENVIADO).
     Object.keys(affectedVolumes).forEach(idVolume => updateExternalVolumeStatusUnlocked_(idRemessa, idVolume));
     if (aceitos.length) updateRemessaTotalsUnlocked_(idRemessa);

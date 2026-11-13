@@ -108,14 +108,19 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.evaluate(() => loadInternalProductionBoard(true)); await page.waitForTimeout(1500);
     const q = await page.evaluate(CONT => { const v = (STATE.internalBoard?.rows || []).find(x => String(x.ID_VOLUME) === CONT); if (!v) return null; const row = { ...v, _progress: n(v.PROGRESSO_PCT) }; return { html: internalProductionVolumeCardHtml(row), ops: v.OPERACOES.map(o => o.STATUS_CUPOM + '/' + o.METODO_CONCLUSAO), fac: v.FACCAO_PARCIAL, oc: v.QTD_OCORRENCIA_FACCAO }; }, CONT);
     ok(q && q.ops.join(',') === 'CONCLUIDO/FACCAO,PENDENTE/,CONCLUIDO/FACCAO', 'no quadro interno as operações da facção já vêm concluídas (verdes) e só a que falta fica pendente: ' + (q && q.ops.join(',')));
-    ok(q && /Passou por LEIA/.test(q.html) && /Problema da facção/.test(q.html) && /2 pç com problema/.test(q.html), 'o card do saco mostra que passou pela facção, o problema já registrado e o botão "Problema da facção"');
+    ok(q && /Passou por LEIA/.test(q.html) && /Problema da facção/.test(q.html) && /3 pç com problema/.test(q.html), 'o card do saco mostra que passou pela facção, o problema já registrado (1 da inspeção + 2 da produção) e o botão "Problema da facção"');
     await page.evaluate(CONT => openOcorr(CONT), CONT);
     const pre = await page.evaluate(() => ({ preco: $('ocorrPreco').value, info: $('ocorrInfo').textContent }));
     await page.fill('#ocorrQtd', '1'); await page.fill('#ocorrMotivo', 'barra torta');
     const prev = await page.textContent('#ocorrPreview');
     await page.click('#ocorrModal .btn-primary'); await page.waitForTimeout(1500);
     ok(/LEIA/.test(pre.info) && Number(pre.preco) > 0 && /Débito para LEIA: 1 ×/.test(prev), 'janela "Problema da facção" já traz a facção e o valor por peça que ela recebeu; mostra o débito antes de confirmar');
-    ok(pg.psql(`select count(*) from financeiro_faccao where origem = 'OCORRENCIA_INTERNA' and id_volume = '${CONT}' and motivo = 'barra torta'`) === '1' && pg.psql(`select qtd_ocorrencia_faccao from volumes where id_volume = '${CONT}'`) === '3', 'problema registrado: débito no financeiro da facção e o saco soma 3 peças com problema');
+    ok(pg.psql(`select count(*) from financeiro_faccao where origem = 'OCORRENCIA_INTERNA' and id_volume = '${CONT}' and motivo = 'barra torta'`) === '1' && pg.psql(`select qtd_ocorrencia_faccao from volumes where id_volume = '${CONT}'`) === '4', 'problema registrado: débito no financeiro da facção e o saco soma 4 peças com problema');
+    // finalizado dentro: o saco da remessa volta à cor normal, com "finalizado internamente"
+    const fd = await page.evaluate(CONT => { const cont = STATE.volumes.find(v => String(v.ID_VOLUME) === CONT); const it = (STATE.remessas || []).flatMap(r => r.itens || []).find(i => String(i.ID_VOLUME) === String(cont.ID_VOLUME_ORIGEM_PARCIAL));
+      const antes = { tipo: itemTipoParcial(it), fin: itemFinalizadoDentro(it), txt: contStatusTxt(cont) };
+      const st = cont.STATUS_VOLUME; cont.STATUS_VOLUME = 'CONCLUIDO_INTERNO'; const depois = { tipo: itemTipoParcial(it), fin: itemFinalizadoDentro(it) }; cont.STATUS_VOLUME = st; return { antes, depois }; }, CONT);
+    ok(fd.antes.tipo && !fd.antes.fin && fd.antes.txt === 'em produção interna' && fd.depois.tipo === '' && fd.depois.fin, 'enquanto o lote de finalização está em produção o saco fica colorido; quando termina dentro, volta à cor normal com "finalizado internamente"');
     const imp = await page.evaluate(CONT => callServer('prepararImpressaoCuponsInternos', [CONT]).then(r => (r.cupons || []).length), CONT);
     ok(imp === 1, 'imprimir cupons do saco de continuação: só o cupom da operação que falta');
     // ---- ficha do produto: operação "só interno (finalização)"
