@@ -92,14 +92,15 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(/^PARCIAL\|\[".+",".+"\]\|/.test(item) && Math.abs(Number(item.split('|')[2]) - esperado) < 0.001, 'remessa criada como serviço parcial, com as 2 operações e o preço proporcional: ' + item);
     await page.evaluate(() => callServer('getRemessasExternas').then(r => { STATE.remessas = r; }));
     const card = await page.evaluate(RET => { const g = dashActiveRemessaGroups(dashRemessaItems()).find(g => g.items.some(i => String(i.ID_VOLUME) === RET)); if (!g) return ''; STATE.expandedDashboardRemessas.add(String(g._viewKey || g.id)); return dashRemessaCardHtml(g); }, RET);
-    ok(/serviço parcial/.test(card) && /Parcial: faz 2 de 3 operações/.test(card), 'card da remessa no kanban mostra "serviço parcial" e o que a facção faz');
+    ok(/status-mini\s+ajuste/.test(card) && /badge teal[^>]*>ajuste no envio/.test(card) && /Ajuste no envio: faz 2 de 3 operações/.test(card) && /status-child drag-child ajuste/.test(card), 'operação desmarcada no envio: card da remessa e do saco na cor de "ajuste no envio", com o que a facção faz');
+    ok(/Finalização interna \(marcada no cadastro/.test(await page.textContent('.fac-legend')) && /Ajuste no envio/.test(await page.textContent('.fac-legend')), 'o quadro de facções tem a legenda das cores');
     ok(/class="mini-prod">1001 - CAMISA POLO</.test(card), 'card da remessa mostra o nome do produto sem precisar abrir');
     if (SHOT) { await page.click('[data-view="dash-faccoes"]'); await page.waitForTimeout(1500); await page.evaluate(() => { document.querySelectorAll('.status-group-toggle').forEach(b => b.click()); }); await page.waitForTimeout(500); await shot(page, '2-kanban-faccoes', '#externalStatusBoard'); }
     const rom = await page.evaluate(RET => { const r = STATE.remessas.find(r => (r.itens || []).some(i => String(i.ID_VOLUME) === RET)); return romaneioEscopoHtml(r); }, RET);
     ok(/SERVIÇO PARCIAL/.test(rom) && /\(2 de 3 operações\)/.test(rom), 'romaneio da facção diz que é serviço parcial e lista as operações dela');
     // ---- aguardando destino: saco que voltou de serviço parcial
     const espera = await page.evaluate(({ LEIA }) => { const v = { ...(STATE.volumes || []).find(x => x.ID_PRODUTO && rotOps(volProductId(x)).length === 3) }; v.ID_DESTINO_PARCIAL = LEIA; v.ID_VOLUME_ORIGEM_PARCIAL = 'x'; v.OPS_FEITAS = JSON.stringify(rotOps(volProductId(v)).slice(0, 2).map(o => o.id)); const [g] = dashWaitingLotGroups([v]); STATE.expandedDashboardLots.add(g.key); return dashWaitingLotCardHtml(g); }, { LEIA });
-    ok(/status-mini drag-card fin/.test(espera) && /FINALIZAÇÃO/.test(espera) && /Voltou de <b>LEIA<\/b> • falta: <b>OVERLOQUE<\/b>/.test(espera) && /LEIA fez 2 de 3 operações • faltam 1/.test(espera), 'em "Aguardando destino" o lote de finalização vem num card de outra cor, com a facção e o que falta');
+    ok(/status-mini drag-card ajuste/.test(espera) && /TERMINAR DENTRO/.test(espera) && /Voltou de <b>LEIA<\/b> • falta: <b>OVERLOQUE<\/b>/.test(espera) && /LEIA fez 2 de 3 operações • faltam 1/.test(espera), 'em "Aguardando destino" o lote que voltou com operação desmarcada vem na cor de ajuste, com a facção e o que falta');
     // ---- quadro interno: continuação
     await page.evaluate(() => loadInternalProductionBoard(true)); await page.waitForTimeout(1500);
     const q = await page.evaluate(CONT => { const v = (STATE.internalBoard?.rows || []).find(x => String(x.ID_VOLUME) === CONT); if (!v) return null; const row = { ...v, _progress: n(v.PROGRESSO_PCT) }; return { html: internalProductionVolumeCardHtml(row), ops: v.OPERACOES.map(o => o.STATUS_CUPOM + '/' + o.METODO_CONCLUSAO), fac: v.FACCAO_PARCIAL, oc: v.QTD_OCORRENCIA_FACCAO }; }, CONT);
@@ -129,7 +130,13 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     }, { ANA, OUTRO: livres[1] });
     ok(/menos a finalização interna \(OVERLOQUE\)/.test(pp.nota) && /× \d+% das operações/.test(pp.hint), 'Peça pronta com finalização interna: a janela avisa que a facção faz tudo menos a finalização, com preço proporcional: ' + (pp.nota || pp.erro));
     await shot(page, '3-peca-pronta-finalizacao', '#lotDestModal .modal-card');
-    await page.evaluate(() => closeModal('lotDestModal'));
+    await page.evaluate(() => confirmLotDest()); await page.waitForTimeout(3000);
+    await page.evaluate(() => callServer('getRemessasExternas').then(r => { STATE.remessas = r; }));
+    const cardFin = await page.evaluate(OUTRO => { const g = dashActiveRemessaGroups(dashRemessaItems()).find(g => g.items.some(i => String(i.ID_VOLUME) === OUTRO)); return g ? dashRemessaCardHtml(g) : ''; }, livres[1]);
+    ok(/status-mini\s+fin/.test(cardFin) && /badge purple[^>]*>finalização interna/.test(cardFin), 'peça pronta de produto com finalização no cadastro: card da remessa na cor de "finalização interna"');
+    const esperaFin = await page.evaluate(({ LEIA }) => { const v = { ...(STATE.volumes || []).find(x => x.ID_PRODUTO && rotOps(volProductId(x)).length === 3) }; v.ID_DESTINO_PARCIAL = LEIA; v.ID_VOLUME_ORIGEM_PARCIAL = 'x'; v.OPS_FEITAS = JSON.stringify(rotOps(volProductId(v)).slice(0, 2).map(o => o.id)); const [g] = dashWaitingLotGroups([v]); return dashWaitingLotCardHtml(g); }, { LEIA });
+    ok(/status-mini drag-card fin/.test(esperaFin) && /FINALIZAÇÃO/.test(esperaFin), 'lote que volta só para a finalização do cadastro: card roxo "FINALIZAÇÃO" em Aguardando destino');
+    if (SHOT) { await page.click('[data-view="dash-faccoes"]'); await page.waitForTimeout(1500); await page.evaluate(() => { document.querySelectorAll('.status-group-toggle').forEach(b => b.click()); }); await page.waitForTimeout(500); await shot(page, '4-kanban-cores', '#dash-faccoes .fac-flow-head ~ *'); await page.screenshot({ path: path.join(SHOT, '5-kanban-tela.png'), fullPage: false }); }
     ok(errors.length === 0, 'sem erro de JavaScript ' + errors.join(' | '));
   } finally { if (browser) await browser.close(); pg.descer(true); }
   const f = results.filter(x => !x).length; console.log(`\n${results.length - f}/${results.length}`); process.exit(f ? 1 : 0);
