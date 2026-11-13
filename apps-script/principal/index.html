@@ -83,8 +83,14 @@
     body.dashboard-focus .page-head{align-items:center;margin-bottom:12px}
     body.dashboard-focus .dashboard-focus-btn{position:fixed;right:14px;top:12px;z-index:90;box-shadow:0 8px 24px rgba(15,23,42,.18)}
     body.dashboard-focus .dashboard-focus-btn .focus-label{display:none}
-    body.dashboard-focus .quadro-switch-btn{position:fixed;right:64px;top:12px;z-index:90;box-shadow:0 8px 24px rgba(15,23,42,.18);font-weight:700}
-    body.dashboard-focus .quadro-switch-btn .focus-label{display:inline}
+    .quadro-switch-btn{width:40px;min-width:40px;height:40px;padding:0!important;display:inline-flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;line-height:1}
+    body.dashboard-focus .quadro-switch-btn{position:fixed;right:14px;top:60px;z-index:90;box-shadow:0 8px 24px rgba(15,23,42,.18)}
+    body.scan-drawer-open.dashboard-focus .quadro-switch-btn{right:436px!important}
+    @media(max-width:900px){body.scan-drawer-open.dashboard-focus .quadro-switch-btn{right:14px!important}}
+    /* no quadro em tela cheia, a barra de filtros não passa por baixo dos botões do canto */
+    body.dashboard-focus #facBoardBar,body.dashboard-focus .prod-board-bar{margin-right:56px}
+    #gwEmpresa{white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;font-size:13px;flex:0 0 auto}#gwGestao,#gwSair{flex:0 0 auto}
+    #gwGestao{text-decoration:none!important;width:40px;min-width:40px;padding:0!important;display:inline-flex;align-items:center;justify-content:center}
     .hist-table td{vertical-align:top}.hist-table .hint{font-size:11px}
     body.dashboard-focus .status-col-list{max-height:calc(100vh - 310px)}
 
@@ -160,7 +166,7 @@
     html[data-theme="dark"] .operator-tv-row.bad:before{background:linear-gradient(90deg,rgba(220,38,38,.38),rgba(239,68,68,.20))}
     body.dashboard-focus[data-internal-dashboard-mode="MINUTOS"] #view-dash-interna>.page-head{height:0;min-height:0;margin:0;padding:0;overflow:visible}
     body.dashboard-focus[data-internal-dashboard-mode="MINUTOS"] #view-dash-interna>.page-head>div:first-child{display:none!important}
-    body.dashboard-focus[data-internal-dashboard-mode="MINUTOS"] #view-dash-interna>.page-head .toolbar>*:not(.dashboard-focus-btn){display:none!important}
+    body.dashboard-focus[data-internal-dashboard-mode="MINUTOS"] #view-dash-interna>.page-head .toolbar>*:not(.dashboard-focus-btn):not(.quadro-switch-btn){display:none!important}
     body.dashboard-focus[data-internal-dashboard-mode="MINUTOS"] #internalDashboardTabs{display:none!important}
     body.dashboard-focus[data-internal-dashboard-mode="MINUTOS"] #internalMinutesDashboard>.dash-note{display:none!important}
     body.dashboard-focus[data-internal-dashboard-mode="MINUTOS"] .content{padding:6px 10px}
@@ -368,7 +374,7 @@
     /* Modo quadro (tela cheia) no Kanban: só filtros + cards */
     body.dashboard-focus[data-internal-dashboard-mode="KANBAN"] #view-dash-interna>.page-head{height:0;min-height:0;margin:0;padding:0;overflow:visible}
     body.dashboard-focus[data-internal-dashboard-mode="KANBAN"] #view-dash-interna>.page-head>div:first-child{display:none!important}
-    body.dashboard-focus[data-internal-dashboard-mode="KANBAN"] #view-dash-interna>.page-head .toolbar>*:not(.dashboard-focus-btn){display:none!important}
+    body.dashboard-focus[data-internal-dashboard-mode="KANBAN"] #view-dash-interna>.page-head .toolbar>*:not(.dashboard-focus-btn):not(.quadro-switch-btn){display:none!important}
     body.dashboard-focus[data-internal-dashboard-mode="KANBAN"] #internalDashboardTabs,
     body.dashboard-focus[data-internal-dashboard-mode="KANBAN"] #internalMethodNote,
     body.dashboard-focus[data-internal-dashboard-mode="KANBAN"] #internalDashboardKpis,
@@ -658,7 +664,7 @@
     .lotdest-vol .tag-int{font-size:10px;font-weight:800;color:#5b21b6;background:#ede9fe;border-radius:6px;padding:1px 6px;margin-left:4px}
     .lotdest-scope-note{font-size:12px;color:var(--muted);margin-top:4px}
     .status-mini.fin{border-color:#a78bfa;background:#f5f3ff;box-shadow:inset 3px 0 0 #7c3aed}
-    .status-mini.fin .fin-tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.4px;color:#5b21b6;margin-bottom:2px}
+    .fin-tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.4px;color:#5b21b6;margin-bottom:2px;line-height:1.3}
     html.ui:not([data-theme="dark"]) .status-mini.fin{background:#f5f3ff;border-color:#c4b5fd;box-shadow:inset 3px 0 0 #7c3aed,0 6px 14px -10px rgba(91,33,182,.35)}
     [data-theme="dark"] .status-mini.fin,html.ui[data-theme="dark"] .status-mini.fin{background:linear-gradient(180deg,#1e1538,#170f2e);border-color:#5b21b6}
     .mini-prod{font-size:12px;font-weight:700;color:var(--text);margin-top:1px}
@@ -828,7 +834,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.27.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.27.1 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -874,7 +880,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 
 
       <section class="view" id="view-dash-faccoes">
-        <div class="page-head"><div><h3>Facções / Produção externa</h3><p>Visão logística e analítica dos volumes, remessas, retornos e estoque futuro.</p></div><div class="toolbar"><button class="btn btn-secondary dashboard-focus-btn" type="button" onclick="toggleDashboardFocus('dash-faccoes')" title="Abrir painel em tela cheia">⛶ <span class="focus-label">Tela cheia</span></button><button class="btn btn-secondary quadro-switch-btn" type="button" onclick="alternarQuadro()" title="Ir para o quadro da produção interna (mantém a tela cheia)">⇄ <span class="focus-label">Produção interna</span></button></div></div>
+        <div class="page-head"><div><h3>Facções / Produção externa</h3><p>Visão logística e analítica dos volumes, remessas, retornos e estoque futuro.</p></div><div class="toolbar"><button class="btn btn-secondary dashboard-focus-btn" type="button" onclick="toggleDashboardFocus('dash-faccoes')" title="Abrir painel em tela cheia">⛶ <span class="focus-label">Tela cheia</span></button><button class="btn btn-secondary quadro-switch-btn" type="button" onclick="alternarQuadro()" title="Ir para o quadro da Produção interna (mantém a tela cheia)" aria-label="Ir para a Produção interna">⇄</button></div></div>
         <div class="subtabs faction-dashboard-tabs" id="factionDashboardTabs">
           <button class="active" data-faction-dashboard-mode="OPERACIONAL" onclick="setFactionDashboardMode('OPERACIONAL')">▦ Visão operacional</button>
           <button data-faction-dashboard-mode="ANALITICO" onclick="setFactionDashboardMode('ANALITICO')">◫ Visão analítica</button>
@@ -920,7 +926,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
       </section>
 
       <section class="view" id="view-dash-interna">
-        <div class="page-head"><div><h3>Produção interna</h3><p>Operação em Kanban, produção diária por minutos e eficiência real por marcação.</p></div><div class="toolbar"><button id="directPointQueueStatus" class="direct-sync-pill" type="button" onclick="flushDirectProductionQueue(true)" title="Fila de apontamentos diretos">● Sincronizado</button><button class="btn btn-secondary" type="button" onclick="refreshInternalDashboardView()">↻ Atualizar</button><button class="btn btn-secondary dashboard-focus-btn" type="button" onclick="toggleDashboardFocus('dash-interna')" title="Abrir painel em tela cheia">⛶ <span class="focus-label">Tela cheia</span></button><button class="btn btn-secondary quadro-switch-btn" type="button" onclick="alternarQuadro()" title="Ir para o quadro de facções (mantém a tela cheia)">⇄ <span class="focus-label">Facções</span></button></div></div>
+        <div class="page-head"><div><h3>Produção interna</h3><p>Operação em Kanban, produção diária por minutos e eficiência real por marcação.</p></div><div class="toolbar"><button id="directPointQueueStatus" class="direct-sync-pill" type="button" onclick="flushDirectProductionQueue(true)" title="Fila de apontamentos diretos">● Sincronizado</button><button class="btn btn-secondary" type="button" onclick="refreshInternalDashboardView()">↻ Atualizar</button><button class="btn btn-secondary dashboard-focus-btn" type="button" onclick="toggleDashboardFocus('dash-interna')" title="Abrir painel em tela cheia">⛶ <span class="focus-label">Tela cheia</span></button><button class="btn btn-secondary quadro-switch-btn" type="button" onclick="alternarQuadro()" title="Ir para o quadro de Facções (mantém a tela cheia)" aria-label="Ir para Facções">⇄</button></div></div>
         <div class="subtabs internal-dashboard-tabs" id="internalDashboardTabs">
           <button class="active" data-internal-dashboard-mode="KANBAN" onclick="setInternalDashboardMode('KANBAN')">▦ Kanban</button>
           <button data-internal-dashboard-mode="MINUTOS" onclick="setInternalDashboardMode('MINUTOS')">◫ Produção por minutos</button>
@@ -1412,7 +1418,7 @@ async function gutSair(){try{if(GUT_EMPRESA_SLUG)await GUT_SB.rpc('web_maquina_s
 function gutWebExtras(){if(!GUT_WEB)return;const tb=document.querySelector('.topbar');
   if(tb&&GUT_EMPRESA&&!document.getElementById('gwEmpresa')){const c=document.createElement('button');c.id='gwEmpresa';c.className='btn btn-secondary';c.type='button';c.textContent='🏢 '+GUT_EMPRESA.nome;
     const varias=((GUT_EU&&GUT_EU.empresas)||[]).length>1;c.title=varias?'Trocar de empresa':'Empresa';if(varias)c.onclick=()=>{location.href=gutBaseSistema()+'?escolher=1'};else c.style.cursor='default';tb.appendChild(c)}
-  if(tb&&GUT_EU&&GUT_EU.admin&&!document.getElementById('gwGestao')){const g=document.createElement('a');g.id='gwGestao';g.className='btn btn-secondary';g.href='/';g.target='_blank';g.rel='noopener';g.textContent='⚙️ Gestão';g.title='Empresas, acessos e máquinas (administrador)';tb.appendChild(g)}
+  if(tb&&GUT_EU&&GUT_EU.admin&&!document.getElementById('gwGestao')){const g=document.createElement('a');g.id='gwGestao';g.className='btn btn-secondary';g.href='/';g.target='_blank';g.rel='noopener';g.textContent='⚙️';g.title='Gestão: empresas, acessos e máquinas (administrador)';g.setAttribute('aria-label','Gestão');tb.appendChild(g)}
   if(tb&&!document.getElementById('gwSair')){const b=document.createElement('button');b.id='gwSair';b.className='btn btn-secondary';b.type='button';b.textContent='Sair';b.title='Sair do sistema';b.onclick=gutSair;tb.appendChild(b)}}
 function gutBoot(){if(!GUT_WEB){GUT_STARTED=true;return startShell()}
   if(!GUT_SB){document.body.innerHTML='<p style="font-family:sans-serif;padding:24px">Não foi possível carregar o login. Verifique a internet e recarregue a página.</p>';return}
