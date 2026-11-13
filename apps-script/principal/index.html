@@ -923,7 +923,7 @@ html.ui[data-theme="dark"] .btn-primary{background:linear-gradient(135deg,#1b4f9
 html.ui[data-theme="dark"] input,html.ui[data-theme="dark"] select,html.ui[data-theme="dark"] textarea{background:#071125;border-color:#24406b;color:#eaf1fb}
 html.ui[data-theme="dark"] .modal-card{background:#0d1a30;border-color:#22385d}
 html.ui[data-theme="dark"] .dash-kpis{background:radial-gradient(600px 200px at 0 0,#173563 0,transparent 70%),linear-gradient(160deg,#0b1a36,#071022);border-color:#22385d}
-html.ui[data-theme="dark"] .dash-note,html.ui[data-theme="dark"] .method-help{background:#0f2241;border-color:#22385d;color:#cfdcf0}
+html.ui[data-theme="dark"] .dash-note,html.ui[data-theme="dark"] .method-help{background:transparent;border-color:#1f3558;color:#9fb4d4;box-shadow:none}
 html.ui .logo{flex:0 0 36px;width:36px;height:36px;border-radius:10px;font-family:Manrope,'DM Sans',Arial,sans-serif;font-weight:800;font-size:19px}
 html.ui svg.i{width:17px;height:17px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;margin-right:7px}
 html.ui .nav .ico{display:grid;place-items:center;width:28px;height:24px;margin:-2px 0;border-radius:7px;flex:0 0 28px;color:#8fb0d8;transition:color .15s,background .15s,box-shadow .15s}
@@ -934,6 +934,27 @@ html.ui .subtabs button svg.i,html.ui .cap-tabs button svg.i,html.ui .tabbar but
 html.ui .subtabs button.active svg.i{color:#0e9cbc;opacity:1}
 html.ui[data-theme="dark"] .subtabs button.active svg.i{color:var(--nx-c)}
 html.ui .cap-tabs button svg.i{width:14px;height:14px;margin-right:5px;vertical-align:-2px}
+/* modo claro: limpo — faixa de indicadores e botões da TV brancos, contorno clarinho, sem brilho */
+html.ui:not([data-theme="dark"]) .dash-kpis{background:#fff;border:1px solid #dfe7f1;box-shadow:0 1px 2px rgba(10,23,48,.04),0 10px 24px -18px rgba(10,23,48,.18)}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi{color:var(--text);box-shadow:-1px -1px 0 #e6edf5}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.blue{--k:#0e9cbc}html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.green{--k:#12a565}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.amber{--k:#d39a06}html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.red{--k:#e23b44}html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.purple{--k:#7c5cd6}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi:before{box-shadow:none}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi-label{color:#5b6b82}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi-value{color:#10243e;text-shadow:none}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.blue .dash-kpi-value,html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.amber .dash-kpi-value,html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.red .dash-kpi-value,html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi.purple .dash-kpi-value{color:var(--k)}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi-side{color:#5b6b82}html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi-sub{color:#7a8aa0}
+html.ui:not([data-theme="dark"]) .dash-kpis .dash-kpi:hover{background:color-mix(in srgb,var(--k) 5%,#fff)}
+html.ui:not([data-theme="dark"]) .tv-launch{background:#fff;border:1px solid #dfe7f1;box-shadow:0 1px 2px rgba(10,23,48,.04),0 10px 24px -18px rgba(10,23,48,.18)}
+html.ui:not([data-theme="dark"]) .tv-launch-btn,html.ui:not([data-theme="dark"]) .tv-launch-btn:nth-child(2),html.ui:not([data-theme="dark"]) .tv-launch-btn:nth-child(3){--k:#d39a06;background:#fff;border:1px solid #dfe7f1;box-shadow:inset 3px 0 0 var(--k)}
+html.ui:not([data-theme="dark"]) .tv-launch-btn:nth-child(2){--k:#0e9cbc}html.ui:not([data-theme="dark"]) .tv-launch-btn:nth-child(3){--k:#12a565}
+html.ui:not([data-theme="dark"]) .tv-launch-btn:hover{filter:none;border-color:color-mix(in srgb,var(--k) 45%,#dfe7f1);box-shadow:inset 3px 0 0 var(--k),0 10px 22px -16px rgba(10,23,48,.35)}
+html.ui:not([data-theme="dark"]) .tv-launch-btn b{color:#10243e}html.ui:not([data-theme="dark"]) .tv-launch-btn small{color:#5b6b82}
+html.ui:not([data-theme="dark"]) .tv-launch-btn .tv-n{background:color-mix(in srgb,var(--k) 14%,#fff);color:color-mix(in srgb,var(--k) 75%,#10243e)}
+html.ui:not([data-theme="dark"]) .tv-launch-btn em{color:#12a565}
+html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled]{background:#f7f9fc;border:1px dashed #d3dde9;box-shadow:none}
+html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] b{color:#8a99ad}html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] small{color:#a3b0c0}
+html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] .tv-n{background:#eef2f7;color:#8a99ad}html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] em{color:#a3b0c0!important}
 @media (prefers-reduced-motion:reduce){html.ui .tv-launch-btn:hover{transform:none}}
 </style>
 
@@ -941,7 +962,7 @@ html.ui .cap-tabs button svg.i{width:14px;height:14px;margin-right:5px;vertical-
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.28.1 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.28.2 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
