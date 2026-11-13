@@ -924,7 +924,16 @@ html.ui[data-theme="dark"] input,html.ui[data-theme="dark"] select,html.ui[data-
 html.ui[data-theme="dark"] .modal-card{background:#0d1a30;border-color:#22385d}
 html.ui[data-theme="dark"] .dash-kpis{background:radial-gradient(600px 200px at 0 0,#173563 0,transparent 70%),linear-gradient(160deg,#0b1a36,#071022);border-color:#22385d}
 html.ui[data-theme="dark"] .dash-note,html.ui[data-theme="dark"] .method-help{background:#0f2241;border-color:#22385d;color:#cfdcf0}
-html.ui .logo{flex:0 0 42px;width:42px;height:42px;border-radius:12px;font-family:Manrope,'DM Sans',Arial,sans-serif;font-weight:800;font-size:19px}
+html.ui .logo{flex:0 0 36px;width:36px;height:36px;border-radius:10px;font-family:Manrope,'DM Sans',Arial,sans-serif;font-weight:800;font-size:19px}
+html.ui svg.i{width:17px;height:17px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;margin-right:7px}
+html.ui .nav .ico{display:grid;place-items:center;width:28px;height:24px;margin:-2px 0;border-radius:7px;flex:0 0 28px;color:#8fb0d8;transition:color .15s,background .15s,box-shadow .15s}
+html.ui .nav .ico svg.i{width:18px;height:18px;margin:0}
+html.ui .nav button:hover .ico{color:var(--nx-c)}
+html.ui .nav button.active .ico{color:#14100a;background:linear-gradient(160deg,#ffe066,#f2c624);box-shadow:0 0 14px rgba(245,211,63,.5)}
+html.ui .subtabs button svg.i,html.ui .cap-tabs button svg.i,html.ui .tabbar button svg.i{opacity:.85}
+html.ui .subtabs button.active svg.i{color:#0e9cbc;opacity:1}
+html.ui[data-theme="dark"] .subtabs button.active svg.i{color:var(--nx-c)}
+html.ui .cap-tabs button svg.i{width:14px;height:14px;margin-right:5px;vertical-align:-2px}
 @media (prefers-reduced-motion:reduce){html.ui .tv-launch-btn:hover{transform:none}}
 </style>
 
@@ -932,23 +941,23 @@ html.ui .logo{flex:0 0 42px;width:42px;height:42px;border-radius:12px;font-famil
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.28.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.28.1 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
-      <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
-      <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
-      <button data-view="dash-interna"><span class="ico">📊</span><span>Dashboard interno</span></button>
-      <button data-view="compras"><span class="ico">🛒</span><span>Compras</span></button>
-      <button data-view="materiais"><span class="ico">▥</span><span>Estoque</span></button>
-      <button data-view="corte"><span class="ico">✂</span><span>Novo corte</span></button>
-      <button data-view="estoque"><span class="ico">▤</span><span>Estoque de corte</span></button>
-      <button data-view="volumes"><span class="ico">▣</span><span>Lotes / volumes</span></button>
-      <button data-view="estoque-pa"><span class="ico">▦</span><span>Estoque PA</span></button>
-      <button data-view="interna"><span class="ico">⚙</span><span>Produção interna</span></button>
-      <button data-view="faccoes"><span class="ico">↗</span><span>Facções</span></button>
-      <button data-view="romaneios"><span class="ico">▧</span><span>Romaneios</span></button>
-      <button data-view="financeiro"><span class="ico">$</span><span>Financeiro facções</span></button>
-      <button data-view="bipagem"><span class="ico">⌁</span><span>Bipagem</span></button>
-      <button data-view="cadastros"><span class="ico">＋</span><span>Cadastros</span></button>
+      <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
+      <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
+      <button data-view="dash-interna"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V4M16 20v-7M21 20H3"/></svg></span><span>Dashboard interno</span></button>
+      <button data-view="compras"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19.5" r="1.4"/><circle cx="17" cy="19.5" r="1.4"/></svg></span><span>Compras</span></button>
+      <button data-view="materiais"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7.5 12 12l9-4.5z"/><path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"/></svg></span><span>Estoque</span></button>
+      <button data-view="corte"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.5"/><circle cx="6" cy="17" r="2.5"/><path d="M8.2 8.3 20 18M8.2 15.7 20 6"/></svg></span><span>Novo corte</span></button>
+      <button data-view="estoque"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13h4"/></svg></span><span>Estoque de corte</span></button>
+      <button data-view="volumes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3.5 7.5v9L12 21l8.5-4.5v-9z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></svg></span><span>Lotes / volumes</span></button>
+      <button data-view="estoque-pa"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3 3 6l2 4 2-1v12h10V9l2 1 2-4-5-3a4 4 0 0 1-8 0z"/></svg></span><span>Estoque PA</span></button>
+      <button data-view="interna"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V10l6 4V10l6 4V5h6v16z"/><path d="M7 17h2M12 17h2M17 17h1"/></svg></span><span>Produção interna</span></button>
+      <button data-view="faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span><span>Facções</span></button>
+      <button data-view="romaneios"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg></span><span>Romaneios</span></button>
+      <button data-view="financeiro"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg></span><span>Financeiro facções</span></button>
+      <button data-view="bipagem"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M8 9v6M11 9v6M14 9v6M17 9v6"/></svg></span><span>Bipagem</span></button>
+      <button data-view="cadastros"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span><span>Cadastros</span></button>
     </nav>
     <div class="side-foot"><div id="userEmail">—</div><div>Planilha conectada • Web App</div></div>
   </aside>
@@ -980,8 +989,8 @@ html.ui .logo{flex:0 0 42px;width:42px;height:42px;border-radius:12px;font-famil
       <section class="view" id="view-dash-faccoes">
         <div class="page-head"><div><h3>Facções / Produção externa</h3><p>Visão logística e analítica dos volumes, remessas, retornos e estoque futuro.</p></div><div class="toolbar"><button class="btn btn-secondary dashboard-focus-btn" type="button" onclick="toggleDashboardFocus('dash-faccoes')" title="Abrir painel em tela cheia">⛶ <span class="focus-label">Tela cheia</span></button><button class="btn btn-secondary quadro-switch-btn" type="button" onclick="alternarQuadro()" title="Ir para o quadro da Produção interna (mantém a tela cheia)" aria-label="Ir para a Produção interna">⇄</button></div></div>
         <div class="subtabs faction-dashboard-tabs" id="factionDashboardTabs">
-          <button class="active" data-faction-dashboard-mode="OPERACIONAL" onclick="setFactionDashboardMode('OPERACIONAL')">▦ Visão operacional</button>
-          <button data-faction-dashboard-mode="ANALITICO" onclick="setFactionDashboardMode('ANALITICO')">◫ Visão analítica</button>
+          <button class="active" data-faction-dashboard-mode="OPERACIONAL" onclick="setFactionDashboardMode('OPERACIONAL')"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Visão operacional</button>
+          <button data-faction-dashboard-mode="ANALITICO" onclick="setFactionDashboardMode('ANALITICO')"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9h9"/></svg>Visão analítica</button>
         </div>
         <div class="mgmt-dashboard" id="factionDashboardOperational">
           <div class="prod-board-bar fac-board-bar" id="facBoardBar">
@@ -1026,9 +1035,9 @@ html.ui .logo{flex:0 0 42px;width:42px;height:42px;border-radius:12px;font-famil
       <section class="view" id="view-dash-interna">
         <div class="page-head"><div><h3>Produção interna</h3><p>Operação em Kanban, produção diária por minutos e eficiência real por marcação.</p></div><div class="toolbar"><button id="directPointQueueStatus" class="direct-sync-pill" type="button" onclick="flushDirectProductionQueue(true)" title="Fila de apontamentos diretos">● Sincronizado</button><button class="btn btn-secondary" type="button" onclick="refreshInternalDashboardView()">↻ Atualizar</button><button class="btn btn-secondary dashboard-focus-btn" type="button" onclick="toggleDashboardFocus('dash-interna')" title="Abrir painel em tela cheia">⛶ <span class="focus-label">Tela cheia</span></button><button class="btn btn-secondary quadro-switch-btn" type="button" onclick="alternarQuadro()" title="Ir para o quadro de Facções (mantém a tela cheia)" aria-label="Ir para Facções">⇄</button></div></div>
         <div class="subtabs internal-dashboard-tabs" id="internalDashboardTabs">
-          <button class="active" data-internal-dashboard-mode="KANBAN" onclick="setInternalDashboardMode('KANBAN')">▦ Kanban</button>
-          <button data-internal-dashboard-mode="MINUTOS" onclick="setInternalDashboardMode('MINUTOS')">◫ Produção por minutos</button>
-          <button data-internal-dashboard-mode="EFICIENCIA" onclick="setInternalDashboardMode('EFICIENCIA')">⏱ Eficiência por marcação</button>
+          <button class="active" data-internal-dashboard-mode="KANBAN" onclick="setInternalDashboardMode('KANBAN')"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg>Kanban</button>
+          <button data-internal-dashboard-mode="MINUTOS" onclick="setInternalDashboardMode('MINUTOS')"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V4M16 20v-7M21 20H3"/></svg>Produção por minutos</button>
+          <button data-internal-dashboard-mode="EFICIENCIA" onclick="setInternalDashboardMode('EFICIENCIA')"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2h4"/></svg>Eficiência por marcação</button>
         </div>
 
         <div class="mgmt-dashboard" id="internalKanbanDashboard">
@@ -1327,7 +1336,7 @@ html.ui .logo{flex:0 0 42px;width:42px;height:42px;border-radius:12px;font-famil
         <div class="page-head"><div><h3>Cadastros</h3><p>Cadastro manual ou importação rápida por CSV usando modelos prontos.</p></div></div>
         <div class="card">
           <div class="tabbar" id="cadTabs">
-            <button class="active ficha-tab" data-cad="ficha">📋 Ficha do produto</button><button class="ficha-tab" data-cad="custos">💰 Custo operacional</button><button data-cad="produto">Produto</button><button data-cad="material">Material</button><button data-cad="fornecedor">Fornecedor</button><button data-cad="localestoque">Local estoque</button><button data-cad="estrutura">Estrutura materiais</button><button data-cad="cor">Cor</button><button data-cad="tamanho">Tamanho</button><button data-cad="setor">Setor</button><button data-cad="maquina">Máquinas</button><button data-cad="processo">Processo</button><button data-cad="operador">Operador</button><button data-cad="destino">Facção/Destino</button><button data-cad="roteiro">Roteiro</button>
+            <button class="active ficha-tab" data-cad="ficha"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>Ficha do produto</button><button class="ficha-tab" data-cad="custos"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>Custo operacional</button><button data-cad="produto">Produto</button><button data-cad="material">Material</button><button data-cad="fornecedor">Fornecedor</button><button data-cad="localestoque">Local estoque</button><button data-cad="estrutura">Estrutura materiais</button><button data-cad="cor">Cor</button><button data-cad="tamanho">Tamanho</button><button data-cad="setor">Setor</button><button data-cad="maquina">Máquinas</button><button data-cad="processo">Processo</button><button data-cad="operador">Operador</button><button data-cad="destino">Facção/Destino</button><button data-cad="roteiro">Roteiro</button>
           </div>
           <div class="import-bar">
             <button class="btn btn-secondary btn-sm" onclick="downloadCsvTemplate()">⬇ Modelo CSV</button>
@@ -2051,7 +2060,7 @@ function renderDashboard(){const d=STATE.dashboard||{cards:{},operadores:[],tren
 }
 // v4.16.0 — Painéis de TV (modo escuro): dados direto do Supabase (web_paineis_tv), ao vivo pelo canal da empresa
 let GUT_TV_P=null;
-function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.28.0';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
+function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.28.1';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
 function gutTvAbrir(n){if(!GUT_WEB){toast('Os painéis de TV abrem no sistema web (/sistema).',true);return}gutTvCarregar().then(tv=>tv.abrir(n)).catch(e=>toast(e.message,true))}
 window.addEventListener('hashchange',()=>{const m=/^#tv([123])$/.exec(location.hash||'');if(m&&GUT_WEB&&GUT_STARTED&&!document.getElementById('tvWorkspace'))gutTvAbrir(Number(m[1]))});
 function gutTvBotoes(){const b=(n,t,s,on)=>`<button type="button" class="tv-launch-btn" ${on?`onclick="gutTvAbrir(${n})"`:'disabled'}><span class="tv-n">${n}</span><b>${t}</b><small>${s}</small>${on?'<em>● AO VIVO</em>':'<em style="color:#9ea9aa">EM BREVE</em>'}</button>`;
@@ -2297,7 +2306,7 @@ function factionProductsHtml(list){
 function renderFactionCapPanel(){
   const el=$('facCapPanel'),lay=$('facLayout');if(!el)return;const open=facCapOpen();lay?.classList.toggle('open',open);$('facCapToggleBtn')?.classList.toggle('active',open);if(!open){el.innerHTML='';return}
   const list=factionPortfolio(),livres=list.filter(f=>f.free).length,ocup=list.length-livres,tab=STATE.facCapTab||'FAC';
-  el.innerHTML=`<div class="cap-head"><div class="cap-tabs"><button class="${tab==='FAC'?'active':''}" onclick="STATE.facCapTab='FAC';renderFactionCapPanel()">🏭 Facções</button><button class="${tab==='PROD'?'active':''}" onclick="STATE.facCapTab='PROD';renderFactionCapPanel()">👕 Produtos</button></div><button class="x" onclick="toggleFactionCapPanel()" title="Recolher">›</button></div>
+  el.innerHTML=`<div class="cap-head"><div class="cap-tabs"><button class="${tab==='FAC'?'active':''}" onclick="STATE.facCapTab='FAC';renderFactionCapPanel()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V10l6 4V10l6 4V5h6v16z"/><path d="M7 17h2M12 17h2M17 17h1"/></svg>Facções</button><button class="${tab==='PROD'?'active':''}" onclick="STATE.facCapTab='PROD';renderFactionCapPanel()"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3 3 6l2 4 2-1v12h10V9l2 1 2-4-5-3a4 4 0 0 1-8 0z"/></svg>Produtos</button></div><button class="x" onclick="toggleFactionCapPanel()" title="Recolher">›</button></div>
   <div class="cap-total idle"><div><b>${ocup}</b><span>com serviço</span><b class="fac-free">${livres}</b><span>livres</span></div><div class="hint">${fmtMin(list.reduce((t,f)=>t+f.maos,0))} pç na rua • ${fmtMin(list.reduce((t,f)=>t+f.enviar,0))} a enviar</div></div>
   ${tab==='FAC'?`<div class="cap-list">${list.map(facRowHtml).join('')||'<div class="empty">Nenhuma facção cadastrada.</div>'}</div><div class="hint cap-foot">Carga = peças na facção (e a enviar) × minutos padrão do produto, ÷ capacidade por dia útil (seg–sex). Toque numa facção para filtrar o Kanban. Arraste um lote aguardando destino para cá para montar a remessa para ela.</div>`:factionProductsHtml(list)}`;
 }
@@ -2983,7 +2992,7 @@ function renderCapacityPanel(){
   if(!open){el.innerHTML='';return}
   const list=computeMachineLoad(),withCap=list.filter(x=>x.id!==NO_MACHINE),load=withCap.reduce((s,x)=>s+x.load,0),cap=withCap.reduce((s,x)=>s+x.cap,0),pct=cap?load/cap*100:0,gargalo=withCap.filter(x=>x.load>0).sort((a,b)=>b.pct-a.pct)[0];
   const jornada=STATE.capJornada||Math.round(withCap.map(x=>x.day).sort((a,b)=>withCap.filter(y=>y.day===b).length-withCap.filter(y=>y.day===a).length)[0]||540);
-  const tabs=`<div class="cap-head"><div class="cap-tabs"><button class="${STATE.capTab==='OP'?'':'active'}" onclick="setCapTab('MQ')">⚙ Máquinas</button><button class="${STATE.capTab==='OP'?'active':''}" onclick="setCapTab('OP')">👤 Funcionários</button></div><button class="x" onclick="toggleCapacityPanel()" title="Recolher">›</button></div>`;
+  const tabs=`<div class="cap-head"><div class="cap-tabs"><button class="${STATE.capTab==='OP'?'':'active'}" onclick="setCapTab('MQ')"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Máquinas</button><button class="${STATE.capTab==='OP'?'active':''}" onclick="setCapTab('OP')"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2 .8 3 2.8 3 6"/></svg>Funcionários</button></div><button class="x" onclick="toggleCapacityPanel()" title="Recolher">›</button></div>`;
   if(STATE.capTab==='OP'){el.innerHTML=tabs+(STATE.boardOperator?`<div class="cap-filter">Filtrando: <b>${esc(operatorName(STATE.boardOperator))}</b> <button class="btn btn-secondary btn-sm" onclick="filterBoardByOperator('')">limpar</button></div>`:'')+operatorCapacityHtml()+`<div class="hint cap-foot">Carga = minutos padrão dos processos alocados ao funcionário e ainda não concluídos, contra os minutos/dia dele. Toque num nome para ver os processos dele.</div>`;return}
   el.innerHTML=`${tabs}
   <div class="cap-total ${capClass(pct)}"><div><b>${pct.toFixed(0)}%</b><span>ocupação geral • 1 dia</span></div><div class="hint">${fmtMin(load)} de ${fmtMin(cap)} min/dia${gargalo&&gargalo.pct>100?`<br>Gargalo: <b>${esc(machineLabel(gargalo.id))}</b> (${gargalo.days.toFixed(1).replace('.',',')} dias)`:''}</div></div>
@@ -4365,7 +4374,7 @@ function custosPreview(){const v=custosCalcVals(),r=custosCalcResult(v),mins=v.o
 function custosPreviewMain(){const v=n($('cpCustoMin')?.value),el=$('cpMainOut');if(el)el.innerHTML=v>0?`<span class="fac-prod">por hora <b>${brMoney(v*60)}</b></span><span class="fac-prod">peça de 10 min <b>${brMoney(v*10)}</b></span><span class="fac-prod">peça de 30 min <b>${brMoney(v*30)}</b></span>`:''}
 function custosRender(){const el=$('cadForms');if(!el)return;const P=STATE.cad.parametros||{},ops=(STATE.cad.operadores||[]).length,avgMin=ops?Math.round((STATE.cad.operadores||[]).reduce((t,o)=>t+(n(o.MINUTOS_PADRAO_DIA)||540),0)/ops):540;
   const rows=(STATE.cad.produtos||[]).map(p=>{const f=fichaFrom(p.ID_PRODUTO);const c=fichaCosts(f);return {p,c,ops:f.rot.length}}).filter(x=>x.ops||x.c.mat>0).sort((a,b)=>String(a.p.CODIGO_PRODUTO||'').localeCompare(String(b.p.CODIGO_PRODUTO||''),'pt-BR',{numeric:true}));
-  el.innerHTML=`<div class="section-box custos-box"><h3 style="margin:0 0 4px">💰 Custo operacional</h3><div class="hint">O custo minuto é o quanto custa cada minuto de produção interna. Ele vale para todas as operações e entra na ficha de custo de cada produto (tempo padrão × custo minuto).</div>
+  el.innerHTML=`<div class="section-box custos-box"><h3 style="margin:0 0 4px"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>Custo operacional</h3><div class="hint">O custo minuto é o quanto custa cada minuto de produção interna. Ele vale para todas as operações e entra na ficha de custo de cada produto (tempo padrão × custo minuto).</div>
    <div class="custos-grid"><div class="custos-card main"><label>Custo minuto (R$ por minuto)</label><div class="cost-min"><input type="number" step="0.0001" min="0" id="cpCustoMin" value="${n(P.CUSTO_MINUTO)||''}" placeholder="Ex.: 0,45" oninput="custosPreviewMain()"><button class="btn btn-primary" onclick="saveCustos()">💾 Salvar</button></div><div class="cost-fac" id="cpMainOut"></div></div>
    <div class="custos-card"><div class="hint" style="font-weight:700;margin-bottom:6px">🧮 Não sabe o valor? Calcule:</div><div class="form-grid cols3">
     <div class="field span3"><label>Custo mensal da produção (R$)</label><input type="number" min="0" step="any" id="cpMensal" value="${n(P.CALC_CUSTO_MENSAL)||''}" placeholder="salários + encargos + despesas da fábrica" oninput="custosPreview()"></div>
