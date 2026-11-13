@@ -4329,13 +4329,15 @@ function registrarContagemRetornoImpl_(payload) {
     if (novosItens.length) appendObjects_(TAB.RETORNO_VOLUME_ITENS, novosItens);
     if (itemPatches.length) updateRowsByNumber_(TAB.REMESSA_ITENS, itemPatches);
     if (logs.length) appendObjects_(TAB.BIPAGENS_EXTERNAS, logs);
+    // v4.26.0: saco de serviço parcial já vira lote de finalização (provisório) na contagem
+    const continuacoes = garantirContinuacoesParciaisUnlocked_(idRemessa, remessa);
     Object.keys(afetados).forEach(idVolume => updateExternalVolumeStatusUnlocked_(idRemessa, idVolume));
     updateRemessaTotalsUnlocked_(idRemessa);
     audit_('CONTAGEM_RETORNO_FACCAO', TAB.REMESSAS, idRemessa, '', JSON.stringify({ sacos: linhas.length, pecasContadas, pecasBaixadas, valorLiberado: round2_(valorLiberado) }), user);
-    return { ok: true, pecasContadas, pecasBaixadas, valorLiberado: round2_(valorLiberado), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
+    return { ok: true, pecasContadas, pecasBaixadas, valorLiberado: round2_(valorLiberado), continuacoes: serialize_(continuacoes.map(v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME }))), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4145
+// Code.gs:4147
 function registrarRetornoExternoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4413,7 +4415,7 @@ function registrarRetornoExternoImpl_(payload) {
     return { ok: true, retorno: serialize_(retorno), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4223
+// Code.gs:4225
 function registrarInspecaoRetornoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4447,7 +4449,7 @@ function registrarInspecaoRetornoImpl_(payload) {
     return { ok: true, retrabalhos: serialize_(gerados.filter(v => v.ID_VOLUME_ORIGEM_RETRABALHO).map(resumo)), continuacoes: serialize_(gerados.filter(v => !v.ID_VOLUME_ORIGEM_RETRABALHO).map(resumo)), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4257
+// Code.gs:4259
 function salvarGradeRemessaImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4606,19 +4608,19 @@ function salvarGradeRemessaImpl_(payload) {
     return { ok: true, remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4421
+// Code.gs:4423
 function envioConfirmado_(item) {
   return String((item && item.STATUS_BIPAGEM_ENVIO) || '').toUpperCase() === 'CONFIRMADO';
 }
-// Code.gs:4424
+// Code.gs:4426
 function exigirEnvioConfirmado_(item) {
   if (!envioConfirmado_(item)) throw new Error('O volume ' + ((item && item.COD_VOLUME) || '') + ' ainda não teve o envio confirmado. Confirme o envio (QR ou Gestão de remessas) antes de registrar retorno.');
 }
-// Code.gs:4427
+// Code.gs:4429
 function envioPatch_(now) {
   return { DATA_BIP_ENVIO: now, STATUS_BIPAGEM_ENVIO: 'CONFIRMADO', STATUS_ITEM: 'EM_FACCAO' };
 }
-// Code.gs:4430
+// Code.gs:4432
 function registrarMovimentoEnvio_(remessa, item, obs) {
   const v = findById_(TAB.VOLUMES, 'ID_VOLUME', item.ID_VOLUME) || {};
   movement_('ENVIO_FACCAO', v.ID_ESTOQUE_CORTE || '', item.ID_VOLUME, remessa.ID_REMESSA, 'EXPEDICAO', '', 'FACCAO', remessa.ID_DESTINO, '', num_(item.QTD_ENVIADA), '', 'EM_FACCAO', obs || '');
@@ -4632,7 +4634,7 @@ function registrarMovimentoEnvio_(remessa, item, obs) {
  *    (se voltou, foi enviado), com a data do vínculo.
  * Mostra o resumo no registro de execução. Não apaga nada.
  */
-// Code.gs:4484
+// Code.gs:4486
 function lancarFinanceiroFaccao_(o) {
   const valor = round2_(num_(o.VALOR));
   if (valor <= 0) return null;
@@ -4645,7 +4647,7 @@ function lancarFinanceiroFaccao_(o) {
   appendObject_(TAB.FINANCEIRO_FACCAO, row);
   return row;
 }
-// Code.gs:4496
+// Code.gs:4498
 function lancarAPagarRetorno_(remessa, item, retorno) {
   const qtd = num_(retorno.QTD_RETORNADA), preco = num_(item.PRECO_FACCAO_UNIT);
   return lancarFinanceiroFaccao_({
@@ -4654,7 +4656,7 @@ function lancarAPagarRetorno_(remessa, item, retorno) {
     QTD: qtd, VALOR_UNITARIO: preco, VALOR: qtd * preco, OBSERVACAO: 'Peças recebidas na contagem',
   });
 }
-// Code.gs:4504
+// Code.gs:4506
 function proximoCodigoRetrabalho_(origem) {
   const base = volumeOperationalCode_(origem, origem.SUBLOTE) || String(origem.COD_VOLUME || '');
   const codes = new Set(readTable_(TAB.VOLUMES).map(v => String(v.COD_VOLUME || '').toUpperCase()));
@@ -4662,7 +4664,7 @@ function proximoCodigoRetrabalho_(origem) {
   while (codes.has((base + '-R' + n).toUpperCase())) n++;
   return base + '-R' + n;
 }
-// Code.gs:4511
+// Code.gs:4513
 function criarVolumeRetrabalhoUnlocked_(retorno, item, remessa, qtd, culpaFaccao, motivo) {
   const origem = findById_(TAB.VOLUMES, 'ID_VOLUME', retorno.ID_VOLUME);
   if (!origem) throw new Error('Volume de origem do retrabalho não encontrado.');
@@ -4693,7 +4695,7 @@ function criarVolumeRetrabalhoUnlocked_(retorno, item, remessa, qtd, culpaFaccao
   return volume;
 }
 /** v4.23.0 — peças aprovadas de um serviço parcial voltam num saco novo (<saco>-C1) em "Aguardando destino". */
-// Code.gs:4541
+// Code.gs:4543
 function proximoCodigoContinuacao_(origem) {
   const base = volumeOperationalCode_(origem, origem.SUBLOTE) || String(origem.COD_VOLUME || '');
   const todos = readTable_(TAB.VOLUMES), codes = new Set(todos.map(v => String(v.COD_VOLUME || '').toUpperCase()));
@@ -4701,7 +4703,7 @@ function proximoCodigoContinuacao_(origem) {
   while (codes.has((base + '-C' + n).toUpperCase())) n++;
   return base + '-C' + n;
 }
-// Code.gs:4548
+// Code.gs:4550
 function criarVolumeContinuacaoUnlocked_(retorno, item, remessa, qtd) {
   const origem = findById_(TAB.VOLUMES, 'ID_VOLUME', retorno.ID_VOLUME);
   if (!origem) throw new Error('Volume de origem do serviço parcial não encontrado.');
@@ -4737,7 +4739,7 @@ function criarVolumeContinuacaoUnlocked_(retorno, item, remessa, qtd) {
  * própria facção sai a R$ 0; se ele gerar refugo/retrabalho de novo, o débito usa o
  * preço que a facção recebeu originalmente por aquelas peças (sobe a cadeia -R1, -R1-R1...).
  */
-// Code.gs:4583
+// Code.gs:4585
 function precoDebitoQualidade_(item, idVolume) {
   const direto = num_(item && item.PRECO_FACCAO_UNIT);
   if (direto > 0) return direto;
@@ -4756,15 +4758,66 @@ function precoDebitoQualidade_(item, idVolume) {
 }
 
 /** Processa (uma única vez) os retornos com inspeção concluída da remessa. */
-// Code.gs:4601
+/**
+ * v4.26.0 — saco de serviço parcial: o lote de finalização nasce JÁ NA CONTAGEM (provisório, antes da inspeção),
+ * para não travar o caminho nem o financeiro. A inspeção vem depois: refugo sai do lote; retrabalho é consertado
+ * dentro dele (marcado como problema da facção); os dois viram débito pelo valor acordado com a facção.
+ */
+// Code.gs:4608
+function garantirContinuacoesParciaisUnlocked_(idRemessa, remessa) {
+  remessa = remessa || findById_(TAB.REMESSAS, 'ID_REMESSA', idRemessa);
+  if (!remessa || String(remessa.TIPO_DESTINO || '').toUpperCase() !== 'FACCAO') return [];
+  const itens = mapBy_(readTable_(TAB.REMESSA_ITENS).filter(i => String(i.ID_REMESSA) === String(idRemessa)), 'ID_ITEM_REMESSA');
+  if (!Object.values(itens).some(itemServicoParcial_)) return [];
+  const rets = readTable_(TAB.RETORNOS_EXTERNOS).filter(r => String(r.ID_REMESSA) === String(idRemessa) && !String(r.ID_VOLUME_CONTINUACAO || '') &&
+    String(r.TIPO_RETORNO || '').toUpperCase() !== 'FALTA' && num_(r.QTD_RETORNADA) > 0 && itemServicoParcial_(itens[String(r.ID_ITEM_REMESSA)]));
+  const criados = [];
+  rets.forEach(ret => {
+    const cont = criarVolumeContinuacaoUnlocked_(ret, itens[String(ret.ID_ITEM_REMESSA)], remessa, num_(ret.QTD_RETORNADA));
+    updateRowsByNumber_(TAB.RETORNOS_EXTERNOS, [{ row: ret._row, patch: { ID_VOLUME_CONTINUACAO: cont.ID_VOLUME, STATUS_EMBALAGEM: 'NAO_APLICAVEL' } }]);
+    ret.ID_VOLUME_CONTINUACAO = cont.ID_VOLUME;
+    criados.push(cont);
+  });
+  return criados;
+}
+/** v4.26.1 — botão "Gerar lote de finalização" (sacos parciais que voltaram antes da v4.26.0 ou por outro caminho). */
+// Code.gs:4625
+function gerarLoteFinalizacaoImpl_(idRemessa) {
+  return withLock_(() => {
+    const remessa = findById_(TAB.REMESSAS, 'ID_REMESSA', req_(idRemessa, 'Remessa'));
+    if (!remessa) throw new Error('Remessa não encontrada.');
+    const criados = garantirContinuacoesParciaisUnlocked_(remessa.ID_REMESSA, remessa);
+    if (!criados.length) throw new Error('Esta remessa não tem saco de serviço parcial retornado sem lote de finalização.');
+    readTable_(TAB.REMESSA_ITENS).filter(i => String(i.ID_REMESSA) === String(remessa.ID_REMESSA)).forEach(i => updateExternalVolumeStatusUnlocked_(remessa.ID_REMESSA, i.ID_VOLUME));
+    audit_('LOTE_FINALIZACAO', TAB.REMESSAS, remessa.ID_REMESSA, '', JSON.stringify(criados.map(v => v.COD_VOLUME)), currentUser_());
+    return { ok: true, continuacoes: serialize_(criados.map(v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME }))), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
+  });
+}
+/** Tira peças refugadas na inspeção do lote de finalização (volume, conteúdo e cupons ainda pendentes). */
+// Code.gs:4637
+function reduzirVolumeContinuacao_(cont, qtd, motivo) {
+  const atual = num_(cont.QTD_VOLUME), nova = Math.max(0, atual - qtd), now = new Date();
+  if (nova === atual) return;
+  const conteudos = readTable_(TAB.VOLUME_ITENS).filter(c => String(c.ID_VOLUME) === String(cont.ID_VOLUME));
+  let tirar = atual - nova; const patches = [];
+  conteudos.slice().reverse().forEach(c => { if (tirar <= 0) return; const q = Math.min(tirar, num_(c.QTD_ITEM)); tirar -= q; patches.push({ row: c._row, patch: { QTD_ITEM: num_(c.QTD_ITEM) - q } }); });
+  if (patches.length) updateRowsByNumber_(TAB.VOLUME_ITENS, patches);
+  const cupons = readTable_(TAB.CUPONS).filter(c => String(c.ID_VOLUME) === String(cont.ID_VOLUME) && String(c.STATUS_CUPOM || '').toUpperCase() !== 'CONCLUIDO');
+  if (cupons.length) updateRowsByNumber_(TAB.CUPONS, cupons.map(c => ({ row: c._row, patch: { QTD_PROGRAMADA: nova, MINUTOS_PADRAO_TOTAL: round2_(nova * num_(c.TEMPO_PADRAO_SEG_UN) / 60) } })));
+  updateById_(TAB.VOLUMES, 'ID_VOLUME', cont.ID_VOLUME, { QTD_VOLUME: nova, ...(nova <= 0 ? { STATUS_VOLUME: 'BAIXADO_QUALIDADE', TIPO_LOCAL_ATUAL: 'QUALIDADE' } : {}),
+    OBSERVACAO: [cont.OBSERVACAO, 'Inspeção: ' + qtd + ' pç refugo' + (motivo ? ' (' + motivo + ')' : '')].filter(Boolean).join(' • '), ATUALIZADO_EM: now });
+}
+// Code.gs:4650
 function processarQualidadeRetornosUnlocked_(idRemessa) {
   const remessa = findById_(TAB.REMESSAS, 'ID_REMESSA', idRemessa);
   if (!remessa || String(remessa.TIPO_DESTINO || '').toUpperCase() !== 'FACCAO') return [];
+  const provisorios = garantirContinuacoesParciaisUnlocked_(idRemessa, remessa);
   const pendentes = readTable_(TAB.RETORNOS_EXTERNOS).filter(r => String(r.ID_REMESSA) === String(idRemessa) &&
     String(r.STATUS_INSPECAO || '').toUpperCase() === 'CONCLUIDA' && String(r.QUALIDADE_PROCESSADA || '').toUpperCase() !== 'SIM');
-  const gerados = [];
+  const gerados = provisorios.slice();
   pendentes.forEach(ret => {
     const item = findById_(TAB.REMESSA_ITENS, 'ID_ITEM_REMESSA', ret.ID_ITEM_REMESSA) || {};
+    const contExist = itemServicoParcial_(item) && ret.ID_VOLUME_CONTINUACAO ? findById_(TAB.VOLUMES, 'ID_VOLUME', ret.ID_VOLUME_CONTINUACAO) : null;
     const refugo = num_(ret.QTD_REPROVADA), retrab = num_(ret.QTD_RETRABALHO);
     const culpa = String(ret.DEFEITO_FACCAO || '').toUpperCase() !== 'NAO';
     const preco = (refugo + retrab) > 0 && culpa ? precoDebitoQualidade_(item, ret.ID_VOLUME) : num_(item.PRECO_FACCAO_UNIT);
@@ -4772,19 +4825,27 @@ function processarQualidadeRetornosUnlocked_(idRemessa) {
     const patch = { QUALIDADE_PROCESSADA: 'SIM', DEFEITO_FACCAO: (refugo + retrab) > 0 ? (culpa ? 'SIM' : 'NAO') : '' };
     if (num_(ret.QTD_APROVADA) <= 0) patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
     // v4.23.0: serviço parcial — as aprovadas não vão para a embalagem: seguem num saco de continuação
-    if (itemServicoParcial_(item) && num_(ret.QTD_APROVADA) > 0) {
+    if (contExist) patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
+    else if (itemServicoParcial_(item) && num_(ret.QTD_APROVADA) > 0) {
       const cont = criarVolumeContinuacaoUnlocked_(ret, item, remessa, num_(ret.QTD_APROVADA));
       patch.ID_VOLUME_CONTINUACAO = cont.ID_VOLUME; patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
       gerados.push(cont);
     }
     const vOrig = findById_(TAB.VOLUMES, 'ID_VOLUME', ret.ID_VOLUME) || {};
     const base = { ID_DESTINO: remessa.ID_DESTINO, TIPO: 'DEBITO', ID_REMESSA: remessa.ID_REMESSA, NUM_REMESSA: remessa.NUM_REMESSA, ID_ITEM_REMESSA: ret.ID_ITEM_REMESSA, ID_RETORNO: ret.ID_RETORNO, VALOR_UNITARIO: preco, MOTIVO: motivo };
-    if (retrab > 0) {
+    if (retrab > 0 && contExist) {
+      // serviço parcial: as peças já estão no lote de finalização — o conserto é feito lá dentro
+      updateById_(TAB.VOLUMES, 'ID_VOLUME', contExist.ID_VOLUME, { QTD_OCORRENCIA_FACCAO: num_(contExist.QTD_OCORRENCIA_FACCAO) + retrab,
+        OBSERVACAO: [contExist.OBSERVACAO, '⚠ Inspeção: ' + retrab + ' pç para consertar' + (motivo ? ' (' + motivo + ')' : '')].filter(Boolean).join(' • '), ATUALIZADO_EM: new Date() });
+      contExist.OBSERVACAO = [contExist.OBSERVACAO, '⚠ Inspeção: ' + retrab + ' pç para consertar'].join(' • ');
+      if (culpa) lancarFinanceiroFaccao_({ ...base, ORIGEM: 'RETRABALHO', ID_VOLUME: contExist.ID_VOLUME, COD_VOLUME: contExist.COD_VOLUME, QTD: retrab, VALOR: retrab * preco, OBSERVACAO: 'Retrabalho achado na inspeção, consertado no lote de finalização (' + (ret.COD_VOLUME || '') + ')' });
+    } else if (retrab > 0) {
       const novo = criarVolumeRetrabalhoUnlocked_(ret, item, remessa, retrab, culpa, motivo);
       patch.ID_VOLUME_RETRABALHO = novo.ID_VOLUME;
       gerados.push(novo);
       if (culpa) lancarFinanceiroFaccao_({ ...base, ORIGEM: 'RETRABALHO', ID_VOLUME: novo.ID_VOLUME, COD_VOLUME: novo.COD_VOLUME, QTD: retrab, VALOR: retrab * preco, OBSERVACAO: 'Retrabalho gerado na inspeção (' + (ret.COD_VOLUME || '') + ')' });
     }
+    if (refugo > 0 && contExist) reduzirVolumeContinuacao_(contExist, refugo, motivo);
     if (refugo > 0) {
       movement_('REFUGO_QUALIDADE', vOrig.ID_ESTOQUE_CORTE || '', ret.ID_VOLUME, remessa.ID_REMESSA, 'INSPECAO', ret.ID_RETORNO, 'REFUGO', '', '', refugo, '', '', motivo || 'Refugo na inspeção');
       if (culpa) lancarFinanceiroFaccao_({ ...base, ORIGEM: 'REFUGO', ID_VOLUME: ret.ID_VOLUME, COD_VOLUME: ret.COD_VOLUME, QTD: refugo, VALOR: refugo * preco, OBSERVACAO: 'Refugo na inspeção' });
@@ -4798,7 +4859,7 @@ function processarQualidadeRetornosUnlocked_(idRemessa) {
  * faltando em inspeções de sacos de retrabalho enviados sem custo (preço R$ 0)
  * antes desta versão. Não duplica: só cria se o retorno ainda não tem débito.
  */
-// Code.gs:4681
+// Code.gs:4740
 function registrarOcorrenciaFaccaoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4825,16 +4886,16 @@ function registrarOcorrenciaFaccaoImpl_(payload) {
 }
 
 /** Débito de retrabalho ainda em aberto para este saco (para envio sem custo à mesma facção). */
-// Code.gs:4707
+// Code.gs:4766
 function debitoRetrabalhoAberto_(idVolume) {
   return readTable_(TAB.FINANCEIRO_FACCAO).filter(l => String(l.ID_VOLUME) === String(idVolume) && String(l.TIPO) === 'DEBITO' &&
     String(l.ORIGEM) === 'RETRABALHO' && String(l.STATUS || '').toUpperCase() === 'ABERTO');
 }
-// Code.gs:4711
+// Code.gs:4770
 function retrabalhoSemCusto_(volume, idDestino) {
   return !!(volume && String(volume.ID_DESTINO_DEFEITO || '') && String(volume.ID_DESTINO_DEFEITO) === String(idDestino) && debitoRetrabalhoAberto_(volume.ID_VOLUME).length);
 }
-// Code.gs:4715
+// Code.gs:4774
 function getFinanceiroFaccaoImpl_() {
   const destinos = readTable_(TAB.DESTINOS).filter(d => String(d.TIPO_DESTINO || '').toUpperCase() === 'FACCAO');
   const nome = Object.create(null); destinos.forEach(d => nome[String(d.ID_DESTINO)] = d.NOME_DESTINO || d.RESPONSAVEL || d.ID_DESTINO);
@@ -4867,7 +4928,7 @@ function getFinanceiroFaccaoImpl_() {
     pagamentos: serialize_(pags.slice().sort((a, b) => dateMs_(b.DATA_PAGAMENTO || b.CRIADO_EM) - dateMs_(a.DATA_PAGAMENTO || a.CRIADO_EM)).map(p => ({ ...p, FACCAO: nome[String(p.ID_DESTINO)] || p.ID_DESTINO }))),
   };
 }
-// Code.gs:4747
+// Code.gs:4806
 function registrarPagamentoFaccaoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4894,7 +4955,7 @@ function registrarPagamentoFaccaoImpl_(payload) {
     return { ...getFinanceiroFaccaoImpl_(), pagamento: serialize_(pag), remessas: getRemessasExternasImpl_() };
   });
 }
-// Code.gs:4773
+// Code.gs:4832
 function cancelarLancamentoFaccaoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4907,7 +4968,7 @@ function cancelarLancamentoFaccaoImpl_(payload) {
     return { ...getFinanceiroFaccaoImpl_(), remessas: getRemessasExternasImpl_() };
   });
 }
-// Code.gs:4786
+// Code.gs:4845
 function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
   const item = readTable_(TAB.REMESSA_ITENS).find(i => String(i.ID_REMESSA) === String(idRemessa) && String(i.ID_VOLUME) === String(idVolume));
   const volume = findById_(TAB.VOLUMES, 'ID_VOLUME', idVolume);
@@ -4933,7 +4994,7 @@ function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
     if (!allInspected) {
       status = 'AGUARDANDO_INSPECAO';
       local = 'INSPECAO';
-    } else if (aprovadas > 0 && itemServicoParcial_(item)) {
+    } else if (itemServicoParcial_(item) && (aprovadas > 0 || retornos.some(r => String(r.ID_VOLUME_CONTINUACAO || '')))) {
       // v4.23.0: as aprovadas seguiram num saco de continuação; este saco encerra aqui.
       status = 'CONTINUACAO_GERADA';
       local = 'FACCAO';
@@ -4958,7 +5019,7 @@ function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
     ATUALIZADO_EM: new Date(),
   });
 }
-// Code.gs:4837
+// Code.gs:4896
 function getRemessasExternasImpl_() {
   ensureExternalSchema_();
   const remessas = readTable_(TAB.REMESSAS).filter(r => String(r.TIPO_DESTINO || '').toUpperCase() === 'FACCAO');
@@ -5083,7 +5144,7 @@ function getRemessasExternasImpl_() {
       };
     });
 }
-// Code.gs:4962
+// Code.gs:5021
 function getRemessasInternasImpl_() {
   ensureExternalSchema_();
   const remessas = readTable_(TAB.REMESSAS).filter(r => ['INTERNO','PRODUCAO_INTERNA'].includes(String(r.TIPO_DESTINO || '').toUpperCase()));
@@ -5120,7 +5181,7 @@ function getRemessasInternasImpl_() {
       return {...serialize_(r),DESTINO:'Produção interna',STATUS_CALCULADO:statusCalculado,itens:ri};
     });
 }
-// Code.gs:4999
+// Code.gs:5058
 function updateInternalRemessaStatusUnlocked_(idRemessa) {
   if (!idRemessa) return;
   const remessa=findById_(TAB.REMESSAS,'ID_REMESSA',idRemessa);
@@ -5138,7 +5199,7 @@ function updateInternalRemessaStatusUnlocked_(idRemessa) {
   });
   updateById_(TAB.REMESSAS,'ID_REMESSA',idRemessa,{STATUS_REMESSA:done===itens.length?'CONCLUIDA':'EM_PRODUCAO'});
 }
-// Code.gs:5017
+// Code.gs:5076
 function confirmarEnvioRemessaManualImpl_(idRemessa, volumeIds) {
   ensureExternalSchema_();
   return withLock_(() => {
@@ -5173,7 +5234,7 @@ function confirmarEnvioRemessaManualImpl_(idRemessa, volumeIds) {
     return { ok:true, confirmados:logs.length, remessas:getRemessasExternasImpl_(), volumes:getVolumesImpl_() };
   });
 }
-// Code.gs:5056
+// Code.gs:5115
 function getExternalScanCatalogImpl_(idRemessa, tipo) {
   ensureExternalSchema_();
   tipo = String(tipo || 'ENVIO').toUpperCase();
@@ -5252,7 +5313,7 @@ function getExternalScanCatalogImpl_(idRemessa, tipo) {
     items: out,
   };
 }
-// Code.gs:5135
+// Code.gs:5194
 function registrarBipagensExternasEmLoteImpl_(idRemessa, tipo, codigos, opcoes) {
   ensureExternalSchema_();
   tipo = String(tipo || 'ENVIO').toUpperCase();
@@ -5373,6 +5434,8 @@ function registrarBipagensExternasEmLoteImpl_(idRemessa, tipo, codigos, opcoes) 
     if (scanRows.length) appendObjects_(TAB.BIPAGENS_EXTERNAS, scanRows);
     if (aceitos.length) updateById_(TAB.REMESSAS,'ID_REMESSA',idRemessa,{ATUALIZADO_EM:now});
 
+    // v4.26.0: recebimento de saco de serviço parcial já cria o lote de finalização provisório
+    if (tipo !== 'ENVIO' && aceitos.length) garantirContinuacoesParciaisUnlocked_(idRemessa, remessa);
     // v4.5.7: envio também atualiza status do saco (EM_FACCAO) e da remessa (ENVIO_PARCIAL/ENVIADO).
     Object.keys(affectedVolumes).forEach(idVolume => updateExternalVolumeStatusUnlocked_(idRemessa, idVolume));
     if (aceitos.length) updateRemessaTotalsUnlocked_(idRemessa);
@@ -5396,7 +5459,7 @@ function registrarBipagensExternasEmLoteImpl_(idRemessa, tipo, codigos, opcoes) 
     };
   });
 }
-// Code.gs:5284
+// Code.gs:5345
 function liberarVolumeEstoquePAImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -5507,7 +5570,7 @@ function liberarVolumeEstoquePAImpl_(payload) {
     return { ok:true, volumeId:idVolume, volumes:getVolumesImpl_(), remessas:getRemessasExternasImpl_(), remessasInternas:getRemessasInternasImpl_() };
   });
 }
-// Code.gs:5399
+// Code.gs:5460
 function getEfficiencyTrend_(endDateKey, days) {
   const end=dateFromKey_(endDateKey),ops=active_(readTable_(TAB.OPERADORES),'ATIVO');
   const delivered={},available={};
@@ -5525,7 +5588,7 @@ function getEfficiencyTrend_(endDateKey, days) {
     out.push({date:key,label:Utilities.formatDate(d,CFG.TZ,'dd/MM'),efficiency:minutes>0?round2_(produced/minutes*100):0,delivered:round2_(produced),available:round2_(minutes)});
   }return out;
 }
-// Code.gs:5417
+// Code.gs:5478
 function recalcIndicadorUnlocked_(idOperador, dataKey) {
   const op = findById_(TAB.OPERADORES, 'ID_OPERADOR', idOperador);
   if (!op) return;
@@ -5550,7 +5613,7 @@ function recalcIndicadorUnlocked_(idOperador, dataKey) {
   if (existing) updateById_(TAB.INDICADOR, 'ID_INDICADOR', existing.ID_INDICADOR, obj);
   else appendObject_(TAB.INDICADOR, { ID_INDICADOR: uuid_(), ...obj });
 }
-// Code.gs:5442
+// Code.gs:5503
 function ensureJornadaUnlocked_(idOperador, dataKey) {
   const exists = readTable_(TAB.JORNADA).find(j => j.ID_OPERADOR === idOperador && dateKey_(j.DATA) === dataKey);
   if (exists) return exists;
@@ -5574,7 +5637,7 @@ function ensureJornadaUnlocked_(idOperador, dataKey) {
   appendObject_(TAB.JORNADA, obj);
   return obj;
 }
-// Code.gs:5479
+// Code.gs:5540
 function touchRemessasByVolumeIdsUnlocked_(volumeIds, when) {
   const ids=new Set((Array.isArray(volumeIds)?volumeIds:[]).filter(Boolean).map(String));
   if(!ids.size)return;
@@ -5584,7 +5647,7 @@ function touchRemessasByVolumeIdsUnlocked_(volumeIds, when) {
   const stamp=when instanceof Date?when:new Date();
   remessaIds.forEach(id=>updateById_(TAB.REMESSAS,'ID_REMESSA',id,{ATUALIZADO_EM:stamp}));
 }
-// Code.gs:5489
+// Code.gs:5550
 function updateVolumesProgressBatchUnlocked_(volumeIds) {
   volumeIds = Array.isArray(volumeIds) ? [...new Set(volumeIds.filter(Boolean).map(String))] : [];
   if (!volumeIds.length) return;
@@ -5611,13 +5674,13 @@ function updateVolumesProgressBatchUnlocked_(volumeIds) {
   updateRowsByNumber_(TAB.VOLUMES, patches);
   if(patches.length)touchRemessasByVolumeIdsUnlocked_(volumeIds,now);
 }
-// Code.gs:5516
+// Code.gs:5577
 function statusEnvioRemessa_(items) {
   const confirmados = (items || []).filter(envioConfirmado_).length;
   if (!items || !items.length || confirmados === items.length) return 'ENVIADO';
   return confirmados ? 'ENVIO_PARCIAL' : 'AGUARDANDO_ENVIO';
 }
-// Code.gs:5521
+// Code.gs:5582
 function updateRemessaTotalsUnlocked_(idRemessa) {
   const remessa = findById_(TAB.REMESSAS, 'ID_REMESSA', idRemessa);
   if (!remessa) return;
@@ -5649,7 +5712,7 @@ function updateRemessaTotalsUnlocked_(idRemessa) {
     RESULTADO_INSPECAO: resultado,
   });
 }
-// Code.gs:5553
+// Code.gs:5614
 function validateInspection_(r) {
   if (String(r.STATUS_INSPECAO || '').toUpperCase() !== 'CONCLUIDA') return;
   const retornada = num_(r.QTD_RETORNADA);
@@ -5658,13 +5721,13 @@ function validateInspection_(r) {
     throw new Error('Para concluir a inspeção, aprovada + reprovada + retrabalho deve ser igual à quantidade retornada (' + retornada + ').');
   }
 }
-// Code.gs:5562
+// Code.gs:5623
 function validatePackaging_(r) {
   if (num_(r.QTD_EMBALADA) > num_(r.QTD_APROVADA)) {
     throw new Error('A quantidade embalada não pode superar a quantidade aprovada na inspeção.');
   }
 }
-// Code.gs:5568
+// Code.gs:5629
 function packagingStatus_(embalada, aprovada) {
   embalada = num_(embalada); aprovada = num_(aprovada);
   if (aprovada <= 0) return 'PENDENTE';
@@ -5672,12 +5735,12 @@ function packagingStatus_(embalada, aprovada) {
   if (embalada >= aprovada) return 'CONCLUIDA';
   return 'PARCIAL';
 }
-// Code.gs:5680
+// Code.gs:5741
 function normalizeIdList_(v) {
   const arr = Array.isArray(v) ? v : String(v || '').split(/[,;|\s]+/);
   return [...new Set(arr.map(x => String(x || '').trim()).filter(Boolean))].join(',');
 }
-// Code.gs:5685
+// Code.gs:5746
 function ensureColumns_(sheetName, wantedHeaders) {
   wantedHeaders = Array.isArray(wantedHeaders) ? wantedHeaders.filter(Boolean) : [];
   if (!wantedHeaders.length) return;
@@ -5692,7 +5755,7 @@ function ensureColumns_(sheetName, wantedHeaders) {
   delete __HEADER_MEM[sheetName];
   invalidateTableCache_(sheetName);
 }
-// Code.gs:5700
+// Code.gs:5761
 function ensureSheetWithHeaders_(sheetName, wantedHeaders) {
   if (SUPA_ON_()) { if (supaEnsureColumns_(sheetName, wantedHeaders)) { delete __HEADER_MEM[sheetName]; invalidateTableCache_(sheetName); } return; }
   let sh = ss_().getSheetByName(sheetName);
@@ -5710,12 +5773,12 @@ function ensureSheetWithHeaders_(sheetName, wantedHeaders) {
   delete __HEADER_MEM[sheetName];
   invalidateTableCache_(sheetName);
 }
-// Code.gs:5719
+// Code.gs:5780
 function ss_() {
   if (!__SS_MEM) __SS_MEM = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
   return __SS_MEM;
 }
-// Code.gs:5730
+// Code.gs:5791
 function headers_(name) {
   if (__HEADER_MEM[name]) return __HEADER_MEM[name];
   if (SUPA_ON_()) return (__HEADER_MEM[name] = supaHeaders_(name));
@@ -5726,11 +5789,11 @@ function headers_(name) {
   __HEADER_MEM[name] = headers;
   return headers;
 }
-// Code.gs:5741
+// Code.gs:5802
 function appendObject_(name, obj) {
   appendObjects_(name, [obj]);
 }
-// Code.gs:5762
+// Code.gs:5823
 function movement_(tipo, idEstoque, idVolume, idRemessa, origemTipo, origemId, destinoTipo, destinoId, idProcesso, qtd, saldo, statusVolume, obs) {
   appendObject_(TAB.MOVIMENTACOES, {
     ID_MOVIMENTACAO: uuid_(),
@@ -5751,7 +5814,7 @@ function movement_(tipo, idEstoque, idVolume, idRemessa, origemTipo, origemId, d
     OBSERVACAO: obs || '',
   });
 }
-// Code.gs:5783
+// Code.gs:5844
 function audit_(acao, tabela, idRegistro, antes, depois, idUsuario) {
   try {
     appendObject_(TAB.AUDITORIA, {
@@ -5769,7 +5832,7 @@ function audit_(acao, tabela, idRegistro, antes, depois, idUsuario) {
     console.warn('Falha ao registrar auditoria:', e.message);
   }
 }
-// Code.gs:5807
+// Code.gs:5868
 function buildMaps_() {
   if (__MAPS_MEM) return __MAPS_MEM;
   return (__MAPS_MEM = {
@@ -5782,27 +5845,27 @@ function buildMaps_() {
     setores: labelMap_(TAB.SETORES, 'ID_SETOR', r => r.SETOR),
   });
 }
-// Code.gs:5820
+// Code.gs:5881
 function labelMap_(sheet, key, labelFn) {
   const out = {};
   readTable_(sheet).forEach(r => out[r[key]] = labelFn(r));
   return out;
 }
-// Code.gs:5826
+// Code.gs:5887
 function mapBy_(rows, key) {
   const out = {};
   rows.forEach(r => { if (r[key] !== '' && r[key] != null) out[r[key]] = r; });
   return out;
 }
-// Code.gs:5832
+// Code.gs:5893
 function active_(rows, field) {
   return rows.filter(r => r[field] === '' || r[field] == null || truthy_(r[field]));
 }
-// Code.gs:5836
+// Code.gs:5897
 function stripMeta_(rows) {
   return rows.map(serialize_);
 }
-// Code.gs:5840
+// Code.gs:5901
 function serialize_(value) {
   if (value == null) return value;
   if (value instanceof Date) return Utilities.formatDate(value, CFG.TZ, "yyyy-MM-dd'T'HH:mm:ss");
@@ -5817,12 +5880,12 @@ function serialize_(value) {
   }
   return value;
 }
-// Code.gs:5860
+// Code.gs:5921
 function req_(v, label) {
   if (v === undefined || v === null || String(v).trim() === '') throw new Error('Campo obrigatório: ' + label + '.');
   return String(v).trim();
 }
-// Code.gs:5865
+// Code.gs:5926
 function num_(v, fallback) {
   if (v === '' || v === null || v === undefined) return fallback === undefined ? 0 : fallback;
   if (typeof v === 'number') return Number.isFinite(v) ? v : (fallback || 0);
@@ -5842,7 +5905,7 @@ function num_(v, fallback) {
  *   "0.350"    -> 0.35      (começa com zero: é decimal, não milhar)
  *   "1.5"      -> 1.5       (grupo com menos de 3 dígitos: é decimal)
  */
-// Code.gs:5884
+// Code.gs:5945
 function numCsv_(v, fallback) {
   if (v === '' || v === null || v === undefined) return fallback === undefined ? 0 : fallback;
   if (typeof v === 'number') return Number.isFinite(v) ? v : (fallback || 0);
@@ -5852,30 +5915,30 @@ function numCsv_(v, fallback) {
   const n = Number(s);
   return Number.isFinite(n) ? n : (fallback === undefined ? 0 : fallback);
 }
-// Code.gs:5894
+// Code.gs:5955
 function truthy_(v) {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v !== 0;
   return ['TRUE', 'VERDADEIRO', 'SIM', '1', 'ATIVO'].includes(String(v || '').trim().toUpperCase());
 }
-// Code.gs:5900
+// Code.gs:5961
 function normKey_(v) {
   return String(v == null ? '' : v)
     .trim()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toUpperCase();
 }
-// Code.gs:5907
+// Code.gs:5968
 function uuid_() { return Utilities.getUuid(); }
-// Code.gs:5908
+// Code.gs:5969
 function round2_(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-// Code.gs:5909
+// Code.gs:5970
 function round4_(n) { return Math.round((Number(n) + Number.EPSILON) * 10000) / 10000; }
-// Code.gs:5910
+// Code.gs:5971
 function round6_(n) { return Math.round((Number(n) + Number.EPSILON) * 1000000) / 1000000; }
-// Code.gs:5911
+// Code.gs:5972
 function currentUser_() { if (typeof __WEB_USER !== 'undefined' && __WEB_USER) return __WEB_USER; try { return Session.getActiveUser().getEmail() || ''; } catch (e) { return ''; } }
-// Code.gs:5913
+// Code.gs:5974
 function normalizeLoteCode_(value, seq, dataCorte) {
   const seqNum = num_(seq, 0);
   const raw = value instanceof Date ? '' : String(value || '').trim();
@@ -5895,7 +5958,7 @@ function normalizeLoteCode_(value, seq, dataCorte) {
   const n = seqNum > 0 ? seqNum : 1;
   return String(n).padStart(2, '0') + '-' + Utilities.formatDate(d, CFG.TZ, 'MM-yyyy');
 }
-// Code.gs:5933
+// Code.gs:5994
 function normalizeSubloteCode_(value, loteValue, variacao) {
   const raw = String(value || '').trim();
   const m = raw.match(/^(.+)\.(\d+)$/);
@@ -5905,7 +5968,7 @@ function normalizeSubloteCode_(value, loteValue, variacao) {
   const lote = normalizeLoteCode_(loteRaw, 1, loteRaw instanceof Date ? loteRaw : '');
   return lote + '.' + v;
 }
-// Code.gs:5948
+// Code.gs:6009
 function volumeOperationalCode_(volume, subloteFallback) {
   volume = volume || {};
   const raw = String(volume.COD_VOLUME || '').trim();
@@ -5918,7 +5981,7 @@ function volumeOperationalCode_(volume, subloteFallback) {
   const seq = num_(volume.SEQ_SEPARACAO || volume.VOLUME_SEQ);
   return sub && seq > 0 ? sub + '-V' + String(seq).padStart(2, '0') : (sub || '');
 }
-// Code.gs:5961
+// Code.gs:6022
 function parseDate_(v) {
   if (v instanceof Date) return v;
   const s = String(v || '').trim();
@@ -5934,21 +5997,21 @@ function parseDate_(v) {
   if (isNaN(d.getTime())) throw new Error('Data inválida: ' + s);
   return d;
 }
-// Code.gs:5977
+// Code.gs:6038
 function todayKey_() { return Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd'); }
-// Code.gs:5978
+// Code.gs:6039
 function dateFromKey_(key) {
   const p = normalizeDateKey_(key).split('-').map(Number);
   return new Date(p[0], p[1] - 1, p[2], 12, 0, 0);
 }
-// Code.gs:5982
+// Code.gs:6043
 function normalizeDateKey_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, CFG.TZ, 'yyyy-MM-dd');
   const s = String(v || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   return Utilities.formatDate(parseDate_(s), CFG.TZ, 'yyyy-MM-dd');
 }
-// Code.gs:5988
+// Code.gs:6049
 function dateKey_(v) {
   if (!v) return '';
   if (v instanceof Date) return Utilities.formatDate(v, CFG.TZ, 'yyyy-MM-dd');
@@ -5956,49 +6019,49 @@ function dateKey_(v) {
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   try { return Utilities.formatDate(parseDate_(s), CFG.TZ, 'yyyy-MM-dd'); } catch (e) { return ''; }
 }
-// Code.gs:5995
+// Code.gs:6056
 function dateMs_(v) {
   if (!v) return 0;
   if (v instanceof Date) return v.getTime();
   const d = new Date(v);
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
-// Code.gs:6001
+// Code.gs:6062
 function formatDateTime_(v) {
   if (!v) return '';
   try { return Utilities.formatDate(v instanceof Date ? v : new Date(v), CFG.TZ, 'dd/MM/yyyy HH:mm'); } catch (e) { return String(v); }
 }
-// Code.gs:6005
+// Code.gs:6066
 function code3_(s) {
   return String(s || 'OP')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9]/g, '')
     .toUpperCase().slice(0, 3) || 'OP';
 }
-// Code.gs:6031
+// Code.gs:6092
 const ENGINE = Object.freeze({
   VERSION: '4.13.0', SCHEMA: '4.6.0', CONTROL: 'APP_CONTROLE', OPS: 'APP_OPERACOES',
   CACHE_TTL: 120, CACHE_PART: 70000, CACHE_MAX_PARTS: 12,
   RESULT_PART: 40000, RESULT_PARTS: 16, MAX_COMMIT_BYTES: 1800000,
 });
-// Code.gs:6036
+// Code.gs:6097
 var __TX = null, __SHEET_MEM = {}, __INDEX_MEM = {}, __MAPS_MEM = null;
-// Code.gs:6037
+// Code.gs:6098
 var __REVISION = '', __SCHEMA_READY = false, __FRESH = false;
-// Code.gs:6038
+// Code.gs:6099
 var __METRICS = { reads: 0, cacheHits: 0, commits: 0 };
-// Code.gs:6039
+// Code.gs:6100
 var __REQ = {}; // opções da requisição atual vindas do front (ex.: período do fluxo de estoque).
-// Code.gs:6041
+// Code.gs:6102
 function resetRequestState_() {
   __SS_MEM = null; __TABLE_MEM = {}; __HEADER_MEM = {}; __SHEET_MEM = {};
   __INDEX_MEM = {}; __MAPS_MEM = null; __REVISION = ''; __SCHEMA_READY = false;
   __TX = null; __FRESH = false; __METRICS = { reads: 0, cacheHits: 0, commits: 0 }; __REQ = {};
   supaResetRequest_();
 }
-// Code.gs:6055
+// Code.gs:6116
 const DELTA_KEYS = ['estoque','volumes','remessas','remessasInternas','precosFaccao','cortesProgramados','estoqueMateriais','comprasRecentes','fluxoEstoque'];
-// Code.gs:6056
+// Code.gs:6117
 function rowHash_(row) {
   // cyrb53: hash rápido em JS puro (sem Utilities.computeDigest por linha).
   const str = JSON.stringify(row);
@@ -6011,7 +6074,7 @@ function rowHash_(row) {
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
-// Code.gs:6068
+// Code.gs:6129
 function finalizeResponse_(out, meta) {
   if (!out || typeof out !== 'object' || Array.isArray(out) || out.__error) return out;
   const known = (meta && meta.known && typeof meta.known === 'object') ? meta.known : null;
@@ -6033,13 +6096,13 @@ function finalizeResponse_(out, meta) {
   });
   return out;
 }
-// Code.gs:6089
+// Code.gs:6150
 function referenceTables_() {
   return [TAB.PRODUTOS,TAB.CORES,TAB.TAMANHOS,TAB.PROCESSOS,TAB.MAQUINAS,TAB.DESTINOS,
     TAB.SETORES,TAB.OPERADORES,TAB.ROTEIRO,TAB.MATERIAIS,TAB.FORNECEDORES,
     TAB.LOCAIS_ESTOQUE,TAB.ESTRUTURA_PRODUTO,TAB.PRECO_FACCAO];
 }
-// Code.gs:6094
+// Code.gs:6155
 function packValue_(x) {
   if (x instanceof Date) return { __gutDate: x.toISOString() };
   if (Array.isArray(x)) return x.map(packValue_);
@@ -6048,38 +6111,38 @@ function packValue_(x) {
   }
   return x;
 }
-// Code.gs:6102
+// Code.gs:6163
 function unpackValue_(x) {
   if (x && typeof x === 'object' && typeof x.__gutDate === 'string' && Object.keys(x).length === 1) return new Date(x.__gutDate);
   if (Array.isArray(x)) return x.map(unpackValue_);
   if (x && typeof x === 'object') { Object.keys(x).forEach(k => x[k] = unpackValue_(x[k])); }
   return x;
 }
-// Code.gs:6108
+// Code.gs:6169
 function compress_(value) {
   return Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(JSON.stringify(packValue_(value)), 'application/json')).getBytes());
 }
-// Code.gs:6111
+// Code.gs:6172
 function decompress_(s) {
   return unpackValue_(JSON.parse(Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(s))).getDataAsString('UTF-8')));
 }
-// Code.gs:6114
+// Code.gs:6175
 function digest_(s) {
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8)).replace(/=+$/, '');
 }
-// Code.gs:6144
+// Code.gs:6205
 function sh_(name) {
   if (!__SHEET_MEM[name]) __SHEET_MEM[name] = ss_().getSheetByName(name);
   if (!__SHEET_MEM[name]) throw new Error('Aba não encontrada: '+name);
   return __SHEET_MEM[name];
 }
-// Code.gs:6149
+// Code.gs:6210
 function invalidateTableCache_(name) {
   if (name) { delete __TABLE_MEM[name]; delete __INDEX_MEM[name]; }
   else { __TABLE_MEM={}; __INDEX_MEM={}; }
   __MAPS_MEM=null;
 }
-// Code.gs:6154
+// Code.gs:6215
 function readTable_(name, forceRefresh) {
   if (SUPA_ON_()) supaMarkUsed_(name);
   // Durante a transação nunca descartar alterações ainda não confirmadas.
@@ -6109,7 +6172,7 @@ function readTable_(name, forceRefresh) {
   if(useCache) cachePut_('table:'+name,{headers,rows});
   return rows;
 }
-// Code.gs:6183
+// Code.gs:6244
 function txTable_(name) {
   if(!__TX) throw new Error('Gravação fora de uma operação protegida.');
   if(!__TX.tables[name]) {
@@ -6126,7 +6189,7 @@ function txTable_(name) {
   }
   return __TX.tables[name];
 }
-// Code.gs:6199
+// Code.gs:6260
 function appendObjects_(name, objs) {
   if(!objs||!objs.length)return;
   const t=txTable_(name);
@@ -6142,7 +6205,7 @@ function appendObjects_(name, objs) {
   });
   delete __INDEX_MEM[name];__MAPS_MEM=null;
 }
-// Code.gs:6214
+// Code.gs:6275
 function updateRowsByNumber_(name, updates) {
   if(!updates||!updates.length)return;
   const t=txTable_(name);
@@ -6166,7 +6229,7 @@ function updateRowsByNumber_(name, updates) {
   });
   delete __INDEX_MEM[name];__MAPS_MEM=null;
 }
-// Code.gs:6238
+// Code.gs:6299
 function deleteRowsByNumber_(name, rows) {
   rows = [...new Set((rows || []).map(Number).filter(r => Number.isInteger(r) && r >= 2))];
   if (!rows.length) return;
@@ -6179,7 +6242,7 @@ function deleteRowsByNumber_(name, rows) {
   if (__TABLE_MEM[name]) __TABLE_MEM[name] = __TABLE_MEM[name].filter(x => !t.deletes[x._row]);
   delete __INDEX_MEM[name]; __MAPS_MEM = null;
 }
-// Code.gs:6256
+// Code.gs:6317
 function findById_(name, field, id) {
   if(!__INDEX_MEM[name])__INDEX_MEM[name]={};
   if(!__INDEX_MEM[name][field]){
@@ -6188,13 +6251,13 @@ function findById_(name, field, id) {
   }
   return __INDEX_MEM[name][field][String(id)]||null;
 }
-// Code.gs:6264
+// Code.gs:6325
 function updateById_(name, field, id, patch) {
   const found=findById_(name,field,id);
   if(!found)throw new Error('Registro não encontrado em '+name+': '+id);
   updateRowsByNumber_(name,[{row:found._row,patch:patch||{}}]);return {...found,...patch};
 }
-// Code.gs:6269
+// Code.gs:6330
 function nextSeqUnlocked_(chave, competencia, escopo) {
   const rows=readTable_(TAB.SEQUENCIAS);
   const row=rows.find(r=>String(r.CHAVE)===String(chave)&&String(r.COMPETENCIA||'')===String(competencia||'')&&String(r.ESCOPO_ID||'')===String(escopo||''));
@@ -6203,7 +6266,7 @@ function nextSeqUnlocked_(chave, competencia, escopo) {
   else appendObject_(TAB.SEQUENCIAS,{CHAVE:chave,COMPETENCIA:competencia||'',ESCOPO_ID:escopo||'',ULTIMO_NUMERO:next,ATUALIZADO_EM:new Date()});
   return next;
 }
-// Code.gs:6277
+// Code.gs:6338
 function cellValue_(v) {
   if(v===undefined||v===null||v==='')return {};
   if(v instanceof Date) {
@@ -6216,7 +6279,7 @@ function cellValue_(v) {
   // stringValue impede fórmulas injetadas e mantém zeros à esquerda.
   return {stringValue:typeof v==='object'?JSON.stringify(v):String(v)};
 }
-// Code.gs:6289
+// Code.gs:6350
 function commitTransaction_() {
   if (SUPA_ON_()) return supaCommit_();
   const requests=[];
@@ -6270,16 +6333,16 @@ function commitTransaction_() {
   Sheets.Spreadsheets.batchUpdate({requests},CFG.SPREADSHEET_ID);
   __METRICS.commits++;
 }
-// Code.gs:6342
+// Code.gs:6403
 function requireSheetsService_() {
   if (SUPA_ON_()) return;
   if(typeof Sheets==='undefined'||!Sheets.Spreadsheets)throw new Error('Ative Google Sheets API em Serviços (+) no Apps Script e execute instalarAtualizacao.');
 }
-// Code.gs:6346
+// Code.gs:6407
 function operationHeaders_() {
   return ['ID_OPERACAO','ACAO','HASH','DATA_HORA','USUARIO','REFRESH'].concat(Array.from({length:ENGINE.RESULT_PARTS},(_,i)=>'RESULTADO_'+(i+1)));
 }
-// Code.gs:6349
+// Code.gs:6410
 function ensureRuntimeSchema_() {
   if(__SCHEMA_READY)return;
   if (SUPA_ON_()) {
@@ -6293,7 +6356,7 @@ function ensureRuntimeSchema_() {
   if(!ctrl||String(ctrl.getRange(2,1).getValue())!==ENGINE.SCHEMA)throw new Error('Execute instalarAtualizacao no editor do Apps Script antes de usar esta versão.');
   __REVISION=String(ctrl.getRange(2,2).getValue()||'0');__SCHEMA_READY=true;
 }
-// Code.gs:6362
+// Code.gs:6423
 function findOperation_(id) {
   if (SUPA_ON_()) return supaFindOperation_(id);
   const sheet=sh_(ENGINE.OPS),last=sheet.getLastRow();if(last<2)return null;
@@ -6302,18 +6365,18 @@ function findOperation_(id) {
   const vals=sheet.getRange(match.getRow(),1,1,operationHeaders_().length).getValues()[0];
   const out={};operationHeaders_().forEach((h,i)=>out[h]=vals[i]);return out;
 }
-// Code.gs:6370
+// Code.gs:6431
 function refreshResultFields_() {
   return {cadastros:getCadastrosImpl_,dashboard:()=>getDashboardImpl_(todayKey_()),estoque:getEstoqueCorteImpl_,volumes:getVolumesImpl_,remessas:getRemessasExternasImpl_,remessasInternas:getRemessasInternasImpl_,separacoesVolume:getSeparacoesVolumeImpl_,precosFaccao:getPrecosFaccaoImpl_,cortesProgramados:getCortesProgramadosImpl_,estoqueMateriais:getEstoqueMateriaisImpl_,comprasRecentes:getComprasRecentesImpl_,fluxoEstoque:getFluxoEstoqueImpl_};
 }
-// Code.gs:6373
+// Code.gs:6434
 function replayOperation_(row) {
   const encoded=Array.from({length:ENGINE.RESULT_PARTS},(_,i)=>row['RESULTADO_'+(i+1)]||'').join('');
   const result=decompress_(encoded),loaders=refreshResultFields_();
   String(row.REFRESH||'').split(',').filter(Boolean).forEach(k=>{if(loaders[k])result[k]=loaders[k]()});
   result.__replayed=true;return result;
 }
-// Code.gs:6379
+// Code.gs:6440
 function stageOperation_(id, action, hash, result) {
   const compact={...serialize_(result)},refresh=[];
   Object.keys(refreshResultFields_()).forEach(k=>{if(Object.prototype.hasOwnProperty.call(compact,k)){refresh.push(k);delete compact[k]}});
@@ -6323,7 +6386,7 @@ function stageOperation_(id, action, hash, result) {
   for(let i=0;i<ENGINE.RESULT_PARTS;i++)row['RESULTADO_'+(i+1)]=encoded.slice(i*ENGINE.RESULT_PART,(i+1)*ENGINE.RESULT_PART);
   appendObject_(ENGINE.OPS,row);
 }
-// Code.gs:6388
+// Code.gs:6449
 function withLock_(fn) {
   if(__TX)return fn();
   const lock=LockService.getScriptLock();lock.waitLock(30000);
@@ -6332,7 +6395,7 @@ function withLock_(fn) {
     __TX={tables:{},committing:false};const result=fn();commitTransaction_();return result;
   } finally {__TX=null;lock.releaseLock();}
 }
-// Code.gs:6396
+// Code.gs:6457
 function authorize_(action, mutation) {
   const props=PropertiesService.getScriptProperties(),mode=String(props.getProperty('GUT_ACCESS_MODE')||'DEPLOYMENT').toUpperCase();
   if(mode==='DEPLOYMENT')return; // compatibilidade: acesso definido na publicação Google.
@@ -6348,15 +6411,15 @@ function authorize_(action, mutation) {
   if(['OPERADOR','OPERACIONAL'].includes(role)&&scan.includes(action))return;
   throw new Error('Seu perfil não tem permissão para esta operação.');
 }
-// Code.gs:6411
+// Code.gs:6472
 function getBootstrapDataImpl_(dataRef) {
   return {ok:true,appName:CFG.APP_NAME,version:ENGINE.VERSION,today:todayKey_(),userEmail:currentUser_(),cadastros:getCadastrosImpl_(),dashboard:getDashboardImpl_(dataRef||todayKey_())};
 }
-// Code.gs:6414
+// Code.gs:6475
 function getOperationalDataImpl_() {
   return {ok:true,estoque:getEstoqueCorteImpl_(),volumes:getVolumesImpl_(),remessas:getRemessasExternasImpl_(),precosFaccao:getPrecosFaccaoImpl_(),cortesProgramados:getCortesProgramadosImpl_(),estoqueMateriais:getEstoqueMateriaisImpl_(),comprasRecentes:getComprasRecentesImpl_(),fluxoEstoque:getFluxoEstoqueImpl_()};
 }
-// Code.gs:6417
+// Code.gs:6478
 function apiCall(action,args,meta) {
   resetRequestState_();action=String(action||'').trim();args=Array.isArray(args)?args:[];meta=meta||{};
   __REQ={fluxoDias:meta.fluxoDias};
@@ -6398,15 +6461,15 @@ function apiCall(action,args,meta) {
     __TX=null;if(lock)lock.releaseLock();
   }
 }
-// Code.gs:6478
+// Code.gs:6539
 function ensureExternalSchema_(){ensureRuntimeSchema_();}
-// Code.gs:6479
+// Code.gs:6540
 function ensureInventorySchema_(){ensureRuntimeSchema_();}
-// Code.gs:6480
+// Code.gs:6541
 function groupBy_(rows, field) {
   const out=Object.create(null);rows.forEach(r=>(out[String(r[field])]||(out[String(r[field])]=[])).push(r));return out;
 }
-// Code.gs:6484
+// Code.gs:6545
 function routes_() { return {
   getInitialData: getInitialDataImpl_,
   getCadastros: getCadastrosImpl_,
@@ -6481,6 +6544,7 @@ function routes_() { return {
   salvarCapacidadeFaccoes: salvarCapacidadeFaccoesImpl_,
   retirarVolumeRemessa: retirarVolumeRemessaImpl_,
   registrarOcorrenciaFaccao: registrarOcorrenciaFaccaoImpl_,
+  gerarLoteFinalizacao: gerarLoteFinalizacaoImpl_,
   salvarFichaProduto: salvarFichaProdutoImpl_,
   salvarFotoProduto: salvarFotoProdutoImpl_,
   salvarParametros: salvarParametrosImpl_,
@@ -6495,177 +6559,179 @@ function routes_() { return {
   previewTempoPadraoMarcacao: previewTempoPadraoMarcacaoImpl_,
   aplicarTempoPadraoMarcacao: aplicarTempoPadraoMarcacaoImpl_
 }; }
-// Code.gs:6572
-function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto", "registrarOcorrenciaFaccao"]; }
-// Code.gs:6573
-function getInitialData() { return apiCall("getInitialData", Array.prototype.slice.call(arguments)); }
-// Code.gs:6574
-function getCadastros() { return apiCall("getCadastros", Array.prototype.slice.call(arguments)); }
-// Code.gs:6575
-function salvarCadastro() { return apiCall("salvarCadastro", Array.prototype.slice.call(arguments)); }
-// Code.gs:6576
-function importarCadastroCSV() { return apiCall("importarCadastroCSV", Array.prototype.slice.call(arguments)); }
-// Code.gs:6577
-function getEstoqueMateriais() { return apiCall("getEstoqueMateriais", Array.prototype.slice.call(arguments)); }
-// Code.gs:6578
-function getComprasRecentes() { return apiCall("getComprasRecentes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6579
-function getFluxoEstoque() { return apiCall("getFluxoEstoque", Array.prototype.slice.call(arguments)); }
-// Code.gs:6580
-function registrarCompra() { return apiCall("registrarCompra", Array.prototype.slice.call(arguments)); }
-// Code.gs:6581
-function baixarEstoqueManual() { return apiCall("baixarEstoqueManual", Array.prototype.slice.call(arguments)); }
-// Code.gs:6582
-function ajustarEstoqueManual() { return apiCall("ajustarEstoqueManual", Array.prototype.slice.call(arguments)); }
-// Code.gs:6583
-function prepararConsumoCorte() { return apiCall("prepararConsumoCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6584
-function confirmarConsumoCorteEExplodir() { return apiCall("confirmarConsumoCorteEExplodir", Array.prototype.slice.call(arguments)); }
-// Code.gs:6585
-function registrarCorte() { return apiCall("registrarCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6586
-function getCortesProgramados() { return apiCall("getCortesProgramados", Array.prototype.slice.call(arguments)); }
-// Code.gs:6587
-function getCorte() { return apiCall("getCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6588
-function editarCorteExecutado() { return apiCall("editarCorteExecutado", Array.prototype.slice.call(arguments)); }
-// Code.gs:6589
-function explodirCorte() { return apiCall("explodirCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6590
-function getEstoqueCorte() { return apiCall("getEstoqueCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6591
-function criarVolume() { return apiCall("criarVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6592
-function getSeparacoesVolume() { return apiCall("getSeparacoesVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6593
-function criarVolumesLote() { return apiCall("criarVolumesLote", Array.prototype.slice.call(arguments)); }
-// Code.gs:6594
-function criarSeparacaoVolumes() { return apiCall("criarSeparacaoVolumes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6595
-function marcarEtiquetasSeparacaoImpressas() { return apiCall("marcarEtiquetasSeparacaoImpressas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6596
-function getPrecosFaccao() { return apiCall("getPrecosFaccao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6597
-function salvarPrecoFaccao() { return apiCall("salvarPrecoFaccao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6598
-function destinarVolumesInternos() { return apiCall("destinarVolumesInternos", Array.prototype.slice.call(arguments)); }
-// Code.gs:6599
-function criarEnvioFaccaoMassa() { return apiCall("criarEnvioFaccaoMassa", Array.prototype.slice.call(arguments)); }
-// Code.gs:6600
-function fracionarVolumeInterno() { return apiCall("fracionarVolumeInterno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6601
-function prepararImpressaoCuponsInternos() { return apiCall("prepararImpressaoCuponsInternos", Array.prototype.slice.call(arguments)); }
-// Code.gs:6602
-function prepararRomaneioInterno() { return apiCall("prepararRomaneioInterno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6603
-function prepararRomaneioRemessa() { return apiCall("prepararRomaneioRemessa", Array.prototype.slice.call(arguments)); }
-// Code.gs:6604
-function gerarCuponsVolume() { return apiCall("gerarCuponsVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6605
-function getVolumes() { return apiCall("getVolumes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6606
-function editarVolume() { return apiCall("editarVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6607
-function previewExclusao() { return apiCall("previewExclusao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6608
-function excluirEntidade() { return apiCall("excluirEntidade", Array.prototype.slice.call(arguments)); }
-// Code.gs:6609
-function getCuponsVolume() { return apiCall("getCuponsVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6610
-function marcarCuponsImpressos() { return apiCall("marcarCuponsImpressos", Array.prototype.slice.call(arguments)); }
-// Code.gs:6611
-function getScanCatalog() { return apiCall("getScanCatalog", Array.prototype.slice.call(arguments)); }
-// Code.gs:6612
-function biparCupom() { return apiCall("biparCupom", Array.prototype.slice.call(arguments)); }
-// Code.gs:6613
-function biparCuponsEmLote() { return apiCall("biparCuponsEmLote", Array.prototype.slice.call(arguments)); }
-// Code.gs:6614
-function enviarBipagensColetadas() { return apiCall("enviarBipagensColetadas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6615
-function consolidarBipagens() { return apiCall("consolidarBipagens", Array.prototype.slice.call(arguments)); }
-// Code.gs:6616
-function registrarJornada() { return apiCall("registrarJornada", Array.prototype.slice.call(arguments)); }
-// Code.gs:6617
-function salvarMetasProducao() { return apiCall("salvarMetasProducao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6618
-function getDashboard() { return apiCall("getDashboard", Array.prototype.slice.call(arguments)); }
-// Code.gs:6619
-function getInternalProductionBoard() { return apiCall("getInternalProductionBoard", Array.prototype.slice.call(arguments)); }
-// Code.gs:6620
-function getInternalProductionPerformance() { return apiCall("getInternalProductionPerformance", Array.prototype.slice.call(arguments)); }
-// Code.gs:6621
-function apontarProducaoDireta() { return apiCall("apontarProducaoDireta", Array.prototype.slice.call(arguments)); }
-// Code.gs:6622
-function registrarApontamentosDiretosEmLote() { return apiCall("registrarApontamentosDiretosEmLote", Array.prototype.slice.call(arguments)); }
-// Code.gs:6623
-function iniciarMarcacaoProducao() { return apiCall("iniciarMarcacaoProducao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6624
-function finalizarMarcacaoProducao() { return apiCall("finalizarMarcacaoProducao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6625
-function criarRemessaExterna() { return apiCall("criarRemessaExterna", Array.prototype.slice.call(arguments)); }
-// Code.gs:6626
-function registrarRetornoExterno() { return apiCall("registrarRetornoExterno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6627
-function registrarInspecaoRetorno() { return apiCall("registrarInspecaoRetorno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6628
-function liberarVolumeEstoquePA() { return apiCall("liberarVolumeEstoquePA", Array.prototype.slice.call(arguments)); }
-// Code.gs:6629
-function salvarGradeRemessa() { return apiCall("salvarGradeRemessa", Array.prototype.slice.call(arguments)); }
-// Code.gs:6630
-function getRemessasExternas() { return apiCall("getRemessasExternas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6631
-function getRemessasInternas() { return apiCall("getRemessasInternas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6632
-function confirmarEnvioRemessaManual() { return apiCall("confirmarEnvioRemessaManual", Array.prototype.slice.call(arguments)); }
-// Code.gs:6633
-function getExternalScanCatalog() { return apiCall("getExternalScanCatalog", Array.prototype.slice.call(arguments)); }
 // Code.gs:6634
-function registrarBipagensExternasEmLote() { return apiCall("registrarBipagensExternasEmLote", Array.prototype.slice.call(arguments)); }
+function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto", "registrarOcorrenciaFaccao", "gerarLoteFinalizacao"]; }
 // Code.gs:6635
-function getFinanceiroFaccao() { return apiCall("getFinanceiroFaccao", Array.prototype.slice.call(arguments)); }
+function getInitialData() { return apiCall("getInitialData", Array.prototype.slice.call(arguments)); }
 // Code.gs:6636
-function registrarPagamentoFaccao() { return apiCall("registrarPagamentoFaccao", Array.prototype.slice.call(arguments)); }
+function getCadastros() { return apiCall("getCadastros", Array.prototype.slice.call(arguments)); }
 // Code.gs:6637
-function cancelarLancamentoFaccao() { return apiCall("cancelarLancamentoFaccao", Array.prototype.slice.call(arguments)); }
+function salvarCadastro() { return apiCall("salvarCadastro", Array.prototype.slice.call(arguments)); }
 // Code.gs:6638
-function registrarContagemRetorno() { return apiCall("registrarContagemRetorno", Array.prototype.slice.call(arguments)); }
+function importarCadastroCSV() { return apiCall("importarCadastroCSV", Array.prototype.slice.call(arguments)); }
 // Code.gs:6639
-function salvarCapacidadeMaquinas() { return apiCall("salvarCapacidadeMaquinas", Array.prototype.slice.call(arguments)); }
+function getEstoqueMateriais() { return apiCall("getEstoqueMateriais", Array.prototype.slice.call(arguments)); }
 // Code.gs:6640
-function alocarOperadorCupons() { return apiCall("alocarOperadorCupons", Array.prototype.slice.call(arguments)); }
+function getComprasRecentes() { return apiCall("getComprasRecentes", Array.prototype.slice.call(arguments)); }
 // Code.gs:6641
-function salvarCapacidadeFaccoes() { return apiCall("salvarCapacidadeFaccoes", Array.prototype.slice.call(arguments)); }
+function getFluxoEstoque() { return apiCall("getFluxoEstoque", Array.prototype.slice.call(arguments)); }
 // Code.gs:6642
-function retirarVolumeRemessa() { return apiCall("retirarVolumeRemessa", Array.prototype.slice.call(arguments)); }
+function registrarCompra() { return apiCall("registrarCompra", Array.prototype.slice.call(arguments)); }
 // Code.gs:6643
-function registrarOcorrenciaFaccao() { return apiCall("registrarOcorrenciaFaccao", Array.prototype.slice.call(arguments)); }
+function baixarEstoqueManual() { return apiCall("baixarEstoqueManual", Array.prototype.slice.call(arguments)); }
 // Code.gs:6644
-function salvarFichaProduto() { return apiCall("salvarFichaProduto", Array.prototype.slice.call(arguments)); }
+function ajustarEstoqueManual() { return apiCall("ajustarEstoqueManual", Array.prototype.slice.call(arguments)); }
 // Code.gs:6645
-function salvarFotoProduto() { return apiCall("salvarFotoProduto", Array.prototype.slice.call(arguments)); }
+function prepararConsumoCorte() { return apiCall("prepararConsumoCorte", Array.prototype.slice.call(arguments)); }
 // Code.gs:6646
-function salvarParametros() { return apiCall("salvarParametros", Array.prototype.slice.call(arguments)); }
+function confirmarConsumoCorteEExplodir() { return apiCall("confirmarConsumoCorteEExplodir", Array.prototype.slice.call(arguments)); }
 // Code.gs:6647
-function salvarAcessoCampo() { return apiCall("salvarAcessoCampo", Array.prototype.slice.call(arguments)); }
+function registrarCorte() { return apiCall("registrarCorte", Array.prototype.slice.call(arguments)); }
 // Code.gs:6648
-function pausarMarcacao() { return apiCall("pausarMarcacao", Array.prototype.slice.call(arguments)); }
+function getCortesProgramados() { return apiCall("getCortesProgramados", Array.prototype.slice.call(arguments)); }
 // Code.gs:6649
-function retomarMarcacao() { return apiCall("retomarMarcacao", Array.prototype.slice.call(arguments)); }
+function getCorte() { return apiCall("getCorte", Array.prototype.slice.call(arguments)); }
 // Code.gs:6650
-function pausarTodasMarcacoes() { return apiCall("pausarTodasMarcacoes", Array.prototype.slice.call(arguments)); }
+function editarCorteExecutado() { return apiCall("editarCorteExecutado", Array.prototype.slice.call(arguments)); }
 // Code.gs:6651
-function retomarTodasMarcacoes() { return apiCall("retomarTodasMarcacoes", Array.prototype.slice.call(arguments)); }
+function explodirCorte() { return apiCall("explodirCorte", Array.prototype.slice.call(arguments)); }
 // Code.gs:6652
-function marcarAvisosCampoLidos() { return apiCall("marcarAvisosCampoLidos", Array.prototype.slice.call(arguments)); }
+function getEstoqueCorte() { return apiCall("getEstoqueCorte", Array.prototype.slice.call(arguments)); }
 // Code.gs:6653
-function removerFotoProduto() { return apiCall("removerFotoProduto", Array.prototype.slice.call(arguments)); }
+function criarVolume() { return apiCall("criarVolume", Array.prototype.slice.call(arguments)); }
 // Code.gs:6654
-function getFotosProduto() { return apiCall("getFotosProduto", Array.prototype.slice.call(arguments)); }
+function getSeparacoesVolume() { return apiCall("getSeparacoesVolume", Array.prototype.slice.call(arguments)); }
 // Code.gs:6655
-function previewTempoPadraoMarcacao() { return apiCall("previewTempoPadraoMarcacao", Array.prototype.slice.call(arguments)); }
+function criarVolumesLote() { return apiCall("criarVolumesLote", Array.prototype.slice.call(arguments)); }
 // Code.gs:6656
-function aplicarTempoPadraoMarcacao() { return apiCall("aplicarTempoPadraoMarcacao", Array.prototype.slice.call(arguments)); }
+function criarSeparacaoVolumes() { return apiCall("criarSeparacaoVolumes", Array.prototype.slice.call(arguments)); }
+// Code.gs:6657
+function marcarEtiquetasSeparacaoImpressas() { return apiCall("marcarEtiquetasSeparacaoImpressas", Array.prototype.slice.call(arguments)); }
+// Code.gs:6658
+function getPrecosFaccao() { return apiCall("getPrecosFaccao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6659
+function salvarPrecoFaccao() { return apiCall("salvarPrecoFaccao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6660
+function destinarVolumesInternos() { return apiCall("destinarVolumesInternos", Array.prototype.slice.call(arguments)); }
+// Code.gs:6661
+function criarEnvioFaccaoMassa() { return apiCall("criarEnvioFaccaoMassa", Array.prototype.slice.call(arguments)); }
+// Code.gs:6662
+function fracionarVolumeInterno() { return apiCall("fracionarVolumeInterno", Array.prototype.slice.call(arguments)); }
+// Code.gs:6663
+function prepararImpressaoCuponsInternos() { return apiCall("prepararImpressaoCuponsInternos", Array.prototype.slice.call(arguments)); }
+// Code.gs:6664
+function prepararRomaneioInterno() { return apiCall("prepararRomaneioInterno", Array.prototype.slice.call(arguments)); }
+// Code.gs:6665
+function prepararRomaneioRemessa() { return apiCall("prepararRomaneioRemessa", Array.prototype.slice.call(arguments)); }
+// Code.gs:6666
+function gerarCuponsVolume() { return apiCall("gerarCuponsVolume", Array.prototype.slice.call(arguments)); }
+// Code.gs:6667
+function getVolumes() { return apiCall("getVolumes", Array.prototype.slice.call(arguments)); }
+// Code.gs:6668
+function editarVolume() { return apiCall("editarVolume", Array.prototype.slice.call(arguments)); }
+// Code.gs:6669
+function previewExclusao() { return apiCall("previewExclusao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6670
+function excluirEntidade() { return apiCall("excluirEntidade", Array.prototype.slice.call(arguments)); }
+// Code.gs:6671
+function getCuponsVolume() { return apiCall("getCuponsVolume", Array.prototype.slice.call(arguments)); }
+// Code.gs:6672
+function marcarCuponsImpressos() { return apiCall("marcarCuponsImpressos", Array.prototype.slice.call(arguments)); }
+// Code.gs:6673
+function getScanCatalog() { return apiCall("getScanCatalog", Array.prototype.slice.call(arguments)); }
+// Code.gs:6674
+function biparCupom() { return apiCall("biparCupom", Array.prototype.slice.call(arguments)); }
+// Code.gs:6675
+function biparCuponsEmLote() { return apiCall("biparCuponsEmLote", Array.prototype.slice.call(arguments)); }
+// Code.gs:6676
+function enviarBipagensColetadas() { return apiCall("enviarBipagensColetadas", Array.prototype.slice.call(arguments)); }
+// Code.gs:6677
+function consolidarBipagens() { return apiCall("consolidarBipagens", Array.prototype.slice.call(arguments)); }
+// Code.gs:6678
+function registrarJornada() { return apiCall("registrarJornada", Array.prototype.slice.call(arguments)); }
+// Code.gs:6679
+function salvarMetasProducao() { return apiCall("salvarMetasProducao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6680
+function getDashboard() { return apiCall("getDashboard", Array.prototype.slice.call(arguments)); }
+// Code.gs:6681
+function getInternalProductionBoard() { return apiCall("getInternalProductionBoard", Array.prototype.slice.call(arguments)); }
+// Code.gs:6682
+function getInternalProductionPerformance() { return apiCall("getInternalProductionPerformance", Array.prototype.slice.call(arguments)); }
+// Code.gs:6683
+function apontarProducaoDireta() { return apiCall("apontarProducaoDireta", Array.prototype.slice.call(arguments)); }
+// Code.gs:6684
+function registrarApontamentosDiretosEmLote() { return apiCall("registrarApontamentosDiretosEmLote", Array.prototype.slice.call(arguments)); }
+// Code.gs:6685
+function iniciarMarcacaoProducao() { return apiCall("iniciarMarcacaoProducao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6686
+function finalizarMarcacaoProducao() { return apiCall("finalizarMarcacaoProducao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6687
+function criarRemessaExterna() { return apiCall("criarRemessaExterna", Array.prototype.slice.call(arguments)); }
+// Code.gs:6688
+function registrarRetornoExterno() { return apiCall("registrarRetornoExterno", Array.prototype.slice.call(arguments)); }
+// Code.gs:6689
+function registrarInspecaoRetorno() { return apiCall("registrarInspecaoRetorno", Array.prototype.slice.call(arguments)); }
 // Code.gs:6690
+function liberarVolumeEstoquePA() { return apiCall("liberarVolumeEstoquePA", Array.prototype.slice.call(arguments)); }
+// Code.gs:6691
+function salvarGradeRemessa() { return apiCall("salvarGradeRemessa", Array.prototype.slice.call(arguments)); }
+// Code.gs:6692
+function getRemessasExternas() { return apiCall("getRemessasExternas", Array.prototype.slice.call(arguments)); }
+// Code.gs:6693
+function getRemessasInternas() { return apiCall("getRemessasInternas", Array.prototype.slice.call(arguments)); }
+// Code.gs:6694
+function confirmarEnvioRemessaManual() { return apiCall("confirmarEnvioRemessaManual", Array.prototype.slice.call(arguments)); }
+// Code.gs:6695
+function getExternalScanCatalog() { return apiCall("getExternalScanCatalog", Array.prototype.slice.call(arguments)); }
+// Code.gs:6696
+function registrarBipagensExternasEmLote() { return apiCall("registrarBipagensExternasEmLote", Array.prototype.slice.call(arguments)); }
+// Code.gs:6697
+function getFinanceiroFaccao() { return apiCall("getFinanceiroFaccao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6698
+function registrarPagamentoFaccao() { return apiCall("registrarPagamentoFaccao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6699
+function cancelarLancamentoFaccao() { return apiCall("cancelarLancamentoFaccao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6700
+function registrarContagemRetorno() { return apiCall("registrarContagemRetorno", Array.prototype.slice.call(arguments)); }
+// Code.gs:6701
+function salvarCapacidadeMaquinas() { return apiCall("salvarCapacidadeMaquinas", Array.prototype.slice.call(arguments)); }
+// Code.gs:6702
+function alocarOperadorCupons() { return apiCall("alocarOperadorCupons", Array.prototype.slice.call(arguments)); }
+// Code.gs:6703
+function salvarCapacidadeFaccoes() { return apiCall("salvarCapacidadeFaccoes", Array.prototype.slice.call(arguments)); }
+// Code.gs:6704
+function retirarVolumeRemessa() { return apiCall("retirarVolumeRemessa", Array.prototype.slice.call(arguments)); }
+// Code.gs:6705
+function registrarOcorrenciaFaccao() { return apiCall("registrarOcorrenciaFaccao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6706
+function gerarLoteFinalizacao() { return apiCall("gerarLoteFinalizacao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6707
+function salvarFichaProduto() { return apiCall("salvarFichaProduto", Array.prototype.slice.call(arguments)); }
+// Code.gs:6708
+function salvarFotoProduto() { return apiCall("salvarFotoProduto", Array.prototype.slice.call(arguments)); }
+// Code.gs:6709
+function salvarParametros() { return apiCall("salvarParametros", Array.prototype.slice.call(arguments)); }
+// Code.gs:6710
+function salvarAcessoCampo() { return apiCall("salvarAcessoCampo", Array.prototype.slice.call(arguments)); }
+// Code.gs:6711
+function pausarMarcacao() { return apiCall("pausarMarcacao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6712
+function retomarMarcacao() { return apiCall("retomarMarcacao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6713
+function pausarTodasMarcacoes() { return apiCall("pausarTodasMarcacoes", Array.prototype.slice.call(arguments)); }
+// Code.gs:6714
+function retomarTodasMarcacoes() { return apiCall("retomarTodasMarcacoes", Array.prototype.slice.call(arguments)); }
+// Code.gs:6715
+function marcarAvisosCampoLidos() { return apiCall("marcarAvisosCampoLidos", Array.prototype.slice.call(arguments)); }
+// Code.gs:6716
+function removerFotoProduto() { return apiCall("removerFotoProduto", Array.prototype.slice.call(arguments)); }
+// Code.gs:6717
+function getFotosProduto() { return apiCall("getFotosProduto", Array.prototype.slice.call(arguments)); }
+// Code.gs:6718
+function previewTempoPadraoMarcacao() { return apiCall("previewTempoPadraoMarcacao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6719
+function aplicarTempoPadraoMarcacao() { return apiCall("aplicarTempoPadraoMarcacao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6753
 const CAMPO = {
   AVISOS: 'FACCAO_AVISOS',
   AVISO_HEADERS: ['ID_AVISO', 'ID_REMESSA', 'NUM_REMESSA', 'ID_DESTINO', 'ID_VOLUME', 'COD_VOLUME', 'TIPO', 'DATA_HORA', 'ORIGEM', 'OBS', 'LIDO_EM'],
@@ -6673,31 +6739,31 @@ const CAMPO = {
   DEST_COLS: ['CODIGO_ACESSO', 'ACESSO_APP', 'SENHA_HASH', 'SENHA_SALT', 'SENHA_EM', 'ULTIMO_ACESSO_APP'],
   TOKEN_DIAS: 30, MAX_FALHAS: 6, MODOS: ['MARCADOR', 'APONTADOR', 'AMBOS']
 };
-// Code.gs:6697
+// Code.gs:6760
 const CAMPO_SECRET_FIELDS = ['SENHA_HASH', 'SENHA_SALT'];
-// Code.gs:6698
+// Code.gs:6761
 function campoSchema_() {
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
   ensureColumns_(TAB.OPERADORES, CAMPO.OP_COLS);
   ensureColumns_(TAB.DESTINOS, CAMPO.DEST_COLS);
   ensureSheetWithHeaders_(CAMPO.AVISOS, CAMPO.AVISO_HEADERS);
 }
-// Code.gs:6704
+// Code.gs:6767
 function campoPublicRecord_(r) {
   const o = Object.assign({}, r);
   o.TEM_SENHA = !!String(r.SENHA_HASH || '');
   CAMPO_SECRET_FIELDS.forEach(k => delete o[k]);
   return o;
 }
-// Code.gs:6710
+// Code.gs:6773
 function campoNorm_(v) { return String(v || '').trim().toUpperCase().replace(/\s+/g, ''); }
-// Code.gs:6711
+// Code.gs:6774
 function campoHash_(senha, salt) {
   let h = String(salt) + '|' + String(senha);
   for (let i = 0; i < 40; i++) h = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h + '|' + salt, Utilities.Charset.UTF_8));
   return h;
 }
-// Code.gs:6756
+// Code.gs:6819
 function salvarAcessoCampoImpl_(payload) {
   payload = payload || {};
   const tipo = String(payload.TIPO || '').toUpperCase() === 'FACCAO' ? 'FACCAO' : 'OPERADOR';
@@ -6732,7 +6798,7 @@ function salvarAcessoCampoImpl_(payload) {
     return { ok: true, TIPO: tipo, ID: rec[idField], LOGIN: login, cadastros: getCadastrosImpl_() };
   });
 }
-// Code.gs:6790
+// Code.gs:6853
 function marcarAvisosCampoLidosImpl_(payload) {
   payload = payload || {};
   const ids = Array.isArray(payload.ids) ? payload.ids.map(String) : [];
@@ -6743,7 +6809,7 @@ function marcarAvisosCampoLidosImpl_(payload) {
     return { ok: true };
   });
 }
-// Code.gs:6801
+// Code.gs:6864
 function avisosCampoMap_() {
   const out = {};
   if (!tableExists_(CAMPO.AVISOS)) return out;
@@ -6756,14 +6822,14 @@ function avisosCampoMap_() {
   });
   return out;
 }
-// Code.gs:6813
+// Code.gs:6876
 function campoStatusVolume_(av, idVolume) {
   if (!av) return '';
   const g = av.geral, v = av.vols[String(idVolume)];
   const e = v && (!g || v.ms >= g.ms) ? v : g;
   return e ? e.TIPO : '';
 }
-// Code.gs:6819
+// Code.gs:6882
 function campoResumoRemessa_(av, itens) {
   if (!av) return null;
   const pend = itens.filter(i => num_(i.QTD_ENVIADA) - num_(i.QTD_RETORNADA) > 0 || !itens.some(x => num_(x.QTD_RETORNADA) > 0));
@@ -6772,35 +6838,35 @@ function campoResumoRemessa_(av, itens) {
   const status = st.length && conc === st.length ? 'CONCLUIDO' : conc ? 'PARCIAL' : ini ? 'INICIADO' : '';
   return { STATUS: status, CONCLUIDOS: conc, INICIADOS: ini, TOTAL: st.length, ULTIMO: av.ultimo, NAO_LIDOS: av.naoLidos };
 }
-// Code.gs:7024
+// Code.gs:7087
 const PAUSA_COLS = ['PAUSADO_EM', 'SEGUNDOS_PAUSA', 'PAUSA_TIPO'];
-// Code.gs:7025
+// Code.gs:7088
 function pausaColsOk_() { try { const h = headers_(TAB.CUPONS); return PAUSA_COLS.every(c => h.indexOf(c) >= 0); } catch (e) { return false; } }
-// Code.gs:7026
+// Code.gs:7089
 function marcacaoRodando_(c) { return String(c.STATUS_CUPOM || '').toUpperCase() === 'EM_ANDAMENTO_MARCACAO' && !c.PAUSADO_EM; }
-// Code.gs:7027
+// Code.gs:7090
 function marcacaoPausada_(c) { return String(c.STATUS_CUPOM || '').toUpperCase() === 'EM_ANDAMENTO_MARCACAO' && !!c.PAUSADO_EM; }
-// Code.gs:7028
+// Code.gs:7091
 function pausaTotalSeg_(c, ate) {
   let s = num_(c.SEGUNDOS_PAUSA);
   if (c.PAUSADO_EM) { const p = dateMs_(c.PAUSADO_EM); if (p) s += Math.max(0, ((ate instanceof Date ? ate.getTime() : Date.now()) - p) / 1000); }
   return Math.round(s);
 }
-// Code.gs:7033
+// Code.gs:7096
 function pausarCupons_(lista, tipo, now) {
   if (!lista.length) return 0;
   updateRowsByNumber_(TAB.CUPONS, lista.map(c => ({ row: c._row, patch: { PAUSADO_EM: now, PAUSA_TIPO: tipo, ATUALIZADO_EM: now } })));
   clearScanCatalogCache_();
   return lista.length;
 }
-// Code.gs:7039
+// Code.gs:7102
 function retomarCupons_(lista, now) {
   if (!lista.length) return 0;
   updateRowsByNumber_(TAB.CUPONS, lista.map(c => ({ row: c._row, patch: { PAUSADO_EM: '', PAUSA_TIPO: '', SEGUNDOS_PAUSA: pausaTotalSeg_(c, now), ATUALIZADO_EM: now } })));
   clearScanCatalogCache_();
   return lista.length;
 }
-// Code.gs:7045
+// Code.gs:7108
 function pausarMarcacaoImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
@@ -6814,7 +6880,7 @@ function pausarMarcacaoImpl_(payload) {
     return { ok: true, ID_CUPOM: c.ID_CUPOM, PAUSADO_EM: serialize_(now), SEGUNDOS_PAUSA: num_(c.SEGUNDOS_PAUSA) };
   });
 }
-// Code.gs:7058
+// Code.gs:7121
 function retomarMarcacaoImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
@@ -6831,7 +6897,7 @@ function retomarMarcacaoImpl_(payload) {
     return { ok: true, ID_CUPOM: c.ID_CUPOM, SEGUNDOS_PAUSA: seg, pausadas: rodando.map(x => x.ID_CUPOM) };
   });
 }
-// Code.gs:7074
+// Code.gs:7137
 function pausarTodasMarcacoesImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
@@ -6842,7 +6908,7 @@ function pausarTodasMarcacoesImpl_(payload) {
     return { ok: true, qtd: lista.length, ids: lista.map(c => c.ID_CUPOM), PAUSADO_EM: serialize_(now) };
   });
 }
-// Code.gs:7084
+// Code.gs:7147
 function retomarTodasMarcacoesImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);

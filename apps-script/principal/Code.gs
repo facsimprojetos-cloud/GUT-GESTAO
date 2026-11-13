@@ -4621,6 +4621,18 @@ function garantirContinuacoesParciaisUnlocked_(idRemessa, remessa) {
   });
   return criados;
 }
+/** v4.26.1 — botão "Gerar lote de finalização" (sacos parciais que voltaram antes da v4.26.0 ou por outro caminho). */
+function gerarLoteFinalizacaoImpl_(idRemessa) {
+  return withLock_(() => {
+    const remessa = findById_(TAB.REMESSAS, 'ID_REMESSA', req_(idRemessa, 'Remessa'));
+    if (!remessa) throw new Error('Remessa não encontrada.');
+    const criados = garantirContinuacoesParciaisUnlocked_(remessa.ID_REMESSA, remessa);
+    if (!criados.length) throw new Error('Esta remessa não tem saco de serviço parcial retornado sem lote de finalização.');
+    readTable_(TAB.REMESSA_ITENS).filter(i => String(i.ID_REMESSA) === String(remessa.ID_REMESSA)).forEach(i => updateExternalVolumeStatusUnlocked_(remessa.ID_REMESSA, i.ID_VOLUME));
+    audit_('LOTE_FINALIZACAO', TAB.REMESSAS, remessa.ID_REMESSA, '', JSON.stringify(criados.map(v => v.COD_VOLUME)), currentUser_());
+    return { ok: true, continuacoes: serialize_(criados.map(v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME }))), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
+  });
+}
 /** Tira peças refugadas na inspeção do lote de finalização (volume, conteúdo e cupons ainda pendentes). */
 function reduzirVolumeContinuacao_(cont, qtd, motivo) {
   const atual = num_(cont.QTD_VOLUME), nova = Math.max(0, atual - qtd), now = new Date();
@@ -6604,6 +6616,7 @@ function routes_() { return {
   salvarCapacidadeFaccoes: salvarCapacidadeFaccoesImpl_,
   retirarVolumeRemessa: retirarVolumeRemessaImpl_,
   registrarOcorrenciaFaccao: registrarOcorrenciaFaccaoImpl_,
+  gerarLoteFinalizacao: gerarLoteFinalizacaoImpl_,
   salvarFichaProduto: salvarFichaProdutoImpl_,
   salvarFotoProduto: salvarFotoProdutoImpl_,
   salvarParametros: salvarParametrosImpl_,
@@ -6618,7 +6631,7 @@ function routes_() { return {
   previewTempoPadraoMarcacao: previewTempoPadraoMarcacaoImpl_,
   aplicarTempoPadraoMarcacao: aplicarTempoPadraoMarcacaoImpl_
 }; }
-function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto", "registrarOcorrenciaFaccao"]; }
+function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto", "registrarOcorrenciaFaccao", "gerarLoteFinalizacao"]; }
 function getInitialData() { return apiCall("getInitialData", Array.prototype.slice.call(arguments)); }
 function getCadastros() { return apiCall("getCadastros", Array.prototype.slice.call(arguments)); }
 function salvarCadastro() { return apiCall("salvarCadastro", Array.prototype.slice.call(arguments)); }
@@ -6690,6 +6703,7 @@ function alocarOperadorCupons() { return apiCall("alocarOperadorCupons", Array.p
 function salvarCapacidadeFaccoes() { return apiCall("salvarCapacidadeFaccoes", Array.prototype.slice.call(arguments)); }
 function retirarVolumeRemessa() { return apiCall("retirarVolumeRemessa", Array.prototype.slice.call(arguments)); }
 function registrarOcorrenciaFaccao() { return apiCall("registrarOcorrenciaFaccao", Array.prototype.slice.call(arguments)); }
+function gerarLoteFinalizacao() { return apiCall("gerarLoteFinalizacao", Array.prototype.slice.call(arguments)); }
 function salvarFichaProduto() { return apiCall("salvarFichaProduto", Array.prototype.slice.call(arguments)); }
 function salvarFotoProduto() { return apiCall("salvarFotoProduto", Array.prototype.slice.call(arguments)); }
 function salvarParametros() { return apiCall("salvarParametros", Array.prototype.slice.call(arguments)); }
