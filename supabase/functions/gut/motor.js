@@ -2421,7 +2421,7 @@ function prepararImpressaoCuponsInternosImpl_(volumeIds) {
     // motivo o código se repetir em outro cupom, usa o token aleatório para não confundir a bipagem.
     const todosCupons = readTable_(TAB.CUPONS), codCount = {};
     todosCupons.forEach(c => { const k = String(c.COD_CUPOM || '').trim().toUpperCase(); if (k) codCount[k] = (codCount[k] || 0) + 1; });
-    const cuponsRows = todosCupons.filter(c => idSet.has(String(c.ID_VOLUME)))
+    const cuponsRows = todosCupons.filter(c => idSet.has(String(c.ID_VOLUME)) && String(c.METODO_CONCLUSAO || '').toUpperCase() !== 'FACCAO')
       .sort((a,b) => (ordemVolume[String(a.ID_VOLUME)] - ordemVolume[String(b.ID_VOLUME)]) || (num_(a.ORDEM_PROCESSO)-num_(b.ORDEM_PROCESSO)));
 
     const now = new Date();
@@ -2477,12 +2477,17 @@ function gerarCuponsVolumeUnlocked_(idVolume) {
 
   const processos = mapBy_(readTable_(TAB.PROCESSOS), 'ID_PROCESSO');
   const now = new Date();
+  // v4.23.0: o que a facção já fez (serviço parcial) nasce concluído, sem operador e sem minutos para a equipe
+  const feitasFaccao = new Set(listaIds_(volume.OPS_FEITAS));
+  const nomeFaccao = feitasFaccao.size ? (buildMaps_().destinos[volume.ID_DESTINO_PARCIAL] || 'facção') : '';
   const rows = roteiro.map(r => {
     const p = processos[r.ID_PROCESSO] || {};
     const ordem = num_(r.ORDEM_PROCESSO, 1);
     const tempo = num_(r.TEMPO_PADRAO_SEG_UN);
     const qtd = num_(volume.QTD_VOLUME);
+    const daFaccao = feitasFaccao.has(String(r.ID_ROTEIRO));
     return {
+      ...(daFaccao ? { METODO_CONCLUSAO: 'FACCAO', ATUALIZADO_EM: now } : {}),
       ID_CUPOM: uuid_(),
       COD_CUPOM: volume.COD_VOLUME + '-P' + String(ordem).padStart(2, '0') + '-' + (p.COD_PROCESSO || code3_(p.PROCESSO || 'OP')),
       ID_VOLUME: volume.ID_VOLUME,
@@ -2500,7 +2505,7 @@ function gerarCuponsVolumeUnlocked_(idVolume) {
       QTD_PROGRAMADA: qtd,
       TEMPO_PADRAO_SEG_UN: tempo,
       MINUTOS_PADRAO_TOTAL: round2_(qtd * tempo / 60),
-      STATUS_CUPOM: 'PENDENTE',
+      STATUS_CUPOM: daFaccao ? 'CONCLUIDO' : 'PENDENTE',
       QR_TOKEN: uuid_(),
       DATA_GERACAO: now,
       DATA_IMPRESSAO: '',
@@ -2508,7 +2513,7 @@ function gerarCuponsVolumeUnlocked_(idVolume) {
       ID_OPERADOR_BIPAGEM: '',
       DATA_HORA_BIPAGEM: '',
       ID_APONTAMENTO: '',
-      OBSERVACAO: '',
+      OBSERVACAO: daFaccao ? 'Feito pela facção ' + nomeFaccao : '',
     };
   });
 
@@ -2521,7 +2526,7 @@ function gerarCuponsVolumeUnlocked_(idVolume) {
   });
   return rows;
 }
-// Code.gs:2316
+// Code.gs:2321
 function getVolumesImpl_() {
   const volumes = readTable_(TAB.VOLUMES);
   const estoque = mapBy_(readTable_(TAB.ESTOQUE_CORTE), 'ID_ESTOQUE_CORTE');
@@ -2567,7 +2572,7 @@ function getVolumesImpl_() {
       };
     });
 }
-// Code.gs:2362
+// Code.gs:2367
 function getCuponsVolumeImpl_(idVolume) {
   const cupons = readTable_(TAB.CUPONS).filter(c => c.ID_VOLUME === idVolume)
     .sort((a, b) => num_(a.ORDEM_PROCESSO) - num_(b.ORDEM_PROCESSO));
@@ -2583,7 +2588,7 @@ function getCuponsVolumeImpl_(idVolume) {
     MAQUINA: (()=>{const id=c.ID_MAQUINA||(processoById[c.ID_PROCESSO]||{}).ID_MAQUINA_PADRAO||'';return maps.maquinas[id]||id||''})(),
   }));
 }
-// Code.gs:2378
+// Code.gs:2383
 function marcarCuponsImpressosImpl_(idVolume) {
   return withLock_(() => {
     const cupons = readTable_(TAB.CUPONS).filter(c => c.ID_VOLUME === idVolume);
@@ -2606,7 +2611,7 @@ function marcarCuponsImpressosImpl_(idVolume) {
  * materiais. Usa VOLUME_ITENS quando existir e cai para ESTOQUE_CORTE nos
  * volumes internos/legados que representam uma única variação.
  */
-// Code.gs:2400
+// Code.gs:2405
 function romaneioItemsFromVolumes_(volumeIds) {
   const ids = new Set((volumeIds || []).map(String).filter(Boolean));
   if (!ids.size) return [];
@@ -2662,7 +2667,7 @@ function romaneioItemsFromVolumes_(volumeIds) {
  * mesma regra de consumo/perda/conversão usada no corte. Não gera nova baixa
  * de estoque: é somente um documento operacional de separação.
  */
-// Code.gs:2455
+// Code.gs:2460
 function buildMaterialSeparation_(items) {
   items = (items || []).filter(x => x && x.ID_PRODUTO && num_(x.QTD) > 0);
   const estruturas = active_(readTable_(TAB.ESTRUTURA_PRODUTO), 'ATIVO');
@@ -2735,7 +2740,7 @@ function buildMaterialSeparation_(items) {
     temConversaoPendente: rows.some(x => !x.CONVERSAO_OK),
   };
 }
-// Code.gs:2528
+// Code.gs:2533
 function prepararRomaneioInternoImpl_(volumeIds) {
   volumeIds = Array.isArray(volumeIds) ? [...new Set(volumeIds.map(String).filter(Boolean))] : [];
   if (!volumeIds.length) throw new Error('Selecione pelo menos uma caixa para o romaneio interno.');
@@ -2809,7 +2814,7 @@ function prepararRomaneioInternoImpl_(volumeIds) {
 
   return {ok:true,tipo:'INTERNO',geradoEm:new Date(),caixas:serialize_(caixas),processos:serialize_(processos),resumoProcessos:serialize_(resumoProcessos),itens:serialize_(itens),materiais:serialize_(buildMaterialSeparation_(itens))};
 }
-// Code.gs:2602
+// Code.gs:2607
 function prepararRomaneioRemessaImpl_(idRemessa) {
   const remessa = readTable_(TAB.REMESSAS).find(r => String(r.ID_REMESSA) === String(idRemessa));
   if (!remessa) throw new Error('Remessa não encontrada.');
@@ -2819,7 +2824,7 @@ function prepararRomaneioRemessaImpl_(idRemessa) {
   const itens = romaneioItemsFromVolumes_(volumeIds);
   return {ok:true,tipo:'FACCAO',geradoEm:new Date(),ID_REMESSA:idRemessa,NUM_REMESSA:remessa.NUM_REMESSA||'',itens:serialize_(itens),materiais:serialize_(buildMaterialSeparation_(itens))};
 }
-// Code.gs:2617
+// Code.gs:2622
 function getCorteImpl_(idCorte) {
   const c = findById_(TAB.PEDIDOS_CORTE, 'ID_CORTE', req_(idCorte, 'Corte'));
   if (!c) throw new Error('Corte não encontrado.');
@@ -2828,7 +2833,7 @@ function getCorteImpl_(idCorte) {
   for (let i=1;i<=8;i++) if (c['ID_TAMANHO_'+i] && num_(c['RISCOS_'+i])>0) tamanhos.push({ID_TAMANHO:c['ID_TAMANHO_'+i],TAMANHO:maps.tamanhos[c['ID_TAMANHO_'+i]]||c['ID_TAMANHO_'+i],RISCOS:num_(c['RISCOS_'+i])});
   return serialize_({...c,PRODUTO:maps.produtos[c.ID_PRODUTO]||c.ID_PRODUTO,cores,tamanhos,EXPLODIDO:truthy_(c.EXPLODIDO)});
 }
-// Code.gs:2626
+// Code.gs:2631
 function editarCorteExecutadoImpl_(payload) {
   payload=payload||{};
   return withLock_(()=>{
@@ -2847,7 +2852,7 @@ function editarCorteExecutadoImpl_(payload) {
     return {ok:true,corte:getCorteImpl_(id),estoque:getEstoqueCorteImpl_()};
   });
 }
-// Code.gs:2645
+// Code.gs:2650
 function editarVolumeImpl_(payload) {
   payload=payload||{};
   return withLock_(()=>{
@@ -2883,9 +2888,9 @@ function editarVolumeImpl_(payload) {
     return {ok:true,volumes:getVolumesImpl_(),estoque:getEstoqueCorteImpl_()};
   });
 }
-// Code.gs:2681
+// Code.gs:2686
 function setOf_(rows,field){const s=new Set();(rows||[]).forEach(r=>{const v=String(r[field]||'');if(v)s.add(v)});return s}
-// Code.gs:2683
+// Code.gs:2688
 function collectCutCascade_(cutIds) {
   const cuts=new Set((Array.isArray(cutIds)?cutIds:[cutIds]).map(String).filter(Boolean));
   const cutRows=readTable_(TAB.PEDIDOS_CORTE).filter(r=>cuts.has(String(r.ID_CORTE)));
@@ -2909,17 +2914,17 @@ function collectCutCascade_(cutIds) {
   const sepIds=setOf_(volumes,'ID_SEPARACAO');
   return {cuts,cutRows,estoqueRows,estoqueIds,volumeIds,volumes,volumeItens,coupons,apont,remItems,remItemIds,remIds,returns,returnItems,extBips,movements,consumos,movEstoque,sepIds};
 }
-// Code.gs:2707
+// Code.gs:2712
 function impactFromCascade_(c){return {cortes:c.cutRows.length,estoqueCorte:c.estoqueRows.length,volumes:c.volumes.length,cupons:c.coupons.length,apontamentos:c.apont.length,itensRemessa:c.remItems.length,retornos:c.returns.length,movimentosLogisticos:c.movements.length,consumosMateriais:c.consumos.length,baixasEstoqueEstornadas:c.movEstoque.length,separacoes:c.sepIds.size,remessas:c.remIds.size}}
-// Code.gs:2708
+// Code.gs:2713
 function impactLines_(counts){return Object.entries(counts).filter(([,v])=>num_(v)>0).map(([chave,qtd])=>({chave,qtd}))}
-// Code.gs:2710
+// Code.gs:2715
 function cadastroDeleteConfig_(tipo,id){
   tipo=String(tipo||'').toLowerCase();id=String(id||'');
   const cfg={estrutura:[TAB.ESTRUTURA_PRODUTO,'ID_ESTRUTURA'],roteiro:[TAB.ROTEIRO,'ID_ROTEIRO'],produto:[TAB.PRODUTOS,'ID_PRODUTO'],material:[TAB.MATERIAIS,'ID_MATERIAL'],cor:[TAB.CORES,'ID_COR'],tamanho:[TAB.TAMANHOS,'ID_TAMANHO'],maquina:[TAB.MAQUINAS,'ID_MAQUINA'],processo:[TAB.PROCESSOS,'ID_PROCESSO'],setor:[TAB.SETORES,'ID_SETOR'],operador:[TAB.OPERADORES,'ID_OPERADOR'],destino:[TAB.DESTINOS,'ID_DESTINO'],fornecedor:[TAB.FORNECEDORES,'ID_FORNECEDOR'],localestoque:[TAB.LOCAIS_ESTOQUE,'ID_LOCAL_ESTOQUE']}[tipo];
   if(!cfg)throw new Error('Tipo de cadastro não suportado para exclusão.');const row=findById_(cfg[0],cfg[1],id);if(!row)throw new Error('Cadastro não encontrado.');return {tipo,sheet:cfg[0],idField:cfg[1],row};
 }
-// Code.gs:2716
+// Code.gs:2721
 function previewExclusaoImpl_(tipo,id){
   tipo=String(tipo||'');id=String(id||'');
   if(tipo==='corte'){const c=collectCutCascade_(id);if(!c.cutRows.length)throw new Error('Corte não encontrado.');const counts=impactFromCascade_(c);return {ok:true,tipo,id,titulo:'Excluir corte '+(c.cutRows[0].LOTE_CORTE||''),bloqueado:false,impacto:impactLines_(counts),token:digest_(JSON.stringify(counts))}}
@@ -2944,7 +2949,7 @@ function previewExclusaoImpl_(tipo,id){
   }
   throw new Error('Tipo de exclusão inválido.');
 }
-// Code.gs:2741
+// Code.gs:2746
 function restoreCutMaterialStock_(c){
   const grouped={};c.consumos.forEach(x=>{const key=[x.ID_MATERIAL,x.ID_LOTE,x.ID_LOCAL_ESTOQUE].join('|');grouped[key]=(grouped[key]||0)+num_(x.QTD_BAIXADA)});
   const saldos=readTable_(TAB.ESTOQUE_SALDOS),lotes=readTable_(TAB.ESTOQUE_LOTES),now=new Date(),cutRefs=[...c.cuts].join(', '),lotRefs=[...new Set(c.cutRows.map(x=>x.LOTE_CORTE).filter(Boolean))].join(', ');
@@ -2954,21 +2959,21 @@ function restoreCutMaterialStock_(c){
     if(lr)updateRowsByNumber_(TAB.ESTOQUE_LOTES,[{row:lr._row,patch:{QTD_ATUAL:num_(lr.QTD_ATUAL)+q,ATUALIZADO_EM:now,STATUS_LOTE:'DISPONIVEL'}}]);
   });
 }
-// Code.gs:2750
+// Code.gs:2755
 function updateRemainingRemessas_(remIds,deletedItemIds){
   const allItems=readTable_(TAB.REMESSA_ITENS),allRem=readTable_(TAB.REMESSAS);remIds.forEach(id=>{const remain=allItems.filter(x=>String(x.ID_REMESSA)===id&&!deletedItemIds.has(String(x.ID_ITEM_REMESSA))),r=allRem.find(x=>String(x.ID_REMESSA)===id);if(!r)return;if(!remain.length)deleteRowsByNumber_(TAB.REMESSAS,[r._row]);else{const total=remain.reduce((s,x)=>s+num_(x.QTD_ENVIADA),0),ret=remain.reduce((s,x)=>s+num_(x.QTD_RETORNADA),0),val=remain.reduce((s,x)=>s+num_(x.VALOR_TOTAL_ITEM),0),pend=Math.max(0,total-ret),statusRet=pend<=0?'CONCLUIDO':(ret>0?'PARCIAL':'PENDENTE');updateRowsByNumber_(TAB.REMESSAS,[{row:r._row,patch:{QTD_VOLUMES:remain.length,QTD_TOTAL:total,QTD_RETORNADA:ret,QTD_PENDENTE:pend,VALOR_TOTAL_REMESSA:round2_(val),STATUS_RETORNO:statusRet}}])}})
 }
-// Code.gs:2753
+// Code.gs:2758
 function updateRemainingSeparacoes_(sepIds,deletedVolumeIds){
   const allVol=readTable_(TAB.VOLUMES),allSep=readTable_(TAB.SEPARACOES_VOLUME);sepIds.forEach(id=>{if(!id)return;const remain=allVol.filter(v=>String(v.ID_SEPARACAO)===id&&!deletedVolumeIds.has(String(v.ID_VOLUME))),s=allSep.find(x=>String(x.ID_SEPARACAO)===id);if(!s)return;if(!remain.length)deleteRowsByNumber_(TAB.SEPARACOES_VOLUME,[s._row]);else updateRowsByNumber_(TAB.SEPARACOES_VOLUME,[{row:s._row,patch:{QTD_VOLUMES:remain.length,QTD_TOTAL:remain.reduce((a,v)=>a+num_(v.QTD_VOLUME),0),STATUS_SEPARACAO:'PARCIAL'}}])})
 }
-// Code.gs:2757
+// Code.gs:2762
 function stageCascadeDelete_(c){
   restoreCutMaterialStock_(c);updateRemainingRemessas_(c.remIds,c.remItemIds);updateRemainingSeparacoes_(c.sepIds,c.volumeIds);
   deleteRowsByNumber_(TAB.APONTAMENTOS,c.apont.map(x=>x._row));deleteRowsByNumber_(TAB.CUPONS,c.coupons.map(x=>x._row));deleteRowsByNumber_(TAB.BIPAGENS_EXTERNAS,c.extBips.map(x=>x._row));deleteRowsByNumber_(TAB.RETORNO_VOLUME_ITENS,c.returnItems.map(x=>x._row));deleteRowsByNumber_(TAB.RETORNOS_EXTERNOS,c.returns.map(x=>x._row));deleteRowsByNumber_(TAB.REMESSA_ITENS,c.remItems.map(x=>x._row));deleteRowsByNumber_(TAB.VOLUME_ITENS,c.volumeItens.map(x=>x._row));deleteRowsByNumber_(TAB.VOLUMES,c.volumes.map(x=>x._row));deleteRowsByNumber_(TAB.MOVIMENTACOES,c.movements.map(x=>x._row));deleteRowsByNumber_(TAB.ESTOQUE_CORTE,c.estoqueRows.map(x=>x._row));deleteRowsByNumber_(TAB.CORTE_CONSUMOS,c.consumos.map(x=>x._row));deleteRowsByNumber_(TAB.PEDIDOS_CORTE,c.cutRows.map(x=>x._row));
   const keys=new Set(c.apont.map(a=>String(a.ID_OPERADOR)+'|'+dateKey_(a.DATA_PRODUCAO||a.DATA_HORA)));keys.forEach(k=>{const [op,dt]=k.split('|');if(op&&dt)recalcIndicadorUnlocked_(op,dt)});
 }
-// Code.gs:2763
+// Code.gs:2768
 function deleteVolumeCascade_(id){
   const root=findById_(TAB.VOLUMES,'ID_VOLUME',id);if(!root)throw new Error('Volume não encontrado.');const ids=new Set([String(id)]);let grew=true;while(grew){grew=false;readTable_(TAB.VOLUMES).forEach(x=>{if(ids.has(String(x.ID_VOLUME_ORIGEM||''))&&!ids.has(String(x.ID_VOLUME))){ids.add(String(x.ID_VOLUME));grew=true}})}
   const volumes=readTable_(TAB.VOLUMES).filter(x=>ids.has(String(x.ID_VOLUME))),volumeItens=readTable_(TAB.VOLUME_ITENS).filter(x=>ids.has(String(x.ID_VOLUME))),coupons=readTable_(TAB.CUPONS).filter(x=>ids.has(String(x.ID_VOLUME))),couponIds=setOf_(coupons,'ID_CUPOM'),apont=readTable_(TAB.APONTAMENTOS).filter(x=>ids.has(String(x.ID_VOLUME))||couponIds.has(String(x.ID_CUPOM))),remItems=readTable_(TAB.REMESSA_ITENS).filter(x=>ids.has(String(x.ID_VOLUME))),remItemIds=setOf_(remItems,'ID_ITEM_REMESSA'),remIds=setOf_(remItems,'ID_REMESSA'),returns=readTable_(TAB.RETORNOS_EXTERNOS).filter(x=>remItemIds.has(String(x.ID_ITEM_REMESSA))||ids.has(String(x.ID_VOLUME))),returnIds=setOf_(returns,'ID_RETORNO'),returnItems=readTable_(TAB.RETORNO_VOLUME_ITENS).filter(x=>returnIds.has(String(x.ID_RETORNO))||ids.has(String(x.ID_VOLUME))),extBips=readTable_(TAB.BIPAGENS_EXTERNAS).filter(x=>remItemIds.has(String(x.ID_ITEM_REMESSA))||ids.has(String(x.ID_VOLUME))),movements=readTable_(TAB.MOVIMENTACOES).filter(x=>ids.has(String(x.ID_VOLUME))),sepIds=setOf_(volumes,'ID_SEPARACAO');
@@ -2978,7 +2983,7 @@ function deleteVolumeCascade_(id){
   deleteRowsByNumber_(TAB.APONTAMENTOS,apont.map(x=>x._row));deleteRowsByNumber_(TAB.CUPONS,coupons.map(x=>x._row));deleteRowsByNumber_(TAB.BIPAGENS_EXTERNAS,extBips.map(x=>x._row));deleteRowsByNumber_(TAB.RETORNO_VOLUME_ITENS,returnItems.map(x=>x._row));deleteRowsByNumber_(TAB.RETORNOS_EXTERNOS,returns.map(x=>x._row));deleteRowsByNumber_(TAB.REMESSA_ITENS,remItems.map(x=>x._row));deleteRowsByNumber_(TAB.VOLUME_ITENS,volumeItens.map(x=>x._row));deleteRowsByNumber_(TAB.VOLUMES,volumes.map(x=>x._row));deleteRowsByNumber_(TAB.MOVIMENTACOES,movements.map(x=>x._row));
   const keys=new Set(apont.map(a=>String(a.ID_OPERADOR)+'|'+dateKey_(a.DATA_PRODUCAO||a.DATA_HORA)));keys.forEach(k=>{const [op,dt]=k.split('|');if(op&&dt)recalcIndicadorUnlocked_(op,dt)});
 }
-// Code.gs:2773
+// Code.gs:2778
 function excluirEntidadeImpl_(tipo,id,token){
   return withLock_(()=>{
     const p=previewExclusaoImpl_(tipo,id);if(p.bloqueado)throw new Error(p.motivo||'Exclusão bloqueada.');if(String(token||'')!==String(p.token||''))throw new Error('Os vínculos mudaram desde a prévia. Abra a exclusão novamente para conferir o impacto atualizado.');
@@ -3009,7 +3014,7 @@ function excluirEntidadeImpl_(tipo,id,token){
  * Catálogo enxuto dos cupons ainda bipáveis. É usado pelo navegador para
  * reconhecer o QR imediatamente, sem uma ida ao Sheets a cada leitura.
  */
-// Code.gs:2803
+// Code.gs:2808
 function getScanCatalogImpl_(forceRefresh) {
   const maps = buildMaps_();
   const processoById = mapBy_(readTable_(TAB.PROCESSOS), 'ID_PROCESSO');
@@ -3038,9 +3043,9 @@ function getScanCatalogImpl_(forceRefresh) {
   };
   return out;
 }
-// Code.gs:2832
+// Code.gs:2837
 function clearScanCatalogCache_() { /* revisão global muda atomicamente no commit */ }
-// Code.gs:2834
+// Code.gs:2839
 function biparCupomImpl_(codigoOuToken, idOperador) {
   const r = biparCuponsEmLoteImpl_([{ codigo: codigoOuToken }], idOperador);
   const first = (r.aceitos || [])[0];
@@ -3064,7 +3069,7 @@ function biparCupomImpl_(codigoOuToken, idOperador) {
  * tabela CUPONS + um único append dos apontamentos. O dashboard/indicador é
  * consolidado depois, quando o operador dá uma pequena pausa na leitura.
  */
-// Code.gs:2857
+// Code.gs:2862
 function biparCuponsEmLoteImpl_(itens, idOperador) {
   itens = Array.isArray(itens) ? itens : [];
   if (itens.length > CFG.SCAN_BATCH_MAX) throw new Error('Envie no máximo '+CFG.SCAN_BATCH_MAX+' bipagens por lote.');
@@ -3210,7 +3215,7 @@ function biparCuponsEmLoteImpl_(itens, idOperador) {
  * endpoint uma única vez quando o usuário aperta "Enviar bipagens". Assim não
  * existe ida e volta ao servidor entre leituras consecutivas.
  */
-// Code.gs:3002
+// Code.gs:3007
 function enviarBipagensColetadasImpl_(itens, idOperador) {
   const r = biparCuponsEmLoteImpl_(itens, idOperador);
   if ((r.aceitos || []).length) {
@@ -3228,7 +3233,7 @@ function enviarBipagensColetadasImpl_(itens, idOperador) {
  * Consolidação deliberadamente separada da captura. É chamada após uma pausa
  * curta nas bipagens e atualiza indicador, progresso dos volumes e dashboard.
  */
-// Code.gs:3019
+// Code.gs:3024
 function consolidarBipagensImpl_(idOperador, dataRef, volumeIds) {
   const dataKey = normalizeDateKey_(dataRef || todayKey_());
   volumeIds = Array.isArray(volumeIds) ? [...new Set(volumeIds.filter(Boolean))] : [];
@@ -3238,7 +3243,7 @@ function consolidarBipagensImpl_(idOperador, dataRef, volumeIds) {
     return { ok: true, dashboard: getDashboardImpl_(dataKey) };
   });
 }
-// Code.gs:3035
+// Code.gs:3040
 function normalizeDateRange_(startRef, endRef) {
   let a=startRef,b=endRef;
   if(a && typeof a==='object' && !(a instanceof Date)){
@@ -3250,7 +3255,7 @@ function normalizeDateRange_(startRef, endRef) {
   if(start>end){const t=start;start=end;end=t}
   return {start,end};
 }
-// Code.gs:3046
+// Code.gs:3051
 function dateKeysInRange_(startKey,endKey){
   const out=[],d=dateFromKey_(startKey),end=dateFromKey_(endKey);
   while(d.getTime()<=end.getTime()){
@@ -3260,7 +3265,7 @@ function dateKeysInRange_(startKey,endKey){
   }
   return out;
 }
-// Code.gs:3056
+// Code.gs:3061
 function productionPointMethod_(a) {
   const tipo=String(a.TIPO_APONTAMENTO||'').toUpperCase();
   const origem=String(a.ORIGEM_BIPAGEM||'').toUpperCase();
@@ -3269,7 +3274,7 @@ function productionPointMethod_(a) {
   if(tipo==='CUPOM'||tipo==='PRODUCAO'||origem.indexOf('QR')>=0)return 'CUPOM';
   return tipo||'CUPOM';
 }
-// Code.gs:3065
+// Code.gs:3070
 function getInternalProductionPerformanceImpl_(dataRef, dataFim) {
   const range=normalizeDateRange_(dataRef,dataFim),dataInicial=range.start,dataFinal=range.end;
   const operadoresAtivos=active_(readTable_(TAB.OPERADORES),'ATIVO');
@@ -3315,20 +3320,20 @@ function getInternalProductionPerformanceImpl_(dataRef, dataFim) {
     rows:serialize_(rows)
   };
 }
-// Code.gs:3118
+// Code.gs:3123
 function roteiroDoCupom_(c, roteiros) {
   roteiros = roteiros || readTable_(TAB.ROTEIRO);
   return roteiros.find(r => String(r.ID_ROTEIRO) === String(c.ID_ROTEIRO || '')) ||
     roteiros.find(r => String(r.ID_PRODUTO) === String(c.ID_PRODUTO) && String(r.ID_PROCESSO) === String(c.ID_PROCESSO) && num_(r.ORDEM_PROCESSO) === num_(c.ORDEM_PROCESSO)) || null;
 }
-// Code.gs:3123
+// Code.gs:3128
 function execucoesMarcacaoRoteiro_(rot, cupons) {
   return cupons.filter(c => String(c.STATUS_CUPOM || '').toUpperCase() === 'CONCLUIDO' && metodoConclusaoCupom_(c) === 'MARCACAO' &&
     (String(c.ID_ROTEIRO || '') === String(rot.ID_ROTEIRO) || (!c.ID_ROTEIRO && String(c.ID_PRODUTO) === String(rot.ID_PRODUTO) && String(c.ID_PROCESSO) === String(rot.ID_PROCESSO))))
     .map(c => { const ini = dateMs_(c.DATA_HORA_INICIO_MARCACAO), fim = dateMs_(c.DATA_HORA_FIM_MARCACAO), q = num_(c.QTD_PROGRAMADA); return (ini && fim > ini && q > 0) ? { c, seg: (fim - ini) / 1000, q } : null; })
     .filter(Boolean);
 }
-// Code.gs:3129
+// Code.gs:3134
 function previewTempoPadraoMarcacaoImpl_(payload) {
   payload = payload || {};
   const cupons = readTable_(TAB.CUPONS), c = cupons.find(x => String(x.ID_CUPOM) === String(payload.ID_CUPOM || ''));
@@ -3342,7 +3347,7 @@ function previewTempoPadraoMarcacaoImpl_(payload) {
   return { ok: true, ID_ROTEIRO: rot.ID_ROTEIRO, PRODUTO: maps.produtos[rot.ID_PRODUTO] || '', PROCESSO: maps.processos[rot.ID_PROCESSO] || '',
     atualSegUn: num_(rot.TEMPO_PADRAO_SEG_UN), estaSegUn: round2_(esta.seg / esta.q), mediaSegUn: round2_(totSeg / totQ), nMarcacoes: ex.length, pecasMedidas: totQ, pendentes: pend, retroativos: retro };
 }
-// Code.gs:3142
+// Code.gs:3147
 function aplicarTempoPadraoMarcacaoImpl_(payload) {
   payload = payload || {};
   const modo = String(payload.MODO || 'ESTA').toUpperCase();
@@ -3377,7 +3382,7 @@ function aplicarTempoPadraoMarcacaoImpl_(payload) {
     return { ok: true, segUn: seg, anterior: prev.atualSegUn, modo, pendentes: cupUpd.length - ex.length, retroativos: ex.length, PROCESSO: prev.PROCESSO, PRODUTO: prev.PRODUTO };
   });
 }
-// Code.gs:3179
+// Code.gs:3184
 function alocarOperadorCuponsImpl_(payload) {
   payload=payload||{};
   const ids=[...new Set((Array.isArray(payload.ids)?payload.ids:[]).map(String).filter(Boolean))];
@@ -3395,9 +3400,9 @@ function alocarOperadorCuponsImpl_(payload) {
     return {ok:true,alocados:updates.length,ignorados:ignorados.length,ID_OPERADOR:idOperador};
   });
 }
-// Code.gs:3200
+// Code.gs:3205
 const FOTO_LADOS = { FRENTE: 'FOTO_FRENTE', COSTAS: 'FOTO_COSTAS' };
-// Code.gs:3201
+// Code.gs:3206
 function pastaFotosProduto_() {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('GUT_FOTOS_PRODUTO_PASTA');
@@ -3406,7 +3411,7 @@ function pastaFotosProduto_() {
   props.setProperty('GUT_FOTOS_PRODUTO_PASTA', f.getId());
   return f;
 }
-// Code.gs:3209
+// Code.gs:3214
 function salvarFotoProdutoImpl_(payload) {
   payload = payload || {};
   const lado = String(payload.LADO || '').toUpperCase(), col = FOTO_LADOS[lado];
@@ -3426,7 +3431,7 @@ function salvarFotoProdutoImpl_(payload) {
     return { ok: true, LADO: lado, FILE_ID: file.getId(), cadastros: getCadastrosImpl_() };
   });
 }
-// Code.gs:3228
+// Code.gs:3233
 function removerFotoProdutoImpl_(payload) {
   payload = payload || {};
   const lado = String(payload.LADO || '').toUpperCase(), col = FOTO_LADOS[lado];
@@ -3440,7 +3445,7 @@ function removerFotoProdutoImpl_(payload) {
     return { ok: true, cadastros: getCadastrosImpl_() };
   });
 }
-// Code.gs:3241
+// Code.gs:3246
 function getFotosProdutoImpl_(idProduto) {
   const prod = findById_(TAB.PRODUTOS, 'ID_PRODUTO', req_(idProduto, 'Produto'));
   if (!prod) throw new Error('Produto não encontrado.');
@@ -3453,11 +3458,11 @@ function getFotosProdutoImpl_(idProduto) {
   });
   return { ok: true, ID_PRODUTO: prod.ID_PRODUTO, fotos: out };
 }
-// Code.gs:3257
+// Code.gs:3262
 const PARAM_TAB = 'APP_PARAMETROS', PARAM_HEADERS = ['CHAVE', 'VALOR', 'ATUALIZADO_EM', 'ATUALIZADO_POR'];
-// Code.gs:3258
+// Code.gs:3263
 const PARAM_KEYS = { LINK_APP_CAMPO: 'str', CUSTO_MINUTO: 'num', CALC_CUSTO_MENSAL: 'num', CALC_OPERADORES: 'num', CALC_MIN_DIA: 'num', CALC_DIAS_MES: 'num', CALC_EFICIENCIA_PCT: 'num' };
-// Code.gs:3259
+// Code.gs:3264
 function getParametros_() {
   const out = { LINK_APP_CAMPO: '', CUSTO_MINUTO: 0, CALC_CUSTO_MENSAL: 0, CALC_OPERADORES: 0, CALC_MIN_DIA: 0, CALC_DIAS_MES: 0, CALC_EFICIENCIA_PCT: 0 };
   try {
@@ -3469,12 +3474,12 @@ function getParametros_() {
   } catch (e) {}
   return out;
 }
-// Code.gs:3270
+// Code.gs:3275
 function tableExists_(name) {
   if (SUPA_ON_()) return supaTableExists_(name);
   try { return !!ss_().getSheetByName(name); } catch (e) { return false; }
 }
-// Code.gs:3274
+// Code.gs:3279
 function salvarParametrosImpl_(payload) {
   payload = payload || {};
   const keys = Object.keys(payload).filter(k => PARAM_KEYS[k]);
@@ -3493,7 +3498,7 @@ function salvarParametrosImpl_(payload) {
     return { ok: true, parametros: getParametros_() };
   });
 }
-// Code.gs:3294
+// Code.gs:3299
 function custosMateriais_(materiais) {
   const media = {}, ultima = {};
   try {
@@ -3514,7 +3519,7 @@ function custosMateriais_(materiais) {
     return Object.assign({}, m, { CUSTO_MEDIO_ESTOQUE: med, CUSTO_ULTIMA_COMPRA: ult, CUSTO_AUTO: auto, CUSTO_AUTO_FONTE: fonte });
   });
 }
-// Code.gs:3315
+// Code.gs:3320
 function salvarFichaProdutoImpl_(payload) {
   payload = payload || {};
   const pr = payload.produto || {}, bom = Array.isArray(payload.estrutura) ? payload.estrutura : [], rot = Array.isArray(payload.roteiro) ? payload.roteiro : [];
@@ -3577,7 +3582,7 @@ function salvarFichaProdutoImpl_(payload) {
     return { ok: true, ID_PRODUTO: idProduto, cadastros: getCadastrosImpl_() };
   });
 }
-// Code.gs:3379
+// Code.gs:3384
 function retirarVolumeRemessaImpl_(payload) {
   payload = payload || {};
   const idRemessa = req_(payload.ID_REMESSA, 'Remessa');
@@ -3595,7 +3600,7 @@ function retirarVolumeRemessaImpl_(payload) {
       if (num_(it.QTD_RETORNADA) > 0 || retornos.some(r => String(r.ID_VOLUME) === idVol)) throw new Error('O volume ' + cod + ' já tem retorno registrado.');
       if (v.ID_VOLUME_ORIGEM_RETRABALHO && num_(it.PRECO_FACCAO_UNIT) <= 0) throw new Error('O volume ' + cod + ' é retrabalho sem custo (débito já baixado). Ajuste pela tela de remessas.');
       del.push(it._row);
-      volUpd.push({ row: v._row, patch: { STATUS_VOLUME: 'AGUARDANDO_DESTINO', TIPO_LOCAL_ATUAL: v.ID_VOLUME_ORIGEM_RETRABALHO ? 'RETRABALHO' : 'ESTOQUE_CORTE', ID_DESTINO_ATUAL: '', ATUALIZADO_EM: now } });
+      volUpd.push({ row: v._row, patch: { STATUS_VOLUME: 'AGUARDANDO_DESTINO', TIPO_LOCAL_ATUAL: v.ID_VOLUME_ORIGEM_RETRABALHO ? 'RETRABALHO' : (v.ID_VOLUME_ORIGEM_PARCIAL ? 'CONTINUACAO' : 'ESTOQUE_CORTE'), ID_DESTINO_ATUAL: '', ATUALIZADO_EM: now } });
       movement_('RETIRADA_REMESSA', v.ID_ESTOQUE_CORTE, idVol, idRemessa, 'FACCAO', rem.ID_DESTINO, 'SEPARACAO/ESTOQUE', '', '', num_(it.QTD_ENVIADA), '', 'AGUARDANDO_DESTINO', payload.MOTIVO || 'Retirado da remessa antes do envio');
     });
     deleteRowsByNumber_(TAB.REMESSA_ITENS, del);
@@ -3611,7 +3616,7 @@ function retirarVolumeRemessaImpl_(payload) {
     return { ok: true, retirados: ids.length, remessaRemovida: removida, NUM_REMESSA: rem.NUM_REMESSA || '', remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:3414
+// Code.gs:3419
 function salvarCapacidadeFaccoesImpl_(payload) {
   payload = payload || {};
   const itens = Array.isArray(payload.itens) ? payload.itens : [];
@@ -3627,7 +3632,7 @@ function salvarCapacidadeFaccoesImpl_(payload) {
     return { ok: true, salvas: updates.length, destinos: serialize_(stripMeta_(readTable_(TAB.DESTINOS))) };
   });
 }
-// Code.gs:3431
+// Code.gs:3436
 function salvarCapacidadeMaquinasImpl_(payload) {
   payload=payload||{};
   const itens=Array.isArray(payload.itens)?payload.itens:[];
@@ -3653,7 +3658,7 @@ function salvarCapacidadeMaquinasImpl_(payload) {
     return {ok:true,salvas:updates.length,maquinas:serialize_(stripMeta_(readTable_(TAB.MAQUINAS)))};
   });
 }
-// Code.gs:3457
+// Code.gs:3462
 function getInternalProductionBoardImpl_() {
   const volumes = readTable_(TAB.VOLUMES).filter(v => {
     const loc=String(v.TIPO_LOCAL_ATUAL||'').toUpperCase(),st=String(v.STATUS_VOLUME||'').toUpperCase();
@@ -3704,6 +3709,7 @@ function getInternalProductionBoardImpl_() {
       LOTE_CORTE:est.LOTE_CORTE||'',SUBLOTE:v.SUBLOTE||est.SUBLOTE||'',QTD_VOLUME:num_(v.QTD_VOLUME),
       ID_PRODUTO:est.ID_PRODUTO||'',PRODUTO:maps.produtos[est.ID_PRODUTO]||'',COR:maps.cores[est.ID_COR]||'',TAMANHO:maps.tamanhos[est.ID_TAMANHO]||'',
       STATUS_VOLUME:v.STATUS_VOLUME||'',OPERACOES_TOTAL:ops.length,OPERACOES_CONCLUIDAS:concl.length,
+      ID_DESTINO_PARCIAL:v.ID_DESTINO_PARCIAL||'',FACCAO_PARCIAL:v.ID_DESTINO_PARCIAL?(maps.destinos[v.ID_DESTINO_PARCIAL]||''):'',QTD_OCORRENCIA_FACCAO:num_(v.QTD_OCORRENCIA_FACCAO),
       MINUTOS_PADRAO_TOTAL:minTotal,MINUTOS_PADRAO_CONCLUIDOS:minConcl,PROGRESSO_PCT:progresso,
       ULTIMA_ATIVIDADE_EM:new Date(Math.max(0,dateMs_(v.ATUALIZADO_EM||v.DATA_CRIACAO),dateMs_(remInterna&&(remInterna.ATUALIZADO_EM||remInterna.DATA_HORA||remInterna.DATA_ENVIO)),...ops.map(c=>dateMs_(c.ATUALIZADO_EM||c.DATA_HORA_BIPAGEM||c.DATA_HORA_INICIO_MARCACAO||c.DATA_CRIACAO)))),
       OPERACAO_ATUAL:opOut(atual),PROXIMA_OPERACAO:opOut(prox),OPERACOES:ops.map(opOut)
@@ -3711,14 +3717,14 @@ function getInternalProductionBoardImpl_() {
   }).sort((a,b)=>dateMs_(b.ULTIMA_ATIVIDADE_EM)-dateMs_(a.ULTIMA_ATIVIDADE_EM)||String(a.LOTE_CORTE||a.SUBLOTE||'').localeCompare(String(b.LOTE_CORTE||b.SUBLOTE||''),'pt-BR',{numeric:true})||String(a.COD_VOLUME).localeCompare(String(b.COD_VOLUME),'pt-BR',{numeric:true}));
   return {ok:true,generatedAt:new Date(),rows:serialize_(rows)};
 }
-// Code.gs:3516
+// Code.gs:3522
 function metodoConclusaoCupom_(c) {
   const m=String(c.METODO_CONCLUSAO||'').toUpperCase();
   if(m)return m;
   if(String(c.STATUS_CUPOM||'').toUpperCase()!=='CONCLUIDO')return '';
   return (c.DATA_HORA_INICIO_MARCACAO&&c.DATA_HORA_FIM_MARCACAO)?'MARCACAO':'CUPOM';
 }
-// Code.gs:3523
+// Code.gs:3529
 function execucaoMarcacaoCupom_(c) {
   if(String(c.STATUS_CUPOM||'').toUpperCase()!=='CONCLUIDO'||metodoConclusaoCupom_(c)!=='MARCACAO')return {};
   const ini=dateMs_(c.DATA_HORA_INICIO_MARCACAO),fim=dateMs_(c.DATA_HORA_FIM_MARCACAO);
@@ -3726,7 +3732,7 @@ function execucaoMarcacaoCupom_(c) {
   const segReais=Math.max(1,Math.round((fim-ini)/1000-num_(c.SEGUNDOS_PAUSA))),segPadrao=num_(c.MINUTOS_PADRAO_TOTAL)?num_(c.MINUTOS_PADRAO_TOTAL)*60:num_(c.QTD_PROGRAMADA)*num_(c.TEMPO_PADRAO_SEG_UN);
   return {SEGUNDOS_REAIS:segReais,MINUTOS_REAIS:round2_(segReais/60),EFICIENCIA_EXECUCAO_PCT:segPadrao>0?round2_(segPadrao/segReais*100):''};
 }
-// Code.gs:3531
+// Code.gs:3537
 function productionPointFromCouponUnlocked_(cupom,idOperador,metodo,extra) {
   extra=extra||{};
   const operador=findById_(TAB.OPERADORES,'ID_OPERADOR',req_(idOperador,'Operador'));
@@ -3773,7 +3779,7 @@ function productionPointFromCouponUnlocked_(cupom,idOperador,metodo,extra) {
   clearScanCatalogCache_();
   return {apontamento:serialize_(apont),dataKey,minutosPadrao,minutosReais,eficienciaReal,ID_OPERADOR:idOperador,ID_VOLUME:cupom.ID_VOLUME,ID_CUPOM:cupom.ID_CUPOM};
 }
-// Code.gs:3578
+// Code.gs:3584
 function registrarApontamentosDiretosEmLoteImpl_(itens) {
   itens=Array.isArray(itens)?itens:[];
   if(itens.length>50)throw new Error('Envie no máximo 50 apontamentos diretos por lote.');
@@ -3810,7 +3816,7 @@ function registrarApontamentosDiretosEmLoteImpl_(itens) {
     return {ok:true,aceitos:serialize_(aceitos),rejeitados:serialize_(rejeitados),minutos:round2_(aceitos.reduce((s,x)=>s+num_(x.minutos),0)),volumeIds:[...volumeIds]};
   });
 }
-// Code.gs:3615
+// Code.gs:3621
 function apontarProducaoDiretaImpl_(payload) {
   payload=payload||{};
   return withLock_(()=>{
@@ -3820,7 +3826,7 @@ function apontarProducaoDiretaImpl_(payload) {
     return {ok:true,...result,internalBoard:getInternalProductionBoardImpl_(),dashboard:getDashboardImpl_(result.dataKey),volumes:getVolumesImpl_()};
   });
 }
-// Code.gs:3625
+// Code.gs:3631
 function iniciarMarcacaoProducaoImpl_(payload) {
   payload=payload||{};
   if(payload.PAUSAR_OUTRA)ensureColumns_(TAB.CUPONS,PAUSA_COLS);
@@ -3846,7 +3852,7 @@ function iniciarMarcacaoProducaoImpl_(payload) {
     return {ok:true,ID_CUPOM:cupom.ID_CUPOM,ID_VOLUME:cupom.ID_VOLUME,ID_OPERADOR:idOperador,OPERADOR:operador.NOME||'',inicio:serialize_(now),pausada:pausada||''};
   });
 }
-// Code.gs:3651
+// Code.gs:3657
 function finalizarMarcacaoProducaoImpl_(payload) {
   payload=payload||{};
   return withLock_(()=>{
@@ -3860,7 +3866,7 @@ function finalizarMarcacaoProducaoImpl_(payload) {
     return {ok:true,...result};
   });
 }
-// Code.gs:3665
+// Code.gs:3671
 function registrarJornadaImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -3901,7 +3907,7 @@ function registrarJornadaImpl_(payload) {
     return { ok: true, dashboard: getDashboardImpl_(dataKey) };
   });
 }
-// Code.gs:3707
+// Code.gs:3713
 function salvarMetasProducaoImpl_(payload) {
   payload=payload||{};
   const raw=Array.isArray(payload.metas)?payload.metas:(Array.isArray(payload.METAS)?payload.METAS:[]);
@@ -3970,7 +3976,7 @@ function salvarMetasProducaoImpl_(payload) {
     return {ok:true,total:aplicadas.length,metas:serialize_(aplicadas)};
   });
 }
-// Code.gs:3776
+// Code.gs:3782
 function getDashboardImpl_(dataRef, dataFim) {
   const range=normalizeDateRange_(dataRef,dataFim),dataInicial=range.start,dataFinal=range.end,dayKeys=dateKeysInRange_(dataInicial,dataFinal);
   const operadores=active_(readTable_(TAB.OPERADORES), 'ATIVO');
@@ -4013,13 +4019,40 @@ function getDashboardImpl_(dataRef, dataFim) {
     trend:getEfficiencyTrend_(dataFinal,dayKeys.length),
   };
 }
-// Code.gs:3823
+// Code.gs:3829
 function criarRemessaExternaImpl_(payload) {
   payload = payload || {};
   ensureExternalSchema_();
   return withLock_(() => ({ ok: true, remessa: serialize_(criarRemessaExternaUnlocked_(payload)), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() }));
 }
-// Code.gs:3829
+// Code.gs:3840
+function listaIds_(v) {
+  if (Array.isArray(v)) return [...new Set(v.map(x => String(x || '').trim()).filter(Boolean))];
+  const s = String(v || '').trim(); if (!s) return [];
+  if (s.charAt(0) === '[') { try { const a = JSON.parse(s); if (Array.isArray(a)) return listaIds_(a); } catch (e) {} }
+  return listaIds_(s.split(/[,;|\s]+/));
+}
+// Code.gs:3846
+function roteiroAtivoProduto_(idProduto, roteiros) {
+  return active_(roteiros || readTable_(TAB.ROTEIRO), 'ATIVO').filter(r => String(r.ID_PRODUTO) === String(idProduto))
+    .sort((a, b) => num_(a.ORDEM_PROCESSO) - num_(b.ORDEM_PROCESSO));
+}
+// Code.gs:3850
+function produtoUnicoVolume_(v, volumeItens, estoqueById) {
+  const vis = (volumeItens || readTable_(TAB.VOLUME_ITENS)).filter(x => String(x.ID_VOLUME) === String(v.ID_VOLUME));
+  const est = (estoqueById || {})[v.ID_ESTOQUE_CORTE] || findById_(TAB.ESTOQUE_CORTE, 'ID_ESTOQUE_CORTE', v.ID_ESTOQUE_CORTE) || {};
+  const ps = [...new Set((vis.length ? vis.map(x => x.ID_PRODUTO) : [est.ID_PRODUTO]).filter(Boolean).map(String))];
+  return ps.length === 1 ? ps[0] : '';
+}
+/** Peso das operações (segundos padrão; sem tempo cadastrado conta 1 por operação). */
+// Code.gs:3857
+function pesoOperacoes_(rot, ids) {
+  const set = new Set(ids.map(String)), comTempo = rot.some(r => num_(r.TEMPO_PADRAO_SEG_UN) > 0);
+  return rot.filter(r => set.has(String(r.ID_ROTEIRO))).reduce((t, r) => t + (comTempo ? num_(r.TEMPO_PADRAO_SEG_UN) : 1), 0);
+}
+// Code.gs:3861
+function itemServicoParcial_(item) { return String((item && item.ESCOPO_SERVICO) || '').toUpperCase() === 'PARCIAL'; }
+// Code.gs:3863
 function criarRemessaExternaUnlocked_(payload) {
   ensureExternalSchema_();
   const volumeIds = [...new Set((payload.volumeIds || []).filter(Boolean).map(String))];
@@ -4046,18 +4079,42 @@ function criarRemessaExternaUnlocked_(payload) {
   const itemValues = {};
   const semCustoIds = [];
   const mapsPreco = buildMaps_();
+  const roteirosPreco = readTable_(TAB.ROTEIRO);
   volumes.forEach(v => {
     const cfg = rawItemValues[v.ID_VOLUME] || {};
     const vi = volumeItensPreco.find(x=>String(x.ID_VOLUME)===String(v.ID_VOLUME));
     const est = estoquePreco[v.ID_ESTOQUE_CORTE] || {};
     const idProduto = vi ? vi.ID_PRODUTO : est.ID_PRODUTO;
+    // v4.23.0: escopo do serviço (peça pronta ou parcial) e operações que a facção faz
+    const feitas = new Set(listaIds_(v.OPS_FEITAS));
+    const pedeParcial = String(cfg.ESCOPO_SERVICO || '').toUpperCase() === 'PARCIAL';
+    let escopo = 'COMPLETO', opsFaccao = [], fracao = 1;
+    if (pedeParcial || feitas.size) {
+      const idUnico = produtoUnicoVolume_(v, volumeItensPreco, estoquePreco);
+      if (!idUnico) throw new Error('O volume ' + v.COD_VOLUME + ' tem mais de um produto: serviço parcial só funciona com um produto por saco.');
+      const rot = roteiroAtivoProduto_(idUnico, roteirosPreco);
+      if (!rot.length) throw new Error('Cadastre o roteiro operacional de ' + (mapsPreco.produtos[idUnico] || idUnico) + ' para enviar serviço parcial.');
+      const pendentes = rot.filter(r => !feitas.has(String(r.ID_ROTEIRO))).map(r => String(r.ID_ROTEIRO));
+      if (!pendentes.length) throw new Error('O volume ' + v.COD_VOLUME + ' já tem todas as operações feitas.');
+      opsFaccao = pendentes;
+      if (pedeParcial) {
+        const pend = new Set(pendentes);
+        opsFaccao = listaIds_(cfg.OPS_FACCAO).filter(id => pend.has(id));
+        if (!opsFaccao.length) throw new Error('Marque pelo menos uma operação que a facção vai fazer no volume ' + v.COD_VOLUME + '.');
+        if (opsFaccao.length < pendentes.length) escopo = 'PARCIAL'; else opsFaccao = pendentes;
+      }
+      const total = pesoOperacoes_(rot, rot.map(r => String(r.ID_ROTEIRO)));
+      fracao = total > 0 ? pesoOperacoes_(rot, opsFaccao) / total : 1;
+    }
+    const precoCheio = precoFaccaoPadrao_(idDestino, idProduto);
     let valorUnit = num_(cfg.VALOR_UNITARIO);
     if (retrabalhoSemCusto_(v, idDestino)) {
       // v4.6.0: retrabalho voltando para a facção que causou o defeito: corrige sem custo.
       valorUnit = 0;
       semCustoIds.push(String(v.ID_VOLUME));
     } else {
-      if (valorUnit <= 0) valorUnit = precoFaccaoPadrao_(idDestino, idProduto);
+      // v4.23.0: sem valor informado, o serviço parcial sugere o proporcional às operações (pelo tempo padrão)
+      if (valorUnit <= 0) valorUnit = round2_(precoCheio * fracao);
       if (valorUnit <= 0) {
         throw new Error('Cadastre ou informe o valor por peça do produto ' + (mapsPreco.produtos[idProduto] || idProduto || 'do volume') + '.');
       }
@@ -4065,6 +4122,9 @@ function criarRemessaExternaUnlocked_(payload) {
     itemValues[v.ID_VOLUME] = {
       VALOR_UNITARIO: valorUnit,
       VALOR_TOTAL_ITEM: round2_(num_(v.QTD_VOLUME) * valorUnit),
+      ESCOPO_SERVICO: escopo,
+      OPS_FACCAO: opsFaccao.length ? JSON.stringify(opsFaccao) : '',
+      PRECO_CHEIO_UNIT: precoCheio,
     };
   });
 
@@ -4118,6 +4178,9 @@ function criarRemessaExternaUnlocked_(payload) {
       QTD_ENVIADA: num_(v.QTD_VOLUME),
       PRECO_FACCAO_UNIT: valorUnit,
       VALOR_TOTAL_ITEM: round2_(num_(cfg.VALOR_TOTAL_ITEM) > 0 ? num_(cfg.VALOR_TOTAL_ITEM) : num_(v.QTD_VOLUME) * valorUnit),
+      ESCOPO_SERVICO: cfg.ESCOPO_SERVICO || 'COMPLETO',
+      OPS_FACCAO: cfg.OPS_FACCAO || '',
+      PRECO_CHEIO_UNIT: num_(cfg.PRECO_CHEIO_UNIT),
       STATUS_ITEM: 'AGUARDANDO_ENVIO',
       DATA_VINCULO: now,
       DATA_RETORNO: '',
@@ -4144,7 +4207,7 @@ function criarRemessaExternaUnlocked_(payload) {
   audit_('CRIAR_REMESSA_EXTERNA', TAB.REMESSAS, idRemessa, '', JSON.stringify(remessa), currentUser_());
   return remessa;
 }
-// Code.gs:3954
+// Code.gs:4018
 function buildReturnItemRows_(idRetorno, idRemessa, idVolume, qtdTotal, explicitItems, now, user) {
   const volumeItems = readTable_(TAB.VOLUME_ITENS).filter(vi => String(vi.ID_VOLUME) === String(idVolume));
   if (!volumeItems.length) return [];
@@ -4187,7 +4250,7 @@ function buildReturnItemRows_(idRetorno, idRemessa, idVolume, qtdTotal, explicit
  *   - PENDENTE: continua em facção esperando voltar (retorno parcial).
  * A inspeção vem depois e só gera débito para refugo/retrabalho da facção.
  */
-// Code.gs:3996
+// Code.gs:4060
 function registrarContagemRetornoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4267,7 +4330,7 @@ function registrarContagemRetornoImpl_(payload) {
     return { ok: true, pecasContadas, pecasBaixadas, valorLiberado: round2_(valorLiberado), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4076
+// Code.gs:4140
 function registrarRetornoExternoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4345,7 +4408,7 @@ function registrarRetornoExternoImpl_(payload) {
     return { ok: true, retorno: serialize_(retorno), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4154
+// Code.gs:4218
 function registrarInspecaoRetornoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4372,13 +4435,14 @@ function registrarInspecaoRetornoImpl_(payload) {
     validateInspection_({ ...retorno, ...patch });
     validatePackaging_({ ...retorno, ...patch });
     updateById_(TAB.RETORNOS_EXTERNOS, 'ID_RETORNO', idRetorno, patch);
-    const retrabalhos = processarQualidadeRetornosUnlocked_(retorno.ID_REMESSA);
+    const gerados = processarQualidadeRetornosUnlocked_(retorno.ID_REMESSA);
     updateExternalVolumeStatusUnlocked_(retorno.ID_REMESSA, retorno.ID_VOLUME);
     updateRemessaTotalsUnlocked_(retorno.ID_REMESSA);
-    return { ok: true, retrabalhos: serialize_(retrabalhos.map(v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME }))), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
+    const resumo = v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME });
+    return { ok: true, retrabalhos: serialize_(gerados.filter(v => v.ID_VOLUME_ORIGEM_RETRABALHO).map(resumo)), continuacoes: serialize_(gerados.filter(v => !v.ID_VOLUME_ORIGEM_RETRABALHO).map(resumo)), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4187
+// Code.gs:4252
 function salvarGradeRemessaImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4537,19 +4601,19 @@ function salvarGradeRemessaImpl_(payload) {
     return { ok: true, remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
-// Code.gs:4351
+// Code.gs:4416
 function envioConfirmado_(item) {
   return String((item && item.STATUS_BIPAGEM_ENVIO) || '').toUpperCase() === 'CONFIRMADO';
 }
-// Code.gs:4354
+// Code.gs:4419
 function exigirEnvioConfirmado_(item) {
   if (!envioConfirmado_(item)) throw new Error('O volume ' + ((item && item.COD_VOLUME) || '') + ' ainda não teve o envio confirmado. Confirme o envio (QR ou Gestão de remessas) antes de registrar retorno.');
 }
-// Code.gs:4357
+// Code.gs:4422
 function envioPatch_(now) {
   return { DATA_BIP_ENVIO: now, STATUS_BIPAGEM_ENVIO: 'CONFIRMADO', STATUS_ITEM: 'EM_FACCAO' };
 }
-// Code.gs:4360
+// Code.gs:4425
 function registrarMovimentoEnvio_(remessa, item, obs) {
   const v = findById_(TAB.VOLUMES, 'ID_VOLUME', item.ID_VOLUME) || {};
   movement_('ENVIO_FACCAO', v.ID_ESTOQUE_CORTE || '', item.ID_VOLUME, remessa.ID_REMESSA, 'EXPEDICAO', '', 'FACCAO', remessa.ID_DESTINO, '', num_(item.QTD_ENVIADA), '', 'EM_FACCAO', obs || '');
@@ -4563,7 +4627,7 @@ function registrarMovimentoEnvio_(remessa, item, obs) {
  *    (se voltou, foi enviado), com a data do vínculo.
  * Mostra o resumo no registro de execução. Não apaga nada.
  */
-// Code.gs:4414
+// Code.gs:4479
 function lancarFinanceiroFaccao_(o) {
   const valor = round2_(num_(o.VALOR));
   if (valor <= 0) return null;
@@ -4576,7 +4640,7 @@ function lancarFinanceiroFaccao_(o) {
   appendObject_(TAB.FINANCEIRO_FACCAO, row);
   return row;
 }
-// Code.gs:4426
+// Code.gs:4491
 function lancarAPagarRetorno_(remessa, item, retorno) {
   const qtd = num_(retorno.QTD_RETORNADA), preco = num_(item.PRECO_FACCAO_UNIT);
   return lancarFinanceiroFaccao_({
@@ -4585,7 +4649,7 @@ function lancarAPagarRetorno_(remessa, item, retorno) {
     QTD: qtd, VALOR_UNITARIO: preco, VALOR: qtd * preco, OBSERVACAO: 'Peças recebidas na contagem',
   });
 }
-// Code.gs:4434
+// Code.gs:4499
 function proximoCodigoRetrabalho_(origem) {
   const base = volumeOperationalCode_(origem, origem.SUBLOTE) || String(origem.COD_VOLUME || '');
   const codes = new Set(readTable_(TAB.VOLUMES).map(v => String(v.COD_VOLUME || '').toUpperCase()));
@@ -4593,7 +4657,7 @@ function proximoCodigoRetrabalho_(origem) {
   while (codes.has((base + '-R' + n).toUpperCase())) n++;
   return base + '-R' + n;
 }
-// Code.gs:4441
+// Code.gs:4506
 function criarVolumeRetrabalhoUnlocked_(retorno, item, remessa, qtd, culpaFaccao, motivo) {
   const origem = findById_(TAB.VOLUMES, 'ID_VOLUME', retorno.ID_VOLUME);
   if (!origem) throw new Error('Volume de origem do retrabalho não encontrado.');
@@ -4604,6 +4668,7 @@ function criarVolumeRetrabalhoUnlocked_(retorno, item, remessa, qtd, culpaFaccao
     ID_DESTINO_ATUAL: '', ID_VOLUME_ORIGEM: '', DATA_CRIACAO: now, ID_USUARIO_CRIACAO: currentUser_(), ATUALIZADO_EM: now,
     OBSERVACAO: 'Retrabalho de ' + (volumeOperationalCode_(origem, origem.SUBLOTE) || origem.COD_VOLUME) + ' (' + (remessa.NUM_REMESSA || '') + ')' + (motivo ? ' • defeito: ' + motivo : ''),
     ID_VOLUME_ORIGEM_RETRABALHO: origem.ID_VOLUME, ID_DESTINO_DEFEITO: culpaFaccao ? remessa.ID_DESTINO : '', ID_RETORNO_ORIGEM: retorno.ID_RETORNO,
+    OPS_FEITAS: origem.OPS_FEITAS || '', ID_DESTINO_PARCIAL: origem.ID_DESTINO_PARCIAL || '', ID_ITEM_REMESSA_PARCIAL: origem.ID_ITEM_REMESSA_PARCIAL || '', ID_VOLUME_ORIGEM_PARCIAL: origem.ID_VOLUME_ORIGEM_PARCIAL || '',
   };
   appendObject_(TAB.VOLUMES, volume);
   // Conteúdo do saco novo: mesma variação do saco de origem (distribui na ordem dos conteúdos).
@@ -4622,12 +4687,52 @@ function criarVolumeRetrabalhoUnlocked_(retorno, item, remessa, qtd, culpaFaccao
   movement_('RETRABALHO_GERADO', origem.ID_ESTOQUE_CORTE || '', idVolume, remessa.ID_REMESSA, 'INSPECAO', retorno.ID_RETORNO, 'RETRABALHO', '', '', qtd, '', 'AGUARDANDO_DESTINO', volume.OBSERVACAO);
   return volume;
 }
+/** v4.23.0 — peças aprovadas de um serviço parcial voltam num saco novo (<saco>-C1) em "Aguardando destino". */
+// Code.gs:4536
+function proximoCodigoContinuacao_(origem) {
+  const base = volumeOperationalCode_(origem, origem.SUBLOTE) || String(origem.COD_VOLUME || '');
+  const todos = readTable_(TAB.VOLUMES), codes = new Set(todos.map(v => String(v.COD_VOLUME || '').toUpperCase()));
+  let n = todos.filter(v => String(v.ID_VOLUME_ORIGEM_PARCIAL || '') === String(origem.ID_VOLUME)).length + 1;
+  while (codes.has((base + '-C' + n).toUpperCase())) n++;
+  return base + '-C' + n;
+}
+// Code.gs:4543
+function criarVolumeContinuacaoUnlocked_(retorno, item, remessa, qtd) {
+  const origem = findById_(TAB.VOLUMES, 'ID_VOLUME', retorno.ID_VOLUME);
+  if (!origem) throw new Error('Volume de origem do serviço parcial não encontrado.');
+  const now = new Date(), idVolume = uuid_(), cod = proximoCodigoContinuacao_(origem);
+  const feitas = listaIds_(origem.OPS_FEITAS).concat(listaIds_(item.OPS_FACCAO));
+  const nomeFac = buildMaps_().destinos[remessa.ID_DESTINO] || 'facção';
+  const volume = {
+    ID_VOLUME: idVolume, ID_ESTOQUE_CORTE: origem.ID_ESTOQUE_CORTE || '', SUBLOTE: origem.SUBLOTE || '', VOLUME_SEQ: num_(origem.VOLUME_SEQ),
+    COD_VOLUME: cod, QTD_VOLUME: qtd, STATUS_VOLUME: 'AGUARDANDO_DESTINO', ID_PROCESSO_ATUAL: '', TIPO_LOCAL_ATUAL: 'CONTINUACAO',
+    ID_DESTINO_ATUAL: '', ID_VOLUME_ORIGEM: '', DATA_CRIACAO: now, ID_USUARIO_CRIACAO: currentUser_(), ATUALIZADO_EM: now,
+    OBSERVACAO: 'Serviço parcial de ' + nomeFac + ' (' + (remessa.NUM_REMESSA || '') + ') • continuação de ' + (volumeOperationalCode_(origem, origem.SUBLOTE) || origem.COD_VOLUME),
+    OPS_FEITAS: JSON.stringify([...new Set(feitas)]), ID_VOLUME_ORIGEM_PARCIAL: origem.ID_VOLUME, ID_DESTINO_PARCIAL: remessa.ID_DESTINO || '',
+    ID_ITEM_REMESSA_PARCIAL: item.ID_ITEM_REMESSA || '', ID_RETORNO_ORIGEM: retorno.ID_RETORNO,
+  };
+  appendObject_(TAB.VOLUMES, volume);
+  const conteudos = readTable_(TAB.VOLUME_ITENS).filter(c => String(c.ID_VOLUME) === String(origem.ID_VOLUME));
+  const est = findById_(TAB.ESTOQUE_CORTE, 'ID_ESTOQUE_CORTE', origem.ID_ESTOQUE_CORTE) || {};
+  const fontes = conteudos.length ? conteudos : [{ ID_ESTOQUE_CORTE: origem.ID_ESTOQUE_CORTE, SUBLOTE: origem.SUBLOTE, ID_PRODUTO: est.ID_PRODUTO, ID_COR: est.ID_COR, ID_TAMANHO: est.ID_TAMANHO, QTD_ITEM: qtd }];
+  let restante = qtd; const novos = [];
+  fontes.forEach((c, i) => {
+    if (restante <= 0) return;
+    const q = i === fontes.length - 1 ? restante : Math.min(restante, num_(c.QTD_ITEM));
+    if (q <= 0) return;
+    restante -= q;
+    novos.push({ ID_VOLUME_ITEM: uuid_(), ID_VOLUME: idVolume, ID_ESTOQUE_CORTE: c.ID_ESTOQUE_CORTE || '', SUBLOTE: c.SUBLOTE || '', ID_PRODUTO: c.ID_PRODUTO || '', ID_COR: c.ID_COR || '', ID_TAMANHO: c.ID_TAMANHO || '', QTD_ITEM: q, PRECO_FACCAO_UNIT: '', VALOR_TOTAL_ITEM: '', CRIADO_EM: now, ID_USUARIO: currentUser_(), OBSERVACAO: 'Continuação de serviço parcial' });
+  });
+  if (novos.length) appendObjects_(TAB.VOLUME_ITENS, novos);
+  movement_('CONTINUACAO_PARCIAL', origem.ID_ESTOQUE_CORTE || '', idVolume, remessa.ID_REMESSA, 'INSPECAO', retorno.ID_RETORNO, 'CONTINUACAO', '', '', qtd, '', 'AGUARDANDO_DESTINO', volume.OBSERVACAO);
+  return volume;
+}
 /**
  * v4.6.3 — preço de referência do débito. Um saco de retrabalho que voltou para a
  * própria facção sai a R$ 0; se ele gerar refugo/retrabalho de novo, o débito usa o
  * preço que a facção recebeu originalmente por aquelas peças (sobe a cadeia -R1, -R1-R1...).
  */
-// Code.gs:4474
+// Code.gs:4578
 function precoDebitoQualidade_(item, idVolume) {
   const direto = num_(item && item.PRECO_FACCAO_UNIT);
   if (direto > 0) return direto;
@@ -4646,7 +4751,7 @@ function precoDebitoQualidade_(item, idVolume) {
 }
 
 /** Processa (uma única vez) os retornos com inspeção concluída da remessa. */
-// Code.gs:4492
+// Code.gs:4596
 function processarQualidadeRetornosUnlocked_(idRemessa) {
   const remessa = findById_(TAB.REMESSAS, 'ID_REMESSA', idRemessa);
   if (!remessa || String(remessa.TIPO_DESTINO || '').toUpperCase() !== 'FACCAO') return [];
@@ -4661,6 +4766,12 @@ function processarQualidadeRetornosUnlocked_(idRemessa) {
     const motivo = String(ret.MOTIVO_DEFEITO || '').trim();
     const patch = { QUALIDADE_PROCESSADA: 'SIM', DEFEITO_FACCAO: (refugo + retrab) > 0 ? (culpa ? 'SIM' : 'NAO') : '' };
     if (num_(ret.QTD_APROVADA) <= 0) patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
+    // v4.23.0: serviço parcial — as aprovadas não vão para a embalagem: seguem num saco de continuação
+    if (itemServicoParcial_(item) && num_(ret.QTD_APROVADA) > 0) {
+      const cont = criarVolumeContinuacaoUnlocked_(ret, item, remessa, num_(ret.QTD_APROVADA));
+      patch.ID_VOLUME_CONTINUACAO = cont.ID_VOLUME; patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
+      gerados.push(cont);
+    }
     const vOrig = findById_(TAB.VOLUMES, 'ID_VOLUME', ret.ID_VOLUME) || {};
     const base = { ID_DESTINO: remessa.ID_DESTINO, TIPO: 'DEBITO', ID_REMESSA: remessa.ID_REMESSA, NUM_REMESSA: remessa.NUM_REMESSA, ID_ITEM_REMESSA: ret.ID_ITEM_REMESSA, ID_RETORNO: ret.ID_RETORNO, VALOR_UNITARIO: preco, MOTIVO: motivo };
     if (retrab > 0) {
@@ -4682,16 +4793,43 @@ function processarQualidadeRetornosUnlocked_(idRemessa) {
  * faltando em inspeções de sacos de retrabalho enviados sem custo (preço R$ 0)
  * antes desta versão. Não duplica: só cria se o retorno ainda não tem débito.
  */
-// Code.gs:4562
+// Code.gs:4676
+function registrarOcorrenciaFaccaoImpl_(payload) {
+  payload = payload || {};
+  return withLock_(() => {
+    const v = findById_(TAB.VOLUMES, 'ID_VOLUME', req_(payload.ID_VOLUME, 'Volume'));
+    if (!v) throw new Error('Volume não encontrado.');
+    const idDest = String(v.ID_DESTINO_PARCIAL || '');
+    if (!idDest) throw new Error('O volume ' + (v.COD_VOLUME || '') + ' não passou por facção.');
+    const qtd = num_(payload.QTD);
+    if (!(qtd > 0) || qtd > num_(v.QTD_VOLUME)) throw new Error('Informe quantas peças têm o problema (de 1 a ' + num_(v.QTD_VOLUME) + ').');
+    const motivo = String(req_(payload.MOTIVO, 'Problema encontrado')).trim();
+    const item = findById_(TAB.REMESSA_ITENS, 'ID_ITEM_REMESSA', v.ID_ITEM_REMESSA_PARCIAL) || {};
+    const remessa = item.ID_REMESSA ? (findById_(TAB.REMESSAS, 'ID_REMESSA', item.ID_REMESSA) || {}) : {};
+    const culpa = !(payload.DEFEITO_FACCAO === false || String(payload.DEFEITO_FACCAO || '').toUpperCase() === 'NAO');
+    const preco = num_(payload.VALOR_UNITARIO) > 0 ? num_(payload.VALOR_UNITARIO) : num_(item.PRECO_FACCAO_UNIT);
+    const lanc = culpa ? lancarFinanceiroFaccao_({ ID_DESTINO: idDest, TIPO: 'DEBITO', ORIGEM: 'OCORRENCIA_INTERNA', ID_REMESSA: remessa.ID_REMESSA || '', NUM_REMESSA: remessa.NUM_REMESSA || '',
+      ID_ITEM_REMESSA: item.ID_ITEM_REMESSA || '', ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD: qtd, VALOR_UNITARIO: preco, VALOR: qtd * preco, MOTIVO: motivo,
+      OBSERVACAO: 'Problema da facção encontrado na produção interna' }) : null;
+    const now = new Date(), total = num_(v.QTD_OCORRENCIA_FACCAO) + qtd;
+    updateById_(TAB.VOLUMES, 'ID_VOLUME', v.ID_VOLUME, { QTD_OCORRENCIA_FACCAO: total, OBSERVACAO: [v.OBSERVACAO, '⚠ Problema da facção: ' + qtd + ' pç • ' + motivo].filter(Boolean).join(' • '), ATUALIZADO_EM: now });
+    movement_('OCORRENCIA_FACCAO', v.ID_ESTOQUE_CORTE || '', v.ID_VOLUME, remessa.ID_REMESSA || '', 'PRODUCAO', '', 'FACCAO', idDest, '', qtd, '', v.STATUS_VOLUME || '', motivo);
+    audit_('OCORRENCIA_FACCAO', TAB.VOLUMES, v.ID_VOLUME, '', JSON.stringify({ QTD: qtd, MOTIVO: motivo, DEFEITO_FACCAO: culpa ? 'SIM' : 'NAO', DEBITO: lanc ? lanc.VALOR : 0 }), currentUser_());
+    return { ok: true, debito: lanc ? round2_(num_(lanc.VALOR)) : 0, QTD_OCORRENCIA_FACCAO: total };
+  });
+}
+
+/** Débito de retrabalho ainda em aberto para este saco (para envio sem custo à mesma facção). */
+// Code.gs:4702
 function debitoRetrabalhoAberto_(idVolume) {
   return readTable_(TAB.FINANCEIRO_FACCAO).filter(l => String(l.ID_VOLUME) === String(idVolume) && String(l.TIPO) === 'DEBITO' &&
     String(l.ORIGEM) === 'RETRABALHO' && String(l.STATUS || '').toUpperCase() === 'ABERTO');
 }
-// Code.gs:4566
+// Code.gs:4706
 function retrabalhoSemCusto_(volume, idDestino) {
   return !!(volume && String(volume.ID_DESTINO_DEFEITO || '') && String(volume.ID_DESTINO_DEFEITO) === String(idDestino) && debitoRetrabalhoAberto_(volume.ID_VOLUME).length);
 }
-// Code.gs:4570
+// Code.gs:4710
 function getFinanceiroFaccaoImpl_() {
   const destinos = readTable_(TAB.DESTINOS).filter(d => String(d.TIPO_DESTINO || '').toUpperCase() === 'FACCAO');
   const nome = Object.create(null); destinos.forEach(d => nome[String(d.ID_DESTINO)] = d.NOME_DESTINO || d.RESPONSAVEL || d.ID_DESTINO);
@@ -4724,7 +4862,7 @@ function getFinanceiroFaccaoImpl_() {
     pagamentos: serialize_(pags.slice().sort((a, b) => dateMs_(b.DATA_PAGAMENTO || b.CRIADO_EM) - dateMs_(a.DATA_PAGAMENTO || a.CRIADO_EM)).map(p => ({ ...p, FACCAO: nome[String(p.ID_DESTINO)] || p.ID_DESTINO }))),
   };
 }
-// Code.gs:4602
+// Code.gs:4742
 function registrarPagamentoFaccaoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4751,7 +4889,7 @@ function registrarPagamentoFaccaoImpl_(payload) {
     return { ...getFinanceiroFaccaoImpl_(), pagamento: serialize_(pag), remessas: getRemessasExternasImpl_() };
   });
 }
-// Code.gs:4628
+// Code.gs:4768
 function cancelarLancamentoFaccaoImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -4764,7 +4902,7 @@ function cancelarLancamentoFaccaoImpl_(payload) {
     return { ...getFinanceiroFaccaoImpl_(), remessas: getRemessasExternasImpl_() };
   });
 }
-// Code.gs:4641
+// Code.gs:4781
 function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
   const item = readTable_(TAB.REMESSA_ITENS).find(i => String(i.ID_REMESSA) === String(idRemessa) && String(i.ID_VOLUME) === String(idVolume));
   const volume = findById_(TAB.VOLUMES, 'ID_VOLUME', idVolume);
@@ -4790,6 +4928,10 @@ function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
     if (!allInspected) {
       status = 'AGUARDANDO_INSPECAO';
       local = 'INSPECAO';
+    } else if (aprovadas > 0 && itemServicoParcial_(item)) {
+      // v4.23.0: as aprovadas seguiram num saco de continuação; este saco encerra aqui.
+      status = 'CONTINUACAO_GERADA';
+      local = 'FACCAO';
     } else if (aprovadas > 0 && embaladas >= aprovadas) {
       status = 'EMBALADO';
       local = 'EMBALAGEM';
@@ -4811,7 +4953,7 @@ function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
     ATUALIZADO_EM: new Date(),
   });
 }
-// Code.gs:4688
+// Code.gs:4832
 function getRemessasExternasImpl_() {
   ensureExternalSchema_();
   const remessas = readTable_(TAB.REMESSAS).filter(r => String(r.TIPO_DESTINO || '').toUpperCase() === 'FACCAO');
@@ -4843,6 +4985,10 @@ function getRemessasExternasImpl_() {
     if (num && rem.FIN_PAGAMENTOS.indexOf(num) < 0) rem.FIN_PAGAMENTOS.push(num);
   });
   const avisosCampo = avisosCampoMap_();
+  // v4.23.0: nomes das operações do serviço parcial (para card, romaneio e app de campo)
+  const roteiroById = mapBy_(readTable_(TAB.ROTEIRO), 'ID_ROTEIRO');
+  const opsNomes = lista => listaIds_(lista).map(id => roteiroById[id]).filter(Boolean).sort((a, b) => num_(a.ORDEM_PROCESSO) - num_(b.ORDEM_PROCESSO))
+    .map(r => String(num_(r.ORDEM_PROCESSO)).padStart(2, '0') + ' ' + (maps.processos[r.ID_PROCESSO] || r.ID_PROCESSO));
   return remessas
     .sort((a, b) => dateMs_(b.ATUALIZADO_EM || b.DATA_ENVIO || b.DATA_HORA) - dateMs_(a.ATUALIZADO_EM || a.DATA_ENVIO || a.DATA_HORA))
     .map(r => {
@@ -4904,6 +5050,10 @@ function getRemessasExternasImpl_() {
           FIN_PAGO_ITEM: round2_(rs.reduce((t, x) => { const f = finByRetorno[String(x.ID_RETORNO)]; return t + (f && f.FIN_STATUS === 'PAGO' ? f.FIN_VALOR : 0); }, 0)),
           FIN_A_PAGAR_ITEM: round2_(rs.reduce((t, x) => { const f = finByRetorno[String(x.ID_RETORNO)]; return t + (f && f.FIN_STATUS === 'A_PAGAR' ? f.FIN_VALOR : 0); }, 0)),
           CAMPO_STATUS: campoStatusVolume_(avisosCampo[String(r.ID_REMESSA)], i.ID_VOLUME),
+          SERVICO_PARCIAL: itemServicoParcial_(i),
+          OPS_FACCAO_NOMES: itemServicoParcial_(i) ? opsNomes(i.OPS_FACCAO) : [],
+          OPS_TOTAL_PRODUTO: itemServicoParcial_(i) ? active_(Object.values(roteiroById), 'ATIVO').filter(r => String(r.ID_PRODUTO) === String(est.ID_PRODUTO || (conteudos[0] || {}).ID_PRODUTO || '')).length : 0,
+          PASSOU_FACCAO: volume.ID_DESTINO_PARCIAL ? (maps.destinos[volume.ID_DESTINO_PARCIAL] || '') : '',
         };
       });
       const allReturns = remessaItens.flatMap(i => i.retornos || []);
@@ -4928,7 +5078,7 @@ function getRemessasExternasImpl_() {
       };
     });
 }
-// Code.gs:4805
+// Code.gs:4957
 function getRemessasInternasImpl_() {
   ensureExternalSchema_();
   const remessas = readTable_(TAB.REMESSAS).filter(r => ['INTERNO','PRODUCAO_INTERNA'].includes(String(r.TIPO_DESTINO || '').toUpperCase()));
@@ -4965,7 +5115,7 @@ function getRemessasInternasImpl_() {
       return {...serialize_(r),DESTINO:'Produção interna',STATUS_CALCULADO:statusCalculado,itens:ri};
     });
 }
-// Code.gs:4842
+// Code.gs:4994
 function updateInternalRemessaStatusUnlocked_(idRemessa) {
   if (!idRemessa) return;
   const remessa=findById_(TAB.REMESSAS,'ID_REMESSA',idRemessa);
@@ -4983,7 +5133,7 @@ function updateInternalRemessaStatusUnlocked_(idRemessa) {
   });
   updateById_(TAB.REMESSAS,'ID_REMESSA',idRemessa,{STATUS_REMESSA:done===itens.length?'CONCLUIDA':'EM_PRODUCAO'});
 }
-// Code.gs:4860
+// Code.gs:5012
 function confirmarEnvioRemessaManualImpl_(idRemessa, volumeIds) {
   ensureExternalSchema_();
   return withLock_(() => {
@@ -5018,7 +5168,7 @@ function confirmarEnvioRemessaManualImpl_(idRemessa, volumeIds) {
     return { ok:true, confirmados:logs.length, remessas:getRemessasExternasImpl_(), volumes:getVolumesImpl_() };
   });
 }
-// Code.gs:4899
+// Code.gs:5051
 function getExternalScanCatalogImpl_(idRemessa, tipo) {
   ensureExternalSchema_();
   tipo = String(tipo || 'ENVIO').toUpperCase();
@@ -5097,7 +5247,7 @@ function getExternalScanCatalogImpl_(idRemessa, tipo) {
     items: out,
   };
 }
-// Code.gs:4978
+// Code.gs:5130
 function registrarBipagensExternasEmLoteImpl_(idRemessa, tipo, codigos, opcoes) {
   ensureExternalSchema_();
   tipo = String(tipo || 'ENVIO').toUpperCase();
@@ -5241,7 +5391,7 @@ function registrarBipagensExternasEmLoteImpl_(idRemessa, tipo, codigos, opcoes) 
     };
   });
 }
-// Code.gs:5127
+// Code.gs:5279
 function liberarVolumeEstoquePAImpl_(payload) {
   payload = payload || {};
   return withLock_(() => {
@@ -5262,6 +5412,9 @@ function liberarVolumeEstoquePAImpl_(payload) {
     // Caixas internas fracionadas pertencem à mesma remessa do volume pai.
     if (!itemRemessa && volume.ID_VOLUME_ORIGEM) itemRemessa = remessaItensAll.find(i => String(i.ID_VOLUME) === String(volume.ID_VOLUME_ORIGEM));
     const remessaDoItem = itemRemessa ? findById_(TAB.REMESSAS, 'ID_REMESSA', itemRemessa.ID_REMESSA) : null;
+    if (itemServicoParcial_(itemRemessa) && normKey_(remessaDoItem && remessaDoItem.TIPO_DESTINO || '') === 'FACCAO') {
+      throw new Error('O volume ' + (volume.COD_VOLUME || '') + ' foi um serviço parcial: as peças aprovadas seguem no saco de continuação, em "Aguardando destino".');
+    }
     if (!origem) {
       const tipoRemessa = normKey_(remessaDoItem && remessaDoItem.TIPO_DESTINO || '');
       origem = ['INTERNO','PRODUCAO_INTERNA'].includes(tipoRemessa) ? 'INTERNO' : (itemRemessa ? 'FACCAO' : (cupons.length ? 'INTERNO' : ''));
@@ -5349,7 +5502,7 @@ function liberarVolumeEstoquePAImpl_(payload) {
     return { ok:true, volumeId:idVolume, volumes:getVolumesImpl_(), remessas:getRemessasExternasImpl_(), remessasInternas:getRemessasInternasImpl_() };
   });
 }
-// Code.gs:5239
+// Code.gs:5394
 function getEfficiencyTrend_(endDateKey, days) {
   const end=dateFromKey_(endDateKey),ops=active_(readTable_(TAB.OPERADORES),'ATIVO');
   const delivered={},available={};
@@ -5367,7 +5520,7 @@ function getEfficiencyTrend_(endDateKey, days) {
     out.push({date:key,label:Utilities.formatDate(d,CFG.TZ,'dd/MM'),efficiency:minutes>0?round2_(produced/minutes*100):0,delivered:round2_(produced),available:round2_(minutes)});
   }return out;
 }
-// Code.gs:5257
+// Code.gs:5412
 function recalcIndicadorUnlocked_(idOperador, dataKey) {
   const op = findById_(TAB.OPERADORES, 'ID_OPERADOR', idOperador);
   if (!op) return;
@@ -5392,7 +5545,7 @@ function recalcIndicadorUnlocked_(idOperador, dataKey) {
   if (existing) updateById_(TAB.INDICADOR, 'ID_INDICADOR', existing.ID_INDICADOR, obj);
   else appendObject_(TAB.INDICADOR, { ID_INDICADOR: uuid_(), ...obj });
 }
-// Code.gs:5282
+// Code.gs:5437
 function ensureJornadaUnlocked_(idOperador, dataKey) {
   const exists = readTable_(TAB.JORNADA).find(j => j.ID_OPERADOR === idOperador && dateKey_(j.DATA) === dataKey);
   if (exists) return exists;
@@ -5416,7 +5569,7 @@ function ensureJornadaUnlocked_(idOperador, dataKey) {
   appendObject_(TAB.JORNADA, obj);
   return obj;
 }
-// Code.gs:5319
+// Code.gs:5474
 function touchRemessasByVolumeIdsUnlocked_(volumeIds, when) {
   const ids=new Set((Array.isArray(volumeIds)?volumeIds:[]).filter(Boolean).map(String));
   if(!ids.size)return;
@@ -5426,7 +5579,7 @@ function touchRemessasByVolumeIdsUnlocked_(volumeIds, when) {
   const stamp=when instanceof Date?when:new Date();
   remessaIds.forEach(id=>updateById_(TAB.REMESSAS,'ID_REMESSA',id,{ATUALIZADO_EM:stamp}));
 }
-// Code.gs:5329
+// Code.gs:5484
 function updateVolumesProgressBatchUnlocked_(volumeIds) {
   volumeIds = Array.isArray(volumeIds) ? [...new Set(volumeIds.filter(Boolean).map(String))] : [];
   if (!volumeIds.length) return;
@@ -5453,13 +5606,13 @@ function updateVolumesProgressBatchUnlocked_(volumeIds) {
   updateRowsByNumber_(TAB.VOLUMES, patches);
   if(patches.length)touchRemessasByVolumeIdsUnlocked_(volumeIds,now);
 }
-// Code.gs:5356
+// Code.gs:5511
 function statusEnvioRemessa_(items) {
   const confirmados = (items || []).filter(envioConfirmado_).length;
   if (!items || !items.length || confirmados === items.length) return 'ENVIADO';
   return confirmados ? 'ENVIO_PARCIAL' : 'AGUARDANDO_ENVIO';
 }
-// Code.gs:5361
+// Code.gs:5516
 function updateRemessaTotalsUnlocked_(idRemessa) {
   const remessa = findById_(TAB.REMESSAS, 'ID_REMESSA', idRemessa);
   if (!remessa) return;
@@ -5491,7 +5644,7 @@ function updateRemessaTotalsUnlocked_(idRemessa) {
     RESULTADO_INSPECAO: resultado,
   });
 }
-// Code.gs:5393
+// Code.gs:5548
 function validateInspection_(r) {
   if (String(r.STATUS_INSPECAO || '').toUpperCase() !== 'CONCLUIDA') return;
   const retornada = num_(r.QTD_RETORNADA);
@@ -5500,13 +5653,13 @@ function validateInspection_(r) {
     throw new Error('Para concluir a inspeção, aprovada + reprovada + retrabalho deve ser igual à quantidade retornada (' + retornada + ').');
   }
 }
-// Code.gs:5402
+// Code.gs:5557
 function validatePackaging_(r) {
   if (num_(r.QTD_EMBALADA) > num_(r.QTD_APROVADA)) {
     throw new Error('A quantidade embalada não pode superar a quantidade aprovada na inspeção.');
   }
 }
-// Code.gs:5408
+// Code.gs:5563
 function packagingStatus_(embalada, aprovada) {
   embalada = num_(embalada); aprovada = num_(aprovada);
   if (aprovada <= 0) return 'PENDENTE';
@@ -5514,12 +5667,12 @@ function packagingStatus_(embalada, aprovada) {
   if (embalada >= aprovada) return 'CONCLUIDA';
   return 'PARCIAL';
 }
-// Code.gs:5515
+// Code.gs:5674
 function normalizeIdList_(v) {
   const arr = Array.isArray(v) ? v : String(v || '').split(/[,;|\s]+/);
   return [...new Set(arr.map(x => String(x || '').trim()).filter(Boolean))].join(',');
 }
-// Code.gs:5520
+// Code.gs:5679
 function ensureColumns_(sheetName, wantedHeaders) {
   wantedHeaders = Array.isArray(wantedHeaders) ? wantedHeaders.filter(Boolean) : [];
   if (!wantedHeaders.length) return;
@@ -5534,7 +5687,7 @@ function ensureColumns_(sheetName, wantedHeaders) {
   delete __HEADER_MEM[sheetName];
   invalidateTableCache_(sheetName);
 }
-// Code.gs:5535
+// Code.gs:5694
 function ensureSheetWithHeaders_(sheetName, wantedHeaders) {
   if (SUPA_ON_()) { if (supaEnsureColumns_(sheetName, wantedHeaders)) { delete __HEADER_MEM[sheetName]; invalidateTableCache_(sheetName); } return; }
   let sh = ss_().getSheetByName(sheetName);
@@ -5552,12 +5705,12 @@ function ensureSheetWithHeaders_(sheetName, wantedHeaders) {
   delete __HEADER_MEM[sheetName];
   invalidateTableCache_(sheetName);
 }
-// Code.gs:5554
+// Code.gs:5713
 function ss_() {
   if (!__SS_MEM) __SS_MEM = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
   return __SS_MEM;
 }
-// Code.gs:5565
+// Code.gs:5724
 function headers_(name) {
   if (__HEADER_MEM[name]) return __HEADER_MEM[name];
   if (SUPA_ON_()) return (__HEADER_MEM[name] = supaHeaders_(name));
@@ -5568,11 +5721,11 @@ function headers_(name) {
   __HEADER_MEM[name] = headers;
   return headers;
 }
-// Code.gs:5576
+// Code.gs:5735
 function appendObject_(name, obj) {
   appendObjects_(name, [obj]);
 }
-// Code.gs:5597
+// Code.gs:5756
 function movement_(tipo, idEstoque, idVolume, idRemessa, origemTipo, origemId, destinoTipo, destinoId, idProcesso, qtd, saldo, statusVolume, obs) {
   appendObject_(TAB.MOVIMENTACOES, {
     ID_MOVIMENTACAO: uuid_(),
@@ -5593,7 +5746,7 @@ function movement_(tipo, idEstoque, idVolume, idRemessa, origemTipo, origemId, d
     OBSERVACAO: obs || '',
   });
 }
-// Code.gs:5618
+// Code.gs:5777
 function audit_(acao, tabela, idRegistro, antes, depois, idUsuario) {
   try {
     appendObject_(TAB.AUDITORIA, {
@@ -5611,7 +5764,7 @@ function audit_(acao, tabela, idRegistro, antes, depois, idUsuario) {
     console.warn('Falha ao registrar auditoria:', e.message);
   }
 }
-// Code.gs:5642
+// Code.gs:5801
 function buildMaps_() {
   if (__MAPS_MEM) return __MAPS_MEM;
   return (__MAPS_MEM = {
@@ -5624,27 +5777,27 @@ function buildMaps_() {
     setores: labelMap_(TAB.SETORES, 'ID_SETOR', r => r.SETOR),
   });
 }
-// Code.gs:5655
+// Code.gs:5814
 function labelMap_(sheet, key, labelFn) {
   const out = {};
   readTable_(sheet).forEach(r => out[r[key]] = labelFn(r));
   return out;
 }
-// Code.gs:5661
+// Code.gs:5820
 function mapBy_(rows, key) {
   const out = {};
   rows.forEach(r => { if (r[key] !== '' && r[key] != null) out[r[key]] = r; });
   return out;
 }
-// Code.gs:5667
+// Code.gs:5826
 function active_(rows, field) {
   return rows.filter(r => r[field] === '' || r[field] == null || truthy_(r[field]));
 }
-// Code.gs:5671
+// Code.gs:5830
 function stripMeta_(rows) {
   return rows.map(serialize_);
 }
-// Code.gs:5675
+// Code.gs:5834
 function serialize_(value) {
   if (value == null) return value;
   if (value instanceof Date) return Utilities.formatDate(value, CFG.TZ, "yyyy-MM-dd'T'HH:mm:ss");
@@ -5659,12 +5812,12 @@ function serialize_(value) {
   }
   return value;
 }
-// Code.gs:5695
+// Code.gs:5854
 function req_(v, label) {
   if (v === undefined || v === null || String(v).trim() === '') throw new Error('Campo obrigatório: ' + label + '.');
   return String(v).trim();
 }
-// Code.gs:5700
+// Code.gs:5859
 function num_(v, fallback) {
   if (v === '' || v === null || v === undefined) return fallback === undefined ? 0 : fallback;
   if (typeof v === 'number') return Number.isFinite(v) ? v : (fallback || 0);
@@ -5684,7 +5837,7 @@ function num_(v, fallback) {
  *   "0.350"    -> 0.35      (começa com zero: é decimal, não milhar)
  *   "1.5"      -> 1.5       (grupo com menos de 3 dígitos: é decimal)
  */
-// Code.gs:5719
+// Code.gs:5878
 function numCsv_(v, fallback) {
   if (v === '' || v === null || v === undefined) return fallback === undefined ? 0 : fallback;
   if (typeof v === 'number') return Number.isFinite(v) ? v : (fallback || 0);
@@ -5694,30 +5847,30 @@ function numCsv_(v, fallback) {
   const n = Number(s);
   return Number.isFinite(n) ? n : (fallback === undefined ? 0 : fallback);
 }
-// Code.gs:5729
+// Code.gs:5888
 function truthy_(v) {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v !== 0;
   return ['TRUE', 'VERDADEIRO', 'SIM', '1', 'ATIVO'].includes(String(v || '').trim().toUpperCase());
 }
-// Code.gs:5735
+// Code.gs:5894
 function normKey_(v) {
   return String(v == null ? '' : v)
     .trim()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toUpperCase();
 }
-// Code.gs:5742
+// Code.gs:5901
 function uuid_() { return Utilities.getUuid(); }
-// Code.gs:5743
+// Code.gs:5902
 function round2_(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-// Code.gs:5744
+// Code.gs:5903
 function round4_(n) { return Math.round((Number(n) + Number.EPSILON) * 10000) / 10000; }
-// Code.gs:5745
+// Code.gs:5904
 function round6_(n) { return Math.round((Number(n) + Number.EPSILON) * 1000000) / 1000000; }
-// Code.gs:5746
+// Code.gs:5905
 function currentUser_() { if (typeof __WEB_USER !== 'undefined' && __WEB_USER) return __WEB_USER; try { return Session.getActiveUser().getEmail() || ''; } catch (e) { return ''; } }
-// Code.gs:5748
+// Code.gs:5907
 function normalizeLoteCode_(value, seq, dataCorte) {
   const seqNum = num_(seq, 0);
   const raw = value instanceof Date ? '' : String(value || '').trim();
@@ -5737,7 +5890,7 @@ function normalizeLoteCode_(value, seq, dataCorte) {
   const n = seqNum > 0 ? seqNum : 1;
   return String(n).padStart(2, '0') + '-' + Utilities.formatDate(d, CFG.TZ, 'MM-yyyy');
 }
-// Code.gs:5768
+// Code.gs:5927
 function normalizeSubloteCode_(value, loteValue, variacao) {
   const raw = String(value || '').trim();
   const m = raw.match(/^(.+)\.(\d+)$/);
@@ -5747,7 +5900,7 @@ function normalizeSubloteCode_(value, loteValue, variacao) {
   const lote = normalizeLoteCode_(loteRaw, 1, loteRaw instanceof Date ? loteRaw : '');
   return lote + '.' + v;
 }
-// Code.gs:5783
+// Code.gs:5942
 function volumeOperationalCode_(volume, subloteFallback) {
   volume = volume || {};
   const raw = String(volume.COD_VOLUME || '').trim();
@@ -5760,7 +5913,7 @@ function volumeOperationalCode_(volume, subloteFallback) {
   const seq = num_(volume.SEQ_SEPARACAO || volume.VOLUME_SEQ);
   return sub && seq > 0 ? sub + '-V' + String(seq).padStart(2, '0') : (sub || '');
 }
-// Code.gs:5796
+// Code.gs:5955
 function parseDate_(v) {
   if (v instanceof Date) return v;
   const s = String(v || '').trim();
@@ -5776,21 +5929,21 @@ function parseDate_(v) {
   if (isNaN(d.getTime())) throw new Error('Data inválida: ' + s);
   return d;
 }
-// Code.gs:5812
+// Code.gs:5971
 function todayKey_() { return Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd'); }
-// Code.gs:5813
+// Code.gs:5972
 function dateFromKey_(key) {
   const p = normalizeDateKey_(key).split('-').map(Number);
   return new Date(p[0], p[1] - 1, p[2], 12, 0, 0);
 }
-// Code.gs:5817
+// Code.gs:5976
 function normalizeDateKey_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, CFG.TZ, 'yyyy-MM-dd');
   const s = String(v || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   return Utilities.formatDate(parseDate_(s), CFG.TZ, 'yyyy-MM-dd');
 }
-// Code.gs:5823
+// Code.gs:5982
 function dateKey_(v) {
   if (!v) return '';
   if (v instanceof Date) return Utilities.formatDate(v, CFG.TZ, 'yyyy-MM-dd');
@@ -5798,49 +5951,49 @@ function dateKey_(v) {
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   try { return Utilities.formatDate(parseDate_(s), CFG.TZ, 'yyyy-MM-dd'); } catch (e) { return ''; }
 }
-// Code.gs:5830
+// Code.gs:5989
 function dateMs_(v) {
   if (!v) return 0;
   if (v instanceof Date) return v.getTime();
   const d = new Date(v);
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
-// Code.gs:5836
+// Code.gs:5995
 function formatDateTime_(v) {
   if (!v) return '';
   try { return Utilities.formatDate(v instanceof Date ? v : new Date(v), CFG.TZ, 'dd/MM/yyyy HH:mm'); } catch (e) { return String(v); }
 }
-// Code.gs:5840
+// Code.gs:5999
 function code3_(s) {
   return String(s || 'OP')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9]/g, '')
     .toUpperCase().slice(0, 3) || 'OP';
 }
-// Code.gs:5866
+// Code.gs:6025
 const ENGINE = Object.freeze({
   VERSION: '4.13.0', SCHEMA: '4.6.0', CONTROL: 'APP_CONTROLE', OPS: 'APP_OPERACOES',
   CACHE_TTL: 120, CACHE_PART: 70000, CACHE_MAX_PARTS: 12,
   RESULT_PART: 40000, RESULT_PARTS: 16, MAX_COMMIT_BYTES: 1800000,
 });
-// Code.gs:5871
+// Code.gs:6030
 var __TX = null, __SHEET_MEM = {}, __INDEX_MEM = {}, __MAPS_MEM = null;
-// Code.gs:5872
+// Code.gs:6031
 var __REVISION = '', __SCHEMA_READY = false, __FRESH = false;
-// Code.gs:5873
+// Code.gs:6032
 var __METRICS = { reads: 0, cacheHits: 0, commits: 0 };
-// Code.gs:5874
+// Code.gs:6033
 var __REQ = {}; // opções da requisição atual vindas do front (ex.: período do fluxo de estoque).
-// Code.gs:5876
+// Code.gs:6035
 function resetRequestState_() {
   __SS_MEM = null; __TABLE_MEM = {}; __HEADER_MEM = {}; __SHEET_MEM = {};
   __INDEX_MEM = {}; __MAPS_MEM = null; __REVISION = ''; __SCHEMA_READY = false;
   __TX = null; __FRESH = false; __METRICS = { reads: 0, cacheHits: 0, commits: 0 }; __REQ = {};
   supaResetRequest_();
 }
-// Code.gs:5890
+// Code.gs:6049
 const DELTA_KEYS = ['estoque','volumes','remessas','remessasInternas','precosFaccao','cortesProgramados','estoqueMateriais','comprasRecentes','fluxoEstoque'];
-// Code.gs:5891
+// Code.gs:6050
 function rowHash_(row) {
   // cyrb53: hash rápido em JS puro (sem Utilities.computeDigest por linha).
   const str = JSON.stringify(row);
@@ -5853,7 +6006,7 @@ function rowHash_(row) {
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
-// Code.gs:5903
+// Code.gs:6062
 function finalizeResponse_(out, meta) {
   if (!out || typeof out !== 'object' || Array.isArray(out) || out.__error) return out;
   const known = (meta && meta.known && typeof meta.known === 'object') ? meta.known : null;
@@ -5875,13 +6028,13 @@ function finalizeResponse_(out, meta) {
   });
   return out;
 }
-// Code.gs:5924
+// Code.gs:6083
 function referenceTables_() {
   return [TAB.PRODUTOS,TAB.CORES,TAB.TAMANHOS,TAB.PROCESSOS,TAB.MAQUINAS,TAB.DESTINOS,
     TAB.SETORES,TAB.OPERADORES,TAB.ROTEIRO,TAB.MATERIAIS,TAB.FORNECEDORES,
     TAB.LOCAIS_ESTOQUE,TAB.ESTRUTURA_PRODUTO,TAB.PRECO_FACCAO];
 }
-// Code.gs:5929
+// Code.gs:6088
 function packValue_(x) {
   if (x instanceof Date) return { __gutDate: x.toISOString() };
   if (Array.isArray(x)) return x.map(packValue_);
@@ -5890,38 +6043,38 @@ function packValue_(x) {
   }
   return x;
 }
-// Code.gs:5937
+// Code.gs:6096
 function unpackValue_(x) {
   if (x && typeof x === 'object' && typeof x.__gutDate === 'string' && Object.keys(x).length === 1) return new Date(x.__gutDate);
   if (Array.isArray(x)) return x.map(unpackValue_);
   if (x && typeof x === 'object') { Object.keys(x).forEach(k => x[k] = unpackValue_(x[k])); }
   return x;
 }
-// Code.gs:5943
+// Code.gs:6102
 function compress_(value) {
   return Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(JSON.stringify(packValue_(value)), 'application/json')).getBytes());
 }
-// Code.gs:5946
+// Code.gs:6105
 function decompress_(s) {
   return unpackValue_(JSON.parse(Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(s))).getDataAsString('UTF-8')));
 }
-// Code.gs:5949
+// Code.gs:6108
 function digest_(s) {
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8)).replace(/=+$/, '');
 }
-// Code.gs:5979
+// Code.gs:6138
 function sh_(name) {
   if (!__SHEET_MEM[name]) __SHEET_MEM[name] = ss_().getSheetByName(name);
   if (!__SHEET_MEM[name]) throw new Error('Aba não encontrada: '+name);
   return __SHEET_MEM[name];
 }
-// Code.gs:5984
+// Code.gs:6143
 function invalidateTableCache_(name) {
   if (name) { delete __TABLE_MEM[name]; delete __INDEX_MEM[name]; }
   else { __TABLE_MEM={}; __INDEX_MEM={}; }
   __MAPS_MEM=null;
 }
-// Code.gs:5989
+// Code.gs:6148
 function readTable_(name, forceRefresh) {
   if (SUPA_ON_()) supaMarkUsed_(name);
   // Durante a transação nunca descartar alterações ainda não confirmadas.
@@ -5951,7 +6104,7 @@ function readTable_(name, forceRefresh) {
   if(useCache) cachePut_('table:'+name,{headers,rows});
   return rows;
 }
-// Code.gs:6018
+// Code.gs:6177
 function txTable_(name) {
   if(!__TX) throw new Error('Gravação fora de uma operação protegida.');
   if(!__TX.tables[name]) {
@@ -5968,7 +6121,7 @@ function txTable_(name) {
   }
   return __TX.tables[name];
 }
-// Code.gs:6034
+// Code.gs:6193
 function appendObjects_(name, objs) {
   if(!objs||!objs.length)return;
   const t=txTable_(name);
@@ -5984,7 +6137,7 @@ function appendObjects_(name, objs) {
   });
   delete __INDEX_MEM[name];__MAPS_MEM=null;
 }
-// Code.gs:6049
+// Code.gs:6208
 function updateRowsByNumber_(name, updates) {
   if(!updates||!updates.length)return;
   const t=txTable_(name);
@@ -6008,7 +6161,7 @@ function updateRowsByNumber_(name, updates) {
   });
   delete __INDEX_MEM[name];__MAPS_MEM=null;
 }
-// Code.gs:6073
+// Code.gs:6232
 function deleteRowsByNumber_(name, rows) {
   rows = [...new Set((rows || []).map(Number).filter(r => Number.isInteger(r) && r >= 2))];
   if (!rows.length) return;
@@ -6021,7 +6174,7 @@ function deleteRowsByNumber_(name, rows) {
   if (__TABLE_MEM[name]) __TABLE_MEM[name] = __TABLE_MEM[name].filter(x => !t.deletes[x._row]);
   delete __INDEX_MEM[name]; __MAPS_MEM = null;
 }
-// Code.gs:6091
+// Code.gs:6250
 function findById_(name, field, id) {
   if(!__INDEX_MEM[name])__INDEX_MEM[name]={};
   if(!__INDEX_MEM[name][field]){
@@ -6030,13 +6183,13 @@ function findById_(name, field, id) {
   }
   return __INDEX_MEM[name][field][String(id)]||null;
 }
-// Code.gs:6099
+// Code.gs:6258
 function updateById_(name, field, id, patch) {
   const found=findById_(name,field,id);
   if(!found)throw new Error('Registro não encontrado em '+name+': '+id);
   updateRowsByNumber_(name,[{row:found._row,patch:patch||{}}]);return {...found,...patch};
 }
-// Code.gs:6104
+// Code.gs:6263
 function nextSeqUnlocked_(chave, competencia, escopo) {
   const rows=readTable_(TAB.SEQUENCIAS);
   const row=rows.find(r=>String(r.CHAVE)===String(chave)&&String(r.COMPETENCIA||'')===String(competencia||'')&&String(r.ESCOPO_ID||'')===String(escopo||''));
@@ -6045,7 +6198,7 @@ function nextSeqUnlocked_(chave, competencia, escopo) {
   else appendObject_(TAB.SEQUENCIAS,{CHAVE:chave,COMPETENCIA:competencia||'',ESCOPO_ID:escopo||'',ULTIMO_NUMERO:next,ATUALIZADO_EM:new Date()});
   return next;
 }
-// Code.gs:6112
+// Code.gs:6271
 function cellValue_(v) {
   if(v===undefined||v===null||v==='')return {};
   if(v instanceof Date) {
@@ -6058,7 +6211,7 @@ function cellValue_(v) {
   // stringValue impede fórmulas injetadas e mantém zeros à esquerda.
   return {stringValue:typeof v==='object'?JSON.stringify(v):String(v)};
 }
-// Code.gs:6124
+// Code.gs:6283
 function commitTransaction_() {
   if (SUPA_ON_()) return supaCommit_();
   const requests=[];
@@ -6112,16 +6265,16 @@ function commitTransaction_() {
   Sheets.Spreadsheets.batchUpdate({requests},CFG.SPREADSHEET_ID);
   __METRICS.commits++;
 }
-// Code.gs:6177
+// Code.gs:6336
 function requireSheetsService_() {
   if (SUPA_ON_()) return;
   if(typeof Sheets==='undefined'||!Sheets.Spreadsheets)throw new Error('Ative Google Sheets API em Serviços (+) no Apps Script e execute instalarAtualizacao.');
 }
-// Code.gs:6181
+// Code.gs:6340
 function operationHeaders_() {
   return ['ID_OPERACAO','ACAO','HASH','DATA_HORA','USUARIO','REFRESH'].concat(Array.from({length:ENGINE.RESULT_PARTS},(_,i)=>'RESULTADO_'+(i+1)));
 }
-// Code.gs:6184
+// Code.gs:6343
 function ensureRuntimeSchema_() {
   if(__SCHEMA_READY)return;
   if (SUPA_ON_()) {
@@ -6135,7 +6288,7 @@ function ensureRuntimeSchema_() {
   if(!ctrl||String(ctrl.getRange(2,1).getValue())!==ENGINE.SCHEMA)throw new Error('Execute instalarAtualizacao no editor do Apps Script antes de usar esta versão.');
   __REVISION=String(ctrl.getRange(2,2).getValue()||'0');__SCHEMA_READY=true;
 }
-// Code.gs:6197
+// Code.gs:6356
 function findOperation_(id) {
   if (SUPA_ON_()) return supaFindOperation_(id);
   const sheet=sh_(ENGINE.OPS),last=sheet.getLastRow();if(last<2)return null;
@@ -6144,18 +6297,18 @@ function findOperation_(id) {
   const vals=sheet.getRange(match.getRow(),1,1,operationHeaders_().length).getValues()[0];
   const out={};operationHeaders_().forEach((h,i)=>out[h]=vals[i]);return out;
 }
-// Code.gs:6205
+// Code.gs:6364
 function refreshResultFields_() {
   return {cadastros:getCadastrosImpl_,dashboard:()=>getDashboardImpl_(todayKey_()),estoque:getEstoqueCorteImpl_,volumes:getVolumesImpl_,remessas:getRemessasExternasImpl_,remessasInternas:getRemessasInternasImpl_,separacoesVolume:getSeparacoesVolumeImpl_,precosFaccao:getPrecosFaccaoImpl_,cortesProgramados:getCortesProgramadosImpl_,estoqueMateriais:getEstoqueMateriaisImpl_,comprasRecentes:getComprasRecentesImpl_,fluxoEstoque:getFluxoEstoqueImpl_};
 }
-// Code.gs:6208
+// Code.gs:6367
 function replayOperation_(row) {
   const encoded=Array.from({length:ENGINE.RESULT_PARTS},(_,i)=>row['RESULTADO_'+(i+1)]||'').join('');
   const result=decompress_(encoded),loaders=refreshResultFields_();
   String(row.REFRESH||'').split(',').filter(Boolean).forEach(k=>{if(loaders[k])result[k]=loaders[k]()});
   result.__replayed=true;return result;
 }
-// Code.gs:6214
+// Code.gs:6373
 function stageOperation_(id, action, hash, result) {
   const compact={...serialize_(result)},refresh=[];
   Object.keys(refreshResultFields_()).forEach(k=>{if(Object.prototype.hasOwnProperty.call(compact,k)){refresh.push(k);delete compact[k]}});
@@ -6165,7 +6318,7 @@ function stageOperation_(id, action, hash, result) {
   for(let i=0;i<ENGINE.RESULT_PARTS;i++)row['RESULTADO_'+(i+1)]=encoded.slice(i*ENGINE.RESULT_PART,(i+1)*ENGINE.RESULT_PART);
   appendObject_(ENGINE.OPS,row);
 }
-// Code.gs:6223
+// Code.gs:6382
 function withLock_(fn) {
   if(__TX)return fn();
   const lock=LockService.getScriptLock();lock.waitLock(30000);
@@ -6174,7 +6327,7 @@ function withLock_(fn) {
     __TX={tables:{},committing:false};const result=fn();commitTransaction_();return result;
   } finally {__TX=null;lock.releaseLock();}
 }
-// Code.gs:6231
+// Code.gs:6390
 function authorize_(action, mutation) {
   const props=PropertiesService.getScriptProperties(),mode=String(props.getProperty('GUT_ACCESS_MODE')||'DEPLOYMENT').toUpperCase();
   if(mode==='DEPLOYMENT')return; // compatibilidade: acesso definido na publicação Google.
@@ -6190,15 +6343,15 @@ function authorize_(action, mutation) {
   if(['OPERADOR','OPERACIONAL'].includes(role)&&scan.includes(action))return;
   throw new Error('Seu perfil não tem permissão para esta operação.');
 }
-// Code.gs:6246
+// Code.gs:6405
 function getBootstrapDataImpl_(dataRef) {
   return {ok:true,appName:CFG.APP_NAME,version:ENGINE.VERSION,today:todayKey_(),userEmail:currentUser_(),cadastros:getCadastrosImpl_(),dashboard:getDashboardImpl_(dataRef||todayKey_())};
 }
-// Code.gs:6249
+// Code.gs:6408
 function getOperationalDataImpl_() {
   return {ok:true,estoque:getEstoqueCorteImpl_(),volumes:getVolumesImpl_(),remessas:getRemessasExternasImpl_(),precosFaccao:getPrecosFaccaoImpl_(),cortesProgramados:getCortesProgramadosImpl_(),estoqueMateriais:getEstoqueMateriaisImpl_(),comprasRecentes:getComprasRecentesImpl_(),fluxoEstoque:getFluxoEstoqueImpl_()};
 }
-// Code.gs:6252
+// Code.gs:6411
 function apiCall(action,args,meta) {
   resetRequestState_();action=String(action||'').trim();args=Array.isArray(args)?args:[];meta=meta||{};
   __REQ={fluxoDias:meta.fluxoDias};
@@ -6240,15 +6393,15 @@ function apiCall(action,args,meta) {
     __TX=null;if(lock)lock.releaseLock();
   }
 }
-// Code.gs:6313
+// Code.gs:6472
 function ensureExternalSchema_(){ensureRuntimeSchema_();}
-// Code.gs:6314
+// Code.gs:6473
 function ensureInventorySchema_(){ensureRuntimeSchema_();}
-// Code.gs:6315
+// Code.gs:6474
 function groupBy_(rows, field) {
   const out=Object.create(null);rows.forEach(r=>(out[String(r[field])]||(out[String(r[field])]=[])).push(r));return out;
 }
-// Code.gs:6319
+// Code.gs:6478
 function routes_() { return {
   getInitialData: getInitialDataImpl_,
   getCadastros: getCadastrosImpl_,
@@ -6322,6 +6475,7 @@ function routes_() { return {
   alocarOperadorCupons: alocarOperadorCuponsImpl_,
   salvarCapacidadeFaccoes: salvarCapacidadeFaccoesImpl_,
   retirarVolumeRemessa: retirarVolumeRemessaImpl_,
+  registrarOcorrenciaFaccao: registrarOcorrenciaFaccaoImpl_,
   salvarFichaProduto: salvarFichaProdutoImpl_,
   salvarFotoProduto: salvarFotoProdutoImpl_,
   salvarParametros: salvarParametrosImpl_,
@@ -6336,175 +6490,177 @@ function routes_() { return {
   previewTempoPadraoMarcacao: previewTempoPadraoMarcacaoImpl_,
   aplicarTempoPadraoMarcacao: aplicarTempoPadraoMarcacaoImpl_
 }; }
-// Code.gs:6406
-function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto"]; }
-// Code.gs:6407
+// Code.gs:6566
+function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto", "registrarOcorrenciaFaccao"]; }
+// Code.gs:6567
 function getInitialData() { return apiCall("getInitialData", Array.prototype.slice.call(arguments)); }
-// Code.gs:6408
+// Code.gs:6568
 function getCadastros() { return apiCall("getCadastros", Array.prototype.slice.call(arguments)); }
-// Code.gs:6409
+// Code.gs:6569
 function salvarCadastro() { return apiCall("salvarCadastro", Array.prototype.slice.call(arguments)); }
-// Code.gs:6410
+// Code.gs:6570
 function importarCadastroCSV() { return apiCall("importarCadastroCSV", Array.prototype.slice.call(arguments)); }
-// Code.gs:6411
+// Code.gs:6571
 function getEstoqueMateriais() { return apiCall("getEstoqueMateriais", Array.prototype.slice.call(arguments)); }
-// Code.gs:6412
+// Code.gs:6572
 function getComprasRecentes() { return apiCall("getComprasRecentes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6413
+// Code.gs:6573
 function getFluxoEstoque() { return apiCall("getFluxoEstoque", Array.prototype.slice.call(arguments)); }
-// Code.gs:6414
+// Code.gs:6574
 function registrarCompra() { return apiCall("registrarCompra", Array.prototype.slice.call(arguments)); }
-// Code.gs:6415
+// Code.gs:6575
 function baixarEstoqueManual() { return apiCall("baixarEstoqueManual", Array.prototype.slice.call(arguments)); }
-// Code.gs:6416
+// Code.gs:6576
 function ajustarEstoqueManual() { return apiCall("ajustarEstoqueManual", Array.prototype.slice.call(arguments)); }
-// Code.gs:6417
+// Code.gs:6577
 function prepararConsumoCorte() { return apiCall("prepararConsumoCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6418
+// Code.gs:6578
 function confirmarConsumoCorteEExplodir() { return apiCall("confirmarConsumoCorteEExplodir", Array.prototype.slice.call(arguments)); }
-// Code.gs:6419
+// Code.gs:6579
 function registrarCorte() { return apiCall("registrarCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6420
+// Code.gs:6580
 function getCortesProgramados() { return apiCall("getCortesProgramados", Array.prototype.slice.call(arguments)); }
-// Code.gs:6421
+// Code.gs:6581
 function getCorte() { return apiCall("getCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6422
+// Code.gs:6582
 function editarCorteExecutado() { return apiCall("editarCorteExecutado", Array.prototype.slice.call(arguments)); }
-// Code.gs:6423
+// Code.gs:6583
 function explodirCorte() { return apiCall("explodirCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6424
+// Code.gs:6584
 function getEstoqueCorte() { return apiCall("getEstoqueCorte", Array.prototype.slice.call(arguments)); }
-// Code.gs:6425
+// Code.gs:6585
 function criarVolume() { return apiCall("criarVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6426
+// Code.gs:6586
 function getSeparacoesVolume() { return apiCall("getSeparacoesVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6427
+// Code.gs:6587
 function criarVolumesLote() { return apiCall("criarVolumesLote", Array.prototype.slice.call(arguments)); }
-// Code.gs:6428
+// Code.gs:6588
 function criarSeparacaoVolumes() { return apiCall("criarSeparacaoVolumes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6429
+// Code.gs:6589
 function marcarEtiquetasSeparacaoImpressas() { return apiCall("marcarEtiquetasSeparacaoImpressas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6430
+// Code.gs:6590
 function getPrecosFaccao() { return apiCall("getPrecosFaccao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6431
+// Code.gs:6591
 function salvarPrecoFaccao() { return apiCall("salvarPrecoFaccao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6432
+// Code.gs:6592
 function destinarVolumesInternos() { return apiCall("destinarVolumesInternos", Array.prototype.slice.call(arguments)); }
-// Code.gs:6433
+// Code.gs:6593
 function criarEnvioFaccaoMassa() { return apiCall("criarEnvioFaccaoMassa", Array.prototype.slice.call(arguments)); }
-// Code.gs:6434
+// Code.gs:6594
 function fracionarVolumeInterno() { return apiCall("fracionarVolumeInterno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6435
+// Code.gs:6595
 function prepararImpressaoCuponsInternos() { return apiCall("prepararImpressaoCuponsInternos", Array.prototype.slice.call(arguments)); }
-// Code.gs:6436
+// Code.gs:6596
 function prepararRomaneioInterno() { return apiCall("prepararRomaneioInterno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6437
+// Code.gs:6597
 function prepararRomaneioRemessa() { return apiCall("prepararRomaneioRemessa", Array.prototype.slice.call(arguments)); }
-// Code.gs:6438
+// Code.gs:6598
 function gerarCuponsVolume() { return apiCall("gerarCuponsVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6439
+// Code.gs:6599
 function getVolumes() { return apiCall("getVolumes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6440
+// Code.gs:6600
 function editarVolume() { return apiCall("editarVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6441
+// Code.gs:6601
 function previewExclusao() { return apiCall("previewExclusao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6442
+// Code.gs:6602
 function excluirEntidade() { return apiCall("excluirEntidade", Array.prototype.slice.call(arguments)); }
-// Code.gs:6443
+// Code.gs:6603
 function getCuponsVolume() { return apiCall("getCuponsVolume", Array.prototype.slice.call(arguments)); }
-// Code.gs:6444
+// Code.gs:6604
 function marcarCuponsImpressos() { return apiCall("marcarCuponsImpressos", Array.prototype.slice.call(arguments)); }
-// Code.gs:6445
+// Code.gs:6605
 function getScanCatalog() { return apiCall("getScanCatalog", Array.prototype.slice.call(arguments)); }
-// Code.gs:6446
+// Code.gs:6606
 function biparCupom() { return apiCall("biparCupom", Array.prototype.slice.call(arguments)); }
-// Code.gs:6447
+// Code.gs:6607
 function biparCuponsEmLote() { return apiCall("biparCuponsEmLote", Array.prototype.slice.call(arguments)); }
-// Code.gs:6448
+// Code.gs:6608
 function enviarBipagensColetadas() { return apiCall("enviarBipagensColetadas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6449
+// Code.gs:6609
 function consolidarBipagens() { return apiCall("consolidarBipagens", Array.prototype.slice.call(arguments)); }
-// Code.gs:6450
+// Code.gs:6610
 function registrarJornada() { return apiCall("registrarJornada", Array.prototype.slice.call(arguments)); }
-// Code.gs:6451
+// Code.gs:6611
 function salvarMetasProducao() { return apiCall("salvarMetasProducao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6452
+// Code.gs:6612
 function getDashboard() { return apiCall("getDashboard", Array.prototype.slice.call(arguments)); }
-// Code.gs:6453
+// Code.gs:6613
 function getInternalProductionBoard() { return apiCall("getInternalProductionBoard", Array.prototype.slice.call(arguments)); }
-// Code.gs:6454
+// Code.gs:6614
 function getInternalProductionPerformance() { return apiCall("getInternalProductionPerformance", Array.prototype.slice.call(arguments)); }
-// Code.gs:6455
+// Code.gs:6615
 function apontarProducaoDireta() { return apiCall("apontarProducaoDireta", Array.prototype.slice.call(arguments)); }
-// Code.gs:6456
+// Code.gs:6616
 function registrarApontamentosDiretosEmLote() { return apiCall("registrarApontamentosDiretosEmLote", Array.prototype.slice.call(arguments)); }
-// Code.gs:6457
+// Code.gs:6617
 function iniciarMarcacaoProducao() { return apiCall("iniciarMarcacaoProducao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6458
+// Code.gs:6618
 function finalizarMarcacaoProducao() { return apiCall("finalizarMarcacaoProducao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6459
+// Code.gs:6619
 function criarRemessaExterna() { return apiCall("criarRemessaExterna", Array.prototype.slice.call(arguments)); }
-// Code.gs:6460
+// Code.gs:6620
 function registrarRetornoExterno() { return apiCall("registrarRetornoExterno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6461
+// Code.gs:6621
 function registrarInspecaoRetorno() { return apiCall("registrarInspecaoRetorno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6462
+// Code.gs:6622
 function liberarVolumeEstoquePA() { return apiCall("liberarVolumeEstoquePA", Array.prototype.slice.call(arguments)); }
-// Code.gs:6463
+// Code.gs:6623
 function salvarGradeRemessa() { return apiCall("salvarGradeRemessa", Array.prototype.slice.call(arguments)); }
-// Code.gs:6464
+// Code.gs:6624
 function getRemessasExternas() { return apiCall("getRemessasExternas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6465
+// Code.gs:6625
 function getRemessasInternas() { return apiCall("getRemessasInternas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6466
+// Code.gs:6626
 function confirmarEnvioRemessaManual() { return apiCall("confirmarEnvioRemessaManual", Array.prototype.slice.call(arguments)); }
-// Code.gs:6467
+// Code.gs:6627
 function getExternalScanCatalog() { return apiCall("getExternalScanCatalog", Array.prototype.slice.call(arguments)); }
-// Code.gs:6468
+// Code.gs:6628
 function registrarBipagensExternasEmLote() { return apiCall("registrarBipagensExternasEmLote", Array.prototype.slice.call(arguments)); }
-// Code.gs:6469
+// Code.gs:6629
 function getFinanceiroFaccao() { return apiCall("getFinanceiroFaccao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6470
+// Code.gs:6630
 function registrarPagamentoFaccao() { return apiCall("registrarPagamentoFaccao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6471
+// Code.gs:6631
 function cancelarLancamentoFaccao() { return apiCall("cancelarLancamentoFaccao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6472
+// Code.gs:6632
 function registrarContagemRetorno() { return apiCall("registrarContagemRetorno", Array.prototype.slice.call(arguments)); }
-// Code.gs:6473
+// Code.gs:6633
 function salvarCapacidadeMaquinas() { return apiCall("salvarCapacidadeMaquinas", Array.prototype.slice.call(arguments)); }
-// Code.gs:6474
+// Code.gs:6634
 function alocarOperadorCupons() { return apiCall("alocarOperadorCupons", Array.prototype.slice.call(arguments)); }
-// Code.gs:6475
+// Code.gs:6635
 function salvarCapacidadeFaccoes() { return apiCall("salvarCapacidadeFaccoes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6476
+// Code.gs:6636
 function retirarVolumeRemessa() { return apiCall("retirarVolumeRemessa", Array.prototype.slice.call(arguments)); }
-// Code.gs:6477
+// Code.gs:6637
+function registrarOcorrenciaFaccao() { return apiCall("registrarOcorrenciaFaccao", Array.prototype.slice.call(arguments)); }
+// Code.gs:6638
 function salvarFichaProduto() { return apiCall("salvarFichaProduto", Array.prototype.slice.call(arguments)); }
-// Code.gs:6478
+// Code.gs:6639
 function salvarFotoProduto() { return apiCall("salvarFotoProduto", Array.prototype.slice.call(arguments)); }
-// Code.gs:6479
+// Code.gs:6640
 function salvarParametros() { return apiCall("salvarParametros", Array.prototype.slice.call(arguments)); }
-// Code.gs:6480
+// Code.gs:6641
 function salvarAcessoCampo() { return apiCall("salvarAcessoCampo", Array.prototype.slice.call(arguments)); }
-// Code.gs:6481
+// Code.gs:6642
 function pausarMarcacao() { return apiCall("pausarMarcacao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6482
+// Code.gs:6643
 function retomarMarcacao() { return apiCall("retomarMarcacao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6483
+// Code.gs:6644
 function pausarTodasMarcacoes() { return apiCall("pausarTodasMarcacoes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6484
+// Code.gs:6645
 function retomarTodasMarcacoes() { return apiCall("retomarTodasMarcacoes", Array.prototype.slice.call(arguments)); }
-// Code.gs:6485
+// Code.gs:6646
 function marcarAvisosCampoLidos() { return apiCall("marcarAvisosCampoLidos", Array.prototype.slice.call(arguments)); }
-// Code.gs:6486
+// Code.gs:6647
 function removerFotoProduto() { return apiCall("removerFotoProduto", Array.prototype.slice.call(arguments)); }
-// Code.gs:6487
+// Code.gs:6648
 function getFotosProduto() { return apiCall("getFotosProduto", Array.prototype.slice.call(arguments)); }
-// Code.gs:6488
+// Code.gs:6649
 function previewTempoPadraoMarcacao() { return apiCall("previewTempoPadraoMarcacao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6489
+// Code.gs:6650
 function aplicarTempoPadraoMarcacao() { return apiCall("aplicarTempoPadraoMarcacao", Array.prototype.slice.call(arguments)); }
-// Code.gs:6523
+// Code.gs:6684
 const CAMPO = {
   AVISOS: 'FACCAO_AVISOS',
   AVISO_HEADERS: ['ID_AVISO', 'ID_REMESSA', 'NUM_REMESSA', 'ID_DESTINO', 'ID_VOLUME', 'COD_VOLUME', 'TIPO', 'DATA_HORA', 'ORIGEM', 'OBS', 'LIDO_EM'],
@@ -6512,31 +6668,31 @@ const CAMPO = {
   DEST_COLS: ['CODIGO_ACESSO', 'ACESSO_APP', 'SENHA_HASH', 'SENHA_SALT', 'SENHA_EM', 'ULTIMO_ACESSO_APP'],
   TOKEN_DIAS: 30, MAX_FALHAS: 6, MODOS: ['MARCADOR', 'APONTADOR', 'AMBOS']
 };
-// Code.gs:6530
+// Code.gs:6691
 const CAMPO_SECRET_FIELDS = ['SENHA_HASH', 'SENHA_SALT'];
-// Code.gs:6531
+// Code.gs:6692
 function campoSchema_() {
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
   ensureColumns_(TAB.OPERADORES, CAMPO.OP_COLS);
   ensureColumns_(TAB.DESTINOS, CAMPO.DEST_COLS);
   ensureSheetWithHeaders_(CAMPO.AVISOS, CAMPO.AVISO_HEADERS);
 }
-// Code.gs:6537
+// Code.gs:6698
 function campoPublicRecord_(r) {
   const o = Object.assign({}, r);
   o.TEM_SENHA = !!String(r.SENHA_HASH || '');
   CAMPO_SECRET_FIELDS.forEach(k => delete o[k]);
   return o;
 }
-// Code.gs:6543
+// Code.gs:6704
 function campoNorm_(v) { return String(v || '').trim().toUpperCase().replace(/\s+/g, ''); }
-// Code.gs:6544
+// Code.gs:6705
 function campoHash_(senha, salt) {
   let h = String(salt) + '|' + String(senha);
   for (let i = 0; i < 40; i++) h = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h + '|' + salt, Utilities.Charset.UTF_8));
   return h;
 }
-// Code.gs:6589
+// Code.gs:6750
 function salvarAcessoCampoImpl_(payload) {
   payload = payload || {};
   const tipo = String(payload.TIPO || '').toUpperCase() === 'FACCAO' ? 'FACCAO' : 'OPERADOR';
@@ -6571,7 +6727,7 @@ function salvarAcessoCampoImpl_(payload) {
     return { ok: true, TIPO: tipo, ID: rec[idField], LOGIN: login, cadastros: getCadastrosImpl_() };
   });
 }
-// Code.gs:6623
+// Code.gs:6784
 function marcarAvisosCampoLidosImpl_(payload) {
   payload = payload || {};
   const ids = Array.isArray(payload.ids) ? payload.ids.map(String) : [];
@@ -6582,7 +6738,7 @@ function marcarAvisosCampoLidosImpl_(payload) {
     return { ok: true };
   });
 }
-// Code.gs:6634
+// Code.gs:6795
 function avisosCampoMap_() {
   const out = {};
   if (!tableExists_(CAMPO.AVISOS)) return out;
@@ -6595,14 +6751,14 @@ function avisosCampoMap_() {
   });
   return out;
 }
-// Code.gs:6646
+// Code.gs:6807
 function campoStatusVolume_(av, idVolume) {
   if (!av) return '';
   const g = av.geral, v = av.vols[String(idVolume)];
   const e = v && (!g || v.ms >= g.ms) ? v : g;
   return e ? e.TIPO : '';
 }
-// Code.gs:6652
+// Code.gs:6813
 function campoResumoRemessa_(av, itens) {
   if (!av) return null;
   const pend = itens.filter(i => num_(i.QTD_ENVIADA) - num_(i.QTD_RETORNADA) > 0 || !itens.some(x => num_(x.QTD_RETORNADA) > 0));
@@ -6611,35 +6767,35 @@ function campoResumoRemessa_(av, itens) {
   const status = st.length && conc === st.length ? 'CONCLUIDO' : conc ? 'PARCIAL' : ini ? 'INICIADO' : '';
   return { STATUS: status, CONCLUIDOS: conc, INICIADOS: ini, TOTAL: st.length, ULTIMO: av.ultimo, NAO_LIDOS: av.naoLidos };
 }
-// Code.gs:6857
+// Code.gs:7018
 const PAUSA_COLS = ['PAUSADO_EM', 'SEGUNDOS_PAUSA', 'PAUSA_TIPO'];
-// Code.gs:6858
+// Code.gs:7019
 function pausaColsOk_() { try { const h = headers_(TAB.CUPONS); return PAUSA_COLS.every(c => h.indexOf(c) >= 0); } catch (e) { return false; } }
-// Code.gs:6859
+// Code.gs:7020
 function marcacaoRodando_(c) { return String(c.STATUS_CUPOM || '').toUpperCase() === 'EM_ANDAMENTO_MARCACAO' && !c.PAUSADO_EM; }
-// Code.gs:6860
+// Code.gs:7021
 function marcacaoPausada_(c) { return String(c.STATUS_CUPOM || '').toUpperCase() === 'EM_ANDAMENTO_MARCACAO' && !!c.PAUSADO_EM; }
-// Code.gs:6861
+// Code.gs:7022
 function pausaTotalSeg_(c, ate) {
   let s = num_(c.SEGUNDOS_PAUSA);
   if (c.PAUSADO_EM) { const p = dateMs_(c.PAUSADO_EM); if (p) s += Math.max(0, ((ate instanceof Date ? ate.getTime() : Date.now()) - p) / 1000); }
   return Math.round(s);
 }
-// Code.gs:6866
+// Code.gs:7027
 function pausarCupons_(lista, tipo, now) {
   if (!lista.length) return 0;
   updateRowsByNumber_(TAB.CUPONS, lista.map(c => ({ row: c._row, patch: { PAUSADO_EM: now, PAUSA_TIPO: tipo, ATUALIZADO_EM: now } })));
   clearScanCatalogCache_();
   return lista.length;
 }
-// Code.gs:6872
+// Code.gs:7033
 function retomarCupons_(lista, now) {
   if (!lista.length) return 0;
   updateRowsByNumber_(TAB.CUPONS, lista.map(c => ({ row: c._row, patch: { PAUSADO_EM: '', PAUSA_TIPO: '', SEGUNDOS_PAUSA: pausaTotalSeg_(c, now), ATUALIZADO_EM: now } })));
   clearScanCatalogCache_();
   return lista.length;
 }
-// Code.gs:6878
+// Code.gs:7039
 function pausarMarcacaoImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
@@ -6653,7 +6809,7 @@ function pausarMarcacaoImpl_(payload) {
     return { ok: true, ID_CUPOM: c.ID_CUPOM, PAUSADO_EM: serialize_(now), SEGUNDOS_PAUSA: num_(c.SEGUNDOS_PAUSA) };
   });
 }
-// Code.gs:6891
+// Code.gs:7052
 function retomarMarcacaoImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
@@ -6670,7 +6826,7 @@ function retomarMarcacaoImpl_(payload) {
     return { ok: true, ID_CUPOM: c.ID_CUPOM, SEGUNDOS_PAUSA: seg, pausadas: rodando.map(x => x.ID_CUPOM) };
   });
 }
-// Code.gs:6907
+// Code.gs:7068
 function pausarTodasMarcacoesImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
@@ -6681,7 +6837,7 @@ function pausarTodasMarcacoesImpl_(payload) {
     return { ok: true, qtd: lista.length, ids: lista.map(c => c.ID_CUPOM), PAUSADO_EM: serialize_(now) };
   });
 }
-// Code.gs:6917
+// Code.gs:7078
 function retomarTodasMarcacoesImpl_(payload) {
   payload = payload || {};
   ensureColumns_(TAB.CUPONS, PAUSA_COLS);
@@ -6924,6 +7080,6 @@ function supaFindOperation_(id) {
 // Supabase.gs:319
 var __WEB_USER = '';
 // ======================= fim do código do Apps Script =======================
-__MOTOR.tabelas = {"salvarCadastro":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"getCadastros":["app_controle","app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"salvarPrecoFaccao":["cad_cores","cad_destinos","cad_maquinas","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos"],"registrarCompra":["cad_fornecedores","cad_locais_estoque","cad_materiais","cad_produtos","compra_itens","compras","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte","sequencias"],"registrarCorte":["cad_cores","cad_destinos","cad_locais_estoque","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estoque_lotes","estoque_saldos","pedidos_corte","sequencias"],"explodirCorte":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","pedidos_corte"],"getEstoqueCorte":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte"],"criarVolumesLote":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"getVolumes":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"destinarVolumesInternos":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","remessa_itens","remessas","roteiro_produto","sequencias","volume_itens","volumes"],"getCuponsVolume":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao"],"iniciarMarcacaoProducao":["cad_operadores","cupons_producao"],"finalizarMarcacaoProducao":["cad_operadores","cad_processos","cupons_producao"],"apontarProducaoDireta":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","indicador_diario","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","volume_itens","volumes"],"registrarJornada":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","indicador_diario","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos"],"salvarMetasProducao":["apontamentos_producao","cad_operadores","indicador_diario","jornada_operador"],"criarRemessaExterna":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","sequencias","volume_itens","volumes"],"confirmarEnvioRemessaManual":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"getRemessasExternas":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"registrarContagemRetorno":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"getFinanceiroFaccao":["app_controle","cad_destinos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retornos_externos"],"registrarPagamentoFaccao":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","sequencias","volume_itens","volumes"],"salvarParametros":[],"salvarAcessoCampo":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"importarCadastroCSV":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"salvarFichaProduto":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"salvarCapacidadeMaquinas":["cad_maquinas"],"salvarCapacidadeFaccoes":["cad_destinos"],"previewExclusao":["app_controle"],"excluirEntidade":[],"getEstoqueMateriais":["app_controle","cad_locais_estoque","cad_materiais","estoque_lotes","estoque_saldos"],"baixarEstoqueManual":["cad_locais_estoque","cad_materiais","cad_produtos","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte"],"ajustarEstoqueManual":["cad_locais_estoque","cad_materiais","cad_produtos","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte"],"prepararConsumoCorte":["app_controle","cad_cores","cad_destinos","cad_locais_estoque","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","pedidos_corte"],"confirmarConsumoCorteEExplodir":["cad_cores","cad_destinos","cad_locais_estoque","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte"],"editarCorteExecutado":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","pedidos_corte"],"criarVolume":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"criarSeparacaoVolumes":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"getSeparacoesVolume":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","separacoes_volume","volume_itens","volumes"],"criarEnvioFaccaoMassa":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","sequencias","volume_itens","volumes"],"fracionarVolumeInterno":["cupons_producao","volumes"],"editarVolume":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","remessa_itens","volume_itens","volumes"],"prepararImpressaoCuponsInternos":["cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"marcarCuponsImpressos":["cupons_producao"],"biparCupom":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","jornada_operador"],"biparCuponsEmLote":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","jornada_operador"],"registrarApontamentosDiretosEmLote":["apontamentos_producao","cad_operadores","cad_processos","cupons_producao","indicador_diario","jornada_operador","remessa_itens","remessas","volumes"],"pausarMarcacao":["cupons_producao"],"retomarMarcacao":["cupons_producao"],"pausarTodasMarcacoes":["cupons_producao"],"retomarTodasMarcacoes":["cupons_producao"],"alocarOperadorCupons":["cad_operadores","cupons_producao"],"aplicarTempoPadraoMarcacao":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","roteiro_produto"],"enviarBipagensColetadas":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","volume_itens","volumes"],"consolidarBipagens":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","indicador_diario","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","volumes"],"registrarRetornoExterno":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"registrarInspecaoRetorno":["retornos_externos"],"liberarVolumeEstoquePA":["cupons_producao","remessa_itens","remessas","volumes"],"marcarAvisosCampoLidos":["faccao_avisos"],"salvarGradeRemessa":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"registrarBipagensExternasEmLote":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"retirarVolumeRemessa":["remessa_itens","remessas","retornos_externos","volumes"],"cancelarLancamentoFaccao":["financeiro_faccao"],"getComprasRecentes":["app_controle","cad_fornecedores","compra_itens","compras"],"getFluxoEstoque":["app_controle","cad_locais_estoque","cad_materiais","cad_produtos","estoque_lotes","mov_estoque","pedidos_corte"],"getCortesProgramados":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","pedidos_corte"],"getCorte":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","pedidos_corte"],"getPrecosFaccao":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos"],"getRemessasInternas":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","remessa_itens","remessas","volume_itens","volumes"],"getDashboard":["apontamentos_producao","app_controle","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos"],"getInternalProductionPerformance":["apontamentos_producao","app_controle","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","jornada_operador","volumes"],"getOperationalData":["app_controle","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos","compra_itens","compras","cupons_producao","estoque_corte","estoque_lotes","estoque_saldos","faccao_avisos","financeiro_faccao","mov_estoque","pagamentos_faccao","pedidos_corte","remessa_itens","remessas","retorno_volume_itens","retornos_externos","volume_itens","volumes"],"getBootstrapData":["apontamentos_producao","app_controle","app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estoque_lotes","estoque_saldos","estrutura_produto","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","roteiro_produto"],"getInitialData":["apontamentos_producao","app_controle","app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos","compra_itens","compras","cupons_producao","estoque_corte","estoque_lotes","estoque_saldos","estrutura_produto","faccao_avisos","financeiro_faccao","jornada_operador","mov_estoque","pagamentos_faccao","pedidos_corte","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"getScanCatalog":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao"],"getExternalScanCatalog":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","remessa_itens","remessas","retornos_externos","volume_itens","volumes"],"previewTempoPadraoMarcacao":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","roteiro_produto"],"prepararRomaneioRemessa":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estrutura_produto","remessa_itens","remessas","volume_itens","volumes"],"prepararRomaneioInterno":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","estrutura_produto","roteiro_produto","volume_itens","volumes"]};
+__MOTOR.tabelas = {"salvarCadastro":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"getCadastros":["app_controle","app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"salvarPrecoFaccao":["cad_cores","cad_destinos","cad_maquinas","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos"],"registrarCompra":["cad_fornecedores","cad_locais_estoque","cad_materiais","cad_produtos","compra_itens","compras","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte","sequencias"],"registrarCorte":["cad_cores","cad_destinos","cad_locais_estoque","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estoque_lotes","estoque_saldos","pedidos_corte","sequencias"],"explodirCorte":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","pedidos_corte"],"getEstoqueCorte":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte"],"criarVolumesLote":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"getVolumes":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"destinarVolumesInternos":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","remessa_itens","remessas","roteiro_produto","sequencias","volume_itens","volumes"],"getCuponsVolume":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao"],"iniciarMarcacaoProducao":["cad_operadores","cupons_producao"],"finalizarMarcacaoProducao":["cad_operadores","cad_processos","cupons_producao"],"apontarProducaoDireta":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","indicador_diario","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","volume_itens","volumes"],"registrarJornada":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","indicador_diario","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos"],"salvarMetasProducao":["apontamentos_producao","cad_operadores","indicador_diario","jornada_operador"],"criarRemessaExterna":["cad_cores","cad_destinos","cad_maquinas","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","sequencias","volume_itens","volumes"],"confirmarEnvioRemessaManual":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"getRemessasExternas":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"registrarContagemRetorno":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"getFinanceiroFaccao":["app_controle","cad_destinos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retornos_externos"],"registrarPagamentoFaccao":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","sequencias","volume_itens","volumes"],"salvarParametros":[],"salvarAcessoCampo":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"importarCadastroCSV":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"salvarFichaProduto":["app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","roteiro_produto"],"salvarCapacidadeMaquinas":["cad_maquinas"],"salvarCapacidadeFaccoes":["cad_destinos"],"previewExclusao":["app_controle"],"excluirEntidade":[],"getEstoqueMateriais":["app_controle","cad_locais_estoque","cad_materiais","estoque_lotes","estoque_saldos"],"baixarEstoqueManual":["cad_locais_estoque","cad_materiais","cad_produtos","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte"],"ajustarEstoqueManual":["cad_locais_estoque","cad_materiais","cad_produtos","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte"],"prepararConsumoCorte":["app_controle","cad_cores","cad_destinos","cad_locais_estoque","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_lotes","estoque_saldos","estrutura_produto","pedidos_corte"],"confirmarConsumoCorteEExplodir":["cad_cores","cad_destinos","cad_locais_estoque","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estoque_lotes","estoque_saldos","mov_estoque","pedidos_corte"],"editarCorteExecutado":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","pedidos_corte"],"criarVolume":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"criarSeparacaoVolumes":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"getSeparacoesVolume":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","separacoes_volume","volume_itens","volumes"],"criarEnvioFaccaoMassa":["cad_cores","cad_destinos","cad_maquinas","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","sequencias","volume_itens","volumes"],"fracionarVolumeInterno":["cupons_producao","volumes"],"editarVolume":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","remessa_itens","volume_itens","volumes"],"prepararImpressaoCuponsInternos":["cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","volume_itens","volumes"],"marcarCuponsImpressos":["cupons_producao"],"biparCupom":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","jornada_operador"],"biparCuponsEmLote":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","jornada_operador"],"registrarApontamentosDiretosEmLote":["apontamentos_producao","cad_operadores","cad_processos","cupons_producao","indicador_diario","jornada_operador","remessa_itens","remessas","volumes"],"pausarMarcacao":["cupons_producao"],"retomarMarcacao":["cupons_producao"],"pausarTodasMarcacoes":["cupons_producao"],"retomarTodasMarcacoes":["cupons_producao"],"alocarOperadorCupons":["cad_operadores","cupons_producao"],"aplicarTempoPadraoMarcacao":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","roteiro_produto"],"enviarBipagensColetadas":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","volume_itens","volumes"],"consolidarBipagens":["apontamentos_producao","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","indicador_diario","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","volumes"],"registrarRetornoExterno":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"registrarInspecaoRetorno":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"liberarVolumeEstoquePA":["cupons_producao","remessa_itens","remessas","volumes"],"marcarAvisosCampoLidos":["faccao_avisos"],"salvarGradeRemessa":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"registrarBipagensExternasEmLote":["cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","faccao_avisos","financeiro_faccao","pagamentos_faccao","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"retirarVolumeRemessa":["remessa_itens","remessas","retornos_externos","volumes"],"cancelarLancamentoFaccao":["financeiro_faccao"],"registrarOcorrenciaFaccao":["remessa_itens","remessas","volumes"],"getComprasRecentes":["app_controle","cad_fornecedores","compra_itens","compras"],"getFluxoEstoque":["app_controle","cad_locais_estoque","cad_materiais","cad_produtos","estoque_lotes","mov_estoque","pedidos_corte"],"getCortesProgramados":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","pedidos_corte"],"getCorte":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","pedidos_corte"],"getPrecosFaccao":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos"],"getInternalProductionBoard":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","remessa_itens","remessas","volumes"],"getRemessasInternas":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","remessa_itens","remessas","volume_itens","volumes"],"getDashboard":["apontamentos_producao","app_controle","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos"],"getInternalProductionPerformance":["apontamentos_producao","app_controle","cad_cores","cad_destinos","cad_maquinas","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","jornada_operador","volumes"],"getOperationalData":["app_controle","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos","compra_itens","compras","cupons_producao","estoque_corte","estoque_lotes","estoque_saldos","faccao_avisos","financeiro_faccao","mov_estoque","pagamentos_faccao","pedidos_corte","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"getBootstrapData":["apontamentos_producao","app_controle","app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estoque_lotes","estoque_saldos","estrutura_produto","jornada_operador","pedidos_corte","remessa_itens","remessas","retornos_externos","roteiro_produto"],"getInitialData":["apontamentos_producao","app_controle","app_parametros","cad_cores","cad_destinos","cad_fornecedores","cad_locais_estoque","cad_maquinas","cad_materiais","cad_operadores","cad_precos_faccao","cad_processos","cad_produtos","cad_setores","cad_tamanhos","compra_itens","compras","cupons_producao","estoque_corte","estoque_lotes","estoque_saldos","estrutura_produto","faccao_avisos","financeiro_faccao","jornada_operador","mov_estoque","pagamentos_faccao","pedidos_corte","remessa_itens","remessas","retorno_volume_itens","retornos_externos","roteiro_produto","volume_itens","volumes"],"getScanCatalog":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao"],"getExternalScanCatalog":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","remessa_itens","remessas","retornos_externos","volume_itens","volumes"],"previewTempoPadraoMarcacao":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","roteiro_produto"],"prepararRomaneioRemessa":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","estoque_corte","estrutura_produto","remessa_itens","remessas","volume_itens","volumes"],"prepararRomaneioInterno":["app_controle","cad_cores","cad_destinos","cad_maquinas","cad_materiais","cad_processos","cad_produtos","cad_setores","cad_tamanhos","cupons_producao","estoque_corte","estrutura_produto","roteiro_produto","volume_itens","volumes"]};
 return motorPublico_(["salvarFotoProduto","removerFotoProduto","getFotosProduto"]);
 })();

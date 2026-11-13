@@ -210,6 +210,7 @@
   "cad_cores",
   "cad_destinos",
   "cad_maquinas",
+  "cad_precos_faccao",
   "cad_processos",
   "cad_produtos",
   "cad_setores",
@@ -223,6 +224,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "sequencias",
   "volume_itens",
   "volumes"
@@ -244,6 +246,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],
@@ -264,6 +267,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],
@@ -284,6 +288,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],
@@ -312,6 +317,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "sequencias",
   "volume_itens",
   "volumes"
@@ -466,6 +472,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],
@@ -499,6 +506,7 @@
   "cad_cores",
   "cad_destinos",
   "cad_maquinas",
+  "cad_precos_faccao",
   "cad_processos",
   "cad_produtos",
   "cad_setores",
@@ -512,6 +520,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "sequencias",
   "volume_itens",
   "volumes"
@@ -673,11 +682,30 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],
  "registrarInspecaoRetorno": [
-  "retornos_externos"
+  "cad_cores",
+  "cad_destinos",
+  "cad_maquinas",
+  "cad_processos",
+  "cad_produtos",
+  "cad_setores",
+  "cad_tamanhos",
+  "cupons_producao",
+  "estoque_corte",
+  "faccao_avisos",
+  "financeiro_faccao",
+  "pagamentos_faccao",
+  "remessa_itens",
+  "remessas",
+  "retorno_volume_itens",
+  "retornos_externos",
+  "roteiro_produto",
+  "volume_itens",
+  "volumes"
  ],
  "liberarVolumeEstoquePA": [
   "cupons_producao",
@@ -705,6 +733,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],
@@ -725,6 +754,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],
@@ -736,6 +766,11 @@
  ],
  "cancelarLancamentoFaccao": [
   "financeiro_faccao"
+ ],
+ "registrarOcorrenciaFaccao": [
+  "remessa_itens",
+  "remessas",
+  "volumes"
  ],
  "getComprasRecentes": [
   "app_controle",
@@ -784,6 +819,22 @@
   "cad_produtos",
   "cad_setores",
   "cad_tamanhos"
+ ],
+ "getInternalProductionBoard": [
+  "app_controle",
+  "cad_cores",
+  "cad_destinos",
+  "cad_maquinas",
+  "cad_operadores",
+  "cad_processos",
+  "cad_produtos",
+  "cad_setores",
+  "cad_tamanhos",
+  "cupons_producao",
+  "estoque_corte",
+  "remessa_itens",
+  "remessas",
+  "volumes"
  ],
  "getRemessasInternas": [
   "app_controle",
@@ -861,6 +912,7 @@
   "remessas",
   "retorno_volume_itens",
   "retornos_externos",
+  "roteiro_produto",
   "volume_itens",
   "volumes"
  ],

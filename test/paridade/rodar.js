@@ -248,7 +248,45 @@ async function cenario(x) {
     const lanc = [...fin.matchAll(/"ID_LANCAMENTO":"([^"]+)"/g)].map(m => m[1]);
     if (lanc.length) await tenta('cancelarLancamentoFaccao', { ID_LANCAMENTO: lanc[lanc.length - 1], MOTIVO: 'lançado em dobro' });
   });
-  return { passos, ids: { P1, corte: corte1 && corte1.__id, vol: vols[0], vols, rem: rem && rem.remessa && rem.remessa.ID_REMESSA, cupom: cupons[0], cupom2: cupons[2] } };
+  // v4.23.0 — facção com serviço parcial: faz 2 das 3 operações; as aprovadas voltam num saco de continuação
+  let cont = null;
+  await passo('parte 3: facção com serviço parcial → continuação na produção interna → problema da facção', async () => {
+    const cc = await cad();
+    const rot = (cc.roteiro || []).filter(r => String(r.ID_PRODUTO) === String(P1)).sort((a, b) => a.ORDEM_PROCESSO - b.ORDEM_PROCESSO);
+    if (rot.length !== 3) throw new Error('roteiro do P1 com ' + rot.length + ' operações');
+    const v5 = (await x.api('getVolumes', [])).find(v => v.ID_VOLUME === vols[5]);
+    const r = await x.grava('criarRemessaExterna', { volumeIds: [vols[5]], ID_DESTINO: D2, DATA_ENVIO: ontem(1), itemValues: { [vols[5]]: { ESCOPO_SERVICO: 'PARCIAL', OPS_FACCAO: [rot[0].ID_ROTEIRO, rot[2].ID_ROTEIRO] } } });
+    const idr = r.remessa.ID_REMESSA;
+    const it = (await x.api('getRemessasExternas', [])).find(z => z.ID_REMESSA === idr).itens[0];
+    if (!it.SERVICO_PARCIAL || it.OPS_FACCAO_NOMES.length !== 2 || it.OPS_TOTAL_PRODUTO !== 3) throw new Error('item parcial: ' + JSON.stringify([it.SERVICO_PARCIAL, it.OPS_FACCAO_NOMES, it.OPS_TOTAL_PRODUTO]));
+    const t = rot.map(r => Number(r.TEMPO_PADRAO_SEG_UN) || 0), esperado = Math.round(3.1 * (t[0] + t[2]) / (t[0] + t[1] + t[2]) * 100) / 100;
+    if (Math.abs(it.PRECO_FACCAO_UNIT - esperado) > 0.001) throw new Error('preço proporcional: ' + it.PRECO_FACCAO_UNIT + ' (esperado ' + esperado + ')');
+    await x.grava('confirmarEnvioRemessaManual', idr, []);
+    await x.grava('registrarContagemRetorno', { ID_REMESSA: idr, itens: [{ ID_VOLUME: vols[5], QTD_CONTADA: it.QTD_ENVIADA }] });
+    const ret = (await x.api('getRemessasExternas', [])).find(z => z.ID_REMESSA === idr).itens[0].retornos[0];
+    const ins = await x.grava('registrarInspecaoRetorno', { ID_REMESSA: idr, ID_RETORNO: ret.ID_RETORNO, QTD_APROVADA: it.QTD_ENVIADA - 2, QTD_REPROVADA: 1, QTD_RETRABALHO: 1, QTD_EMBALADA: 0, RESPONSAVEL_INSPECAO: 'Carla', MOTIVO_DEFEITO: 'ponto solto' });
+    if ((ins.continuacoes || []).length !== 1 || (ins.retrabalhos || []).length !== 1) throw new Error('inspeção: ' + JSON.stringify([ins.continuacoes, ins.retrabalhos]));
+    const vs = await x.api('getVolumes', []);
+    cont = vs.find(v => v.ID_VOLUME_ORIGEM_PARCIAL === vols[5]);
+    const orig = vs.find(v => v.ID_VOLUME === vols[5]), rt = vs.find(v => v.ID_VOLUME_ORIGEM_RETRABALHO === vols[5]);
+    if (!cont || cont.STATUS_VOLUME !== 'AGUARDANDO_DESTINO' || cont.QTD_VOLUME !== it.QTD_ENVIADA - 2 || !/-C1$/.test(cont.COD_VOLUME) || cont.ID_DESTINO_PARCIAL !== D2) throw new Error('continuação: ' + JSON.stringify(cont));
+    if (orig.STATUS_VOLUME !== 'CONTINUACAO_GERADA') throw new Error('saco de origem: ' + orig.STATUS_VOLUME);
+    if (!rt || rt.OPS_FEITAS !== (v5.OPS_FEITAS || '')) throw new Error('retrabalho herda o que já estava feito antes da facção');
+    const lib = await x.api('liberarVolumeEstoquePA', [{ ID_VOLUME: vols[5], ORIGEM: 'RETORNO' }]);
+    if (!lib || !lib.__error || !/continuação/.test(lib.message)) throw new Error('liberar o saco de origem devia ser recusado');
+    await x.grava('destinarVolumesInternos', [cont.ID_VOLUME]);
+    const cv = await x.api('getCuponsVolume', [cont.ID_VOLUME]);
+    const cups = cv.cupons || cv || [];
+    const st = cups.map(c => c.STATUS_CUPOM + '/' + (c.METODO_CONCLUSAO || '')).join(',');
+    if (st !== 'CONCLUIDO/FACCAO,PENDENTE/,CONCLUIDO/FACCAO') throw new Error('cupons da continuação: ' + st);
+    const imp = await x.grava('prepararImpressaoCuponsInternos', [cont.ID_VOLUME]);
+    if ((imp.cupons || []).length !== 1) throw new Error('impressão devia ter só o cupom que falta: ' + (imp.cupons || []).length);
+    const oc = await x.grava('registrarOcorrenciaFaccao', { ID_VOLUME: cont.ID_VOLUME, QTD: 2, MOTIVO: 'costura torta' });
+    if (Math.abs(oc.debito - 2 * esperado) > 0.001) throw new Error('débito da ocorrência: ' + oc.debito);
+    const semFac = await x.api('registrarOcorrenciaFaccao', [{ ID_VOLUME: vols[0], QTD: 1, MOTIVO: 'x' }]);
+    if (!semFac || !semFac.__error) throw new Error('ocorrência num saco que não passou por facção devia ser recusada');
+  });
+  return { passos, ids: { P1, corte: corte1 && corte1.__id, vol: vols[0], vols, rem: rem && rem.remessa && rem.remessa.ID_REMESSA, cupom: cupons[0], cupom2: cupons[2], cont: cont && cont.ID_VOLUME } };
 }
 
 // ---------- as leituras comparadas ----------
@@ -257,7 +295,7 @@ function leituras(ids) {
   return [
     ['getCadastros', []], ['getEstoqueMateriais', []], ['getComprasRecentes', []], ['getFluxoEstoque', []], ['getFluxoEstoque', [0]],
     ['getCortesProgramados', []], ['getCorte', [ids.corte]], ['getEstoqueCorte', []], ['getSeparacoesVolume', []], ['getPrecosFaccao', []],
-    ['getVolumes', []], ['getCuponsVolume', [ids.vol]], ['getRemessasExternas', []], ['getRemessasInternas', []], ['getFinanceiroFaccao', []],
+    ['getVolumes', []], ['getCuponsVolume', [ids.vol]], ['getCuponsVolume', [ids.cont]], ['getInternalProductionBoard', []], ['getRemessasExternas', []], ['getRemessasInternas', []], ['getFinanceiroFaccao', []],
     ['getDashboard', [hoje()]], ['getDashboard', [per]], ['getInternalProductionPerformance', [per]],
     ['getOperationalData', []], ['getBootstrapData', [hoje()]], ['getInitialData', [hoje()]],
     ['getScanCatalog', [false]], ['getScanCatalog', [true]], ['getExternalScanCatalog', ['', 'ENVIO']], ['getExternalScanCatalog', ['', 'RECEBIMENTO']], ['getExternalScanCatalog', [ids.rem, 'RECEBIMENTO']],

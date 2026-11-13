@@ -207,7 +207,8 @@ function migracoes() {
   const fim = m10.indexOf('grant execute on function public.web_empresa_id(text) to authenticated;');
   const lista = [pega('private.web_empresa'), pega('private.web_j'), m10.slice(m10.indexOf('create or replace function public.web_empresa_id'), fim) + 'grant execute on function public.web_empresa_id(text) to authenticated;'];
   fs.readdirSync(path.join(ROOT, 'supabase/migrations')).filter(f => /^gut_0(1[4-9]|[2-9]\d)_/.test(f)).sort()
-    .forEach(f => lista.push('-- ' + f + '\n' + fs.readFileSync(path.join(ROOT, 'supabase/migrations', f), 'utf8')));
+    // o que vem depois de "-- @so-supabase" depende de partes que o banco local não tem (ex.: app de campo)
+    .forEach(f => lista.push('-- ' + f + '\n' + fs.readFileSync(path.join(ROOT, 'supabase/migrations', f), 'utf8').split('-- @so-supabase')[0]));
   return lista.join('\n');
 }
 

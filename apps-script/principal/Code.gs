@@ -2212,7 +2212,7 @@ function prepararImpressaoCuponsInternosImpl_(volumeIds) {
     // motivo o código se repetir em outro cupom, usa o token aleatório para não confundir a bipagem.
     const todosCupons = readTable_(TAB.CUPONS), codCount = {};
     todosCupons.forEach(c => { const k = String(c.COD_CUPOM || '').trim().toUpperCase(); if (k) codCount[k] = (codCount[k] || 0) + 1; });
-    const cuponsRows = todosCupons.filter(c => idSet.has(String(c.ID_VOLUME)))
+    const cuponsRows = todosCupons.filter(c => idSet.has(String(c.ID_VOLUME)) && String(c.METODO_CONCLUSAO || '').toUpperCase() !== 'FACCAO')
       .sort((a,b) => (ordemVolume[String(a.ID_VOLUME)] - ordemVolume[String(b.ID_VOLUME)]) || (num_(a.ORDEM_PROCESSO)-num_(b.ORDEM_PROCESSO)));
 
     const now = new Date();
@@ -2268,12 +2268,17 @@ function gerarCuponsVolumeUnlocked_(idVolume) {
 
   const processos = mapBy_(readTable_(TAB.PROCESSOS), 'ID_PROCESSO');
   const now = new Date();
+  // v4.23.0: o que a facção já fez (serviço parcial) nasce concluído, sem operador e sem minutos para a equipe
+  const feitasFaccao = new Set(listaIds_(volume.OPS_FEITAS));
+  const nomeFaccao = feitasFaccao.size ? (buildMaps_().destinos[volume.ID_DESTINO_PARCIAL] || 'facção') : '';
   const rows = roteiro.map(r => {
     const p = processos[r.ID_PROCESSO] || {};
     const ordem = num_(r.ORDEM_PROCESSO, 1);
     const tempo = num_(r.TEMPO_PADRAO_SEG_UN);
     const qtd = num_(volume.QTD_VOLUME);
+    const daFaccao = feitasFaccao.has(String(r.ID_ROTEIRO));
     return {
+      ...(daFaccao ? { METODO_CONCLUSAO: 'FACCAO', ATUALIZADO_EM: now } : {}),
       ID_CUPOM: uuid_(),
       COD_CUPOM: volume.COD_VOLUME + '-P' + String(ordem).padStart(2, '0') + '-' + (p.COD_PROCESSO || code3_(p.PROCESSO || 'OP')),
       ID_VOLUME: volume.ID_VOLUME,
@@ -2291,7 +2296,7 @@ function gerarCuponsVolumeUnlocked_(idVolume) {
       QTD_PROGRAMADA: qtd,
       TEMPO_PADRAO_SEG_UN: tempo,
       MINUTOS_PADRAO_TOTAL: round2_(qtd * tempo / 60),
-      STATUS_CUPOM: 'PENDENTE',
+      STATUS_CUPOM: daFaccao ? 'CONCLUIDO' : 'PENDENTE',
       QR_TOKEN: uuid_(),
       DATA_GERACAO: now,
       DATA_IMPRESSAO: '',
@@ -2299,7 +2304,7 @@ function gerarCuponsVolumeUnlocked_(idVolume) {
       ID_OPERADOR_BIPAGEM: '',
       DATA_HORA_BIPAGEM: '',
       ID_APONTAMENTO: '',
-      OBSERVACAO: '',
+      OBSERVACAO: daFaccao ? 'Feito pela facção ' + nomeFaccao : '',
     };
   });
 
@@ -3393,7 +3398,7 @@ function retirarVolumeRemessaImpl_(payload) {
       if (num_(it.QTD_RETORNADA) > 0 || retornos.some(r => String(r.ID_VOLUME) === idVol)) throw new Error('O volume ' + cod + ' já tem retorno registrado.');
       if (v.ID_VOLUME_ORIGEM_RETRABALHO && num_(it.PRECO_FACCAO_UNIT) <= 0) throw new Error('O volume ' + cod + ' é retrabalho sem custo (débito já baixado). Ajuste pela tela de remessas.');
       del.push(it._row);
-      volUpd.push({ row: v._row, patch: { STATUS_VOLUME: 'AGUARDANDO_DESTINO', TIPO_LOCAL_ATUAL: v.ID_VOLUME_ORIGEM_RETRABALHO ? 'RETRABALHO' : 'ESTOQUE_CORTE', ID_DESTINO_ATUAL: '', ATUALIZADO_EM: now } });
+      volUpd.push({ row: v._row, patch: { STATUS_VOLUME: 'AGUARDANDO_DESTINO', TIPO_LOCAL_ATUAL: v.ID_VOLUME_ORIGEM_RETRABALHO ? 'RETRABALHO' : (v.ID_VOLUME_ORIGEM_PARCIAL ? 'CONTINUACAO' : 'ESTOQUE_CORTE'), ID_DESTINO_ATUAL: '', ATUALIZADO_EM: now } });
       movement_('RETIRADA_REMESSA', v.ID_ESTOQUE_CORTE, idVol, idRemessa, 'FACCAO', rem.ID_DESTINO, 'SEPARACAO/ESTOQUE', '', '', num_(it.QTD_ENVIADA), '', 'AGUARDANDO_DESTINO', payload.MOTIVO || 'Retirado da remessa antes do envio');
     });
     deleteRowsByNumber_(TAB.REMESSA_ITENS, del);
@@ -3504,6 +3509,7 @@ function getInternalProductionBoardImpl_() {
       LOTE_CORTE:est.LOTE_CORTE||'',SUBLOTE:v.SUBLOTE||est.SUBLOTE||'',QTD_VOLUME:num_(v.QTD_VOLUME),
       ID_PRODUTO:est.ID_PRODUTO||'',PRODUTO:maps.produtos[est.ID_PRODUTO]||'',COR:maps.cores[est.ID_COR]||'',TAMANHO:maps.tamanhos[est.ID_TAMANHO]||'',
       STATUS_VOLUME:v.STATUS_VOLUME||'',OPERACOES_TOTAL:ops.length,OPERACOES_CONCLUIDAS:concl.length,
+      ID_DESTINO_PARCIAL:v.ID_DESTINO_PARCIAL||'',FACCAO_PARCIAL:v.ID_DESTINO_PARCIAL?(maps.destinos[v.ID_DESTINO_PARCIAL]||''):'',QTD_OCORRENCIA_FACCAO:num_(v.QTD_OCORRENCIA_FACCAO),
       MINUTOS_PADRAO_TOTAL:minTotal,MINUTOS_PADRAO_CONCLUIDOS:minConcl,PROGRESSO_PCT:progresso,
       ULTIMA_ATIVIDADE_EM:new Date(Math.max(0,dateMs_(v.ATUALIZADO_EM||v.DATA_CRIACAO),dateMs_(remInterna&&(remInterna.ATUALIZADO_EM||remInterna.DATA_HORA||remInterna.DATA_ENVIO)),...ops.map(c=>dateMs_(c.ATUALIZADO_EM||c.DATA_HORA_BIPAGEM||c.DATA_HORA_INICIO_MARCACAO||c.DATA_CRIACAO)))),
       OPERACAO_ATUAL:opOut(atual),PROXIMA_OPERACAO:opOut(prox),OPERACOES:ops.map(opOut)
@@ -3826,6 +3832,34 @@ function criarRemessaExternaImpl_(payload) {
   return withLock_(() => ({ ok: true, remessa: serialize_(criarRemessaExternaUnlocked_(payload)), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() }));
 }
 
+// v4.23.0 — FACÇÃO COM SERVIÇO PARCIAL ------------------------------------------------
+// Na remessa, cada saco vai como "Peça pronta" (a facção faz tudo o que falta) ou "Serviço parcial"
+// (OPS_FACCAO = operações do roteiro que a facção faz). As peças aprovadas na inspeção de um serviço
+// parcial voltam num saco de continuação (<saco>-C1) em "Aguardando destino", com OPS_FEITAS marcadas:
+// na produção interna essas operações já nascem concluídas (método FACCAO) e só as que faltam viram cupom.
+function listaIds_(v) {
+  if (Array.isArray(v)) return [...new Set(v.map(x => String(x || '').trim()).filter(Boolean))];
+  const s = String(v || '').trim(); if (!s) return [];
+  if (s.charAt(0) === '[') { try { const a = JSON.parse(s); if (Array.isArray(a)) return listaIds_(a); } catch (e) {} }
+  return listaIds_(s.split(/[,;|\s]+/));
+}
+function roteiroAtivoProduto_(idProduto, roteiros) {
+  return active_(roteiros || readTable_(TAB.ROTEIRO), 'ATIVO').filter(r => String(r.ID_PRODUTO) === String(idProduto))
+    .sort((a, b) => num_(a.ORDEM_PROCESSO) - num_(b.ORDEM_PROCESSO));
+}
+function produtoUnicoVolume_(v, volumeItens, estoqueById) {
+  const vis = (volumeItens || readTable_(TAB.VOLUME_ITENS)).filter(x => String(x.ID_VOLUME) === String(v.ID_VOLUME));
+  const est = (estoqueById || {})[v.ID_ESTOQUE_CORTE] || findById_(TAB.ESTOQUE_CORTE, 'ID_ESTOQUE_CORTE', v.ID_ESTOQUE_CORTE) || {};
+  const ps = [...new Set((vis.length ? vis.map(x => x.ID_PRODUTO) : [est.ID_PRODUTO]).filter(Boolean).map(String))];
+  return ps.length === 1 ? ps[0] : '';
+}
+/** Peso das operações (segundos padrão; sem tempo cadastrado conta 1 por operação). */
+function pesoOperacoes_(rot, ids) {
+  const set = new Set(ids.map(String)), comTempo = rot.some(r => num_(r.TEMPO_PADRAO_SEG_UN) > 0);
+  return rot.filter(r => set.has(String(r.ID_ROTEIRO))).reduce((t, r) => t + (comTempo ? num_(r.TEMPO_PADRAO_SEG_UN) : 1), 0);
+}
+function itemServicoParcial_(item) { return String((item && item.ESCOPO_SERVICO) || '').toUpperCase() === 'PARCIAL'; }
+
 function criarRemessaExternaUnlocked_(payload) {
   ensureExternalSchema_();
   const volumeIds = [...new Set((payload.volumeIds || []).filter(Boolean).map(String))];
@@ -3852,18 +3886,42 @@ function criarRemessaExternaUnlocked_(payload) {
   const itemValues = {};
   const semCustoIds = [];
   const mapsPreco = buildMaps_();
+  const roteirosPreco = readTable_(TAB.ROTEIRO);
   volumes.forEach(v => {
     const cfg = rawItemValues[v.ID_VOLUME] || {};
     const vi = volumeItensPreco.find(x=>String(x.ID_VOLUME)===String(v.ID_VOLUME));
     const est = estoquePreco[v.ID_ESTOQUE_CORTE] || {};
     const idProduto = vi ? vi.ID_PRODUTO : est.ID_PRODUTO;
+    // v4.23.0: escopo do serviço (peça pronta ou parcial) e operações que a facção faz
+    const feitas = new Set(listaIds_(v.OPS_FEITAS));
+    const pedeParcial = String(cfg.ESCOPO_SERVICO || '').toUpperCase() === 'PARCIAL';
+    let escopo = 'COMPLETO', opsFaccao = [], fracao = 1;
+    if (pedeParcial || feitas.size) {
+      const idUnico = produtoUnicoVolume_(v, volumeItensPreco, estoquePreco);
+      if (!idUnico) throw new Error('O volume ' + v.COD_VOLUME + ' tem mais de um produto: serviço parcial só funciona com um produto por saco.');
+      const rot = roteiroAtivoProduto_(idUnico, roteirosPreco);
+      if (!rot.length) throw new Error('Cadastre o roteiro operacional de ' + (mapsPreco.produtos[idUnico] || idUnico) + ' para enviar serviço parcial.');
+      const pendentes = rot.filter(r => !feitas.has(String(r.ID_ROTEIRO))).map(r => String(r.ID_ROTEIRO));
+      if (!pendentes.length) throw new Error('O volume ' + v.COD_VOLUME + ' já tem todas as operações feitas.');
+      opsFaccao = pendentes;
+      if (pedeParcial) {
+        const pend = new Set(pendentes);
+        opsFaccao = listaIds_(cfg.OPS_FACCAO).filter(id => pend.has(id));
+        if (!opsFaccao.length) throw new Error('Marque pelo menos uma operação que a facção vai fazer no volume ' + v.COD_VOLUME + '.');
+        if (opsFaccao.length < pendentes.length) escopo = 'PARCIAL'; else opsFaccao = pendentes;
+      }
+      const total = pesoOperacoes_(rot, rot.map(r => String(r.ID_ROTEIRO)));
+      fracao = total > 0 ? pesoOperacoes_(rot, opsFaccao) / total : 1;
+    }
+    const precoCheio = precoFaccaoPadrao_(idDestino, idProduto);
     let valorUnit = num_(cfg.VALOR_UNITARIO);
     if (retrabalhoSemCusto_(v, idDestino)) {
       // v4.6.0: retrabalho voltando para a facção que causou o defeito: corrige sem custo.
       valorUnit = 0;
       semCustoIds.push(String(v.ID_VOLUME));
     } else {
-      if (valorUnit <= 0) valorUnit = precoFaccaoPadrao_(idDestino, idProduto);
+      // v4.23.0: sem valor informado, o serviço parcial sugere o proporcional às operações (pelo tempo padrão)
+      if (valorUnit <= 0) valorUnit = round2_(precoCheio * fracao);
       if (valorUnit <= 0) {
         throw new Error('Cadastre ou informe o valor por peça do produto ' + (mapsPreco.produtos[idProduto] || idProduto || 'do volume') + '.');
       }
@@ -3871,6 +3929,9 @@ function criarRemessaExternaUnlocked_(payload) {
     itemValues[v.ID_VOLUME] = {
       VALOR_UNITARIO: valorUnit,
       VALOR_TOTAL_ITEM: round2_(num_(v.QTD_VOLUME) * valorUnit),
+      ESCOPO_SERVICO: escopo,
+      OPS_FACCAO: opsFaccao.length ? JSON.stringify(opsFaccao) : '',
+      PRECO_CHEIO_UNIT: precoCheio,
     };
   });
 
@@ -3924,6 +3985,9 @@ function criarRemessaExternaUnlocked_(payload) {
       QTD_ENVIADA: num_(v.QTD_VOLUME),
       PRECO_FACCAO_UNIT: valorUnit,
       VALOR_TOTAL_ITEM: round2_(num_(cfg.VALOR_TOTAL_ITEM) > 0 ? num_(cfg.VALOR_TOTAL_ITEM) : num_(v.QTD_VOLUME) * valorUnit),
+      ESCOPO_SERVICO: cfg.ESCOPO_SERVICO || 'COMPLETO',
+      OPS_FACCAO: cfg.OPS_FACCAO || '',
+      PRECO_CHEIO_UNIT: num_(cfg.PRECO_CHEIO_UNIT),
       STATUS_ITEM: 'AGUARDANDO_ENVIO',
       DATA_VINCULO: now,
       DATA_RETORNO: '',
@@ -4177,10 +4241,11 @@ function registrarInspecaoRetornoImpl_(payload) {
     validateInspection_({ ...retorno, ...patch });
     validatePackaging_({ ...retorno, ...patch });
     updateById_(TAB.RETORNOS_EXTERNOS, 'ID_RETORNO', idRetorno, patch);
-    const retrabalhos = processarQualidadeRetornosUnlocked_(retorno.ID_REMESSA);
+    const gerados = processarQualidadeRetornosUnlocked_(retorno.ID_REMESSA);
     updateExternalVolumeStatusUnlocked_(retorno.ID_REMESSA, retorno.ID_VOLUME);
     updateRemessaTotalsUnlocked_(retorno.ID_REMESSA);
-    return { ok: true, retrabalhos: serialize_(retrabalhos.map(v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME }))), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
+    const resumo = v => ({ ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD_VOLUME: v.QTD_VOLUME });
+    return { ok: true, retrabalhos: serialize_(gerados.filter(v => v.ID_VOLUME_ORIGEM_RETRABALHO).map(resumo)), continuacoes: serialize_(gerados.filter(v => !v.ID_VOLUME_ORIGEM_RETRABALHO).map(resumo)), remessas: getRemessasExternasImpl_(), volumes: getVolumesImpl_() };
   });
 }
 
@@ -4448,6 +4513,7 @@ function criarVolumeRetrabalhoUnlocked_(retorno, item, remessa, qtd, culpaFaccao
     ID_DESTINO_ATUAL: '', ID_VOLUME_ORIGEM: '', DATA_CRIACAO: now, ID_USUARIO_CRIACAO: currentUser_(), ATUALIZADO_EM: now,
     OBSERVACAO: 'Retrabalho de ' + (volumeOperationalCode_(origem, origem.SUBLOTE) || origem.COD_VOLUME) + ' (' + (remessa.NUM_REMESSA || '') + ')' + (motivo ? ' • defeito: ' + motivo : ''),
     ID_VOLUME_ORIGEM_RETRABALHO: origem.ID_VOLUME, ID_DESTINO_DEFEITO: culpaFaccao ? remessa.ID_DESTINO : '', ID_RETORNO_ORIGEM: retorno.ID_RETORNO,
+    OPS_FEITAS: origem.OPS_FEITAS || '', ID_DESTINO_PARCIAL: origem.ID_DESTINO_PARCIAL || '', ID_ITEM_REMESSA_PARCIAL: origem.ID_ITEM_REMESSA_PARCIAL || '', ID_VOLUME_ORIGEM_PARCIAL: origem.ID_VOLUME_ORIGEM_PARCIAL || '',
   };
   appendObject_(TAB.VOLUMES, volume);
   // Conteúdo do saco novo: mesma variação do saco de origem (distribui na ordem dos conteúdos).
@@ -4464,6 +4530,44 @@ function criarVolumeRetrabalhoUnlocked_(retorno, item, remessa, qtd, culpaFaccao
   });
   if (novos.length) appendObjects_(TAB.VOLUME_ITENS, novos);
   movement_('RETRABALHO_GERADO', origem.ID_ESTOQUE_CORTE || '', idVolume, remessa.ID_REMESSA, 'INSPECAO', retorno.ID_RETORNO, 'RETRABALHO', '', '', qtd, '', 'AGUARDANDO_DESTINO', volume.OBSERVACAO);
+  return volume;
+}
+/** v4.23.0 — peças aprovadas de um serviço parcial voltam num saco novo (<saco>-C1) em "Aguardando destino". */
+function proximoCodigoContinuacao_(origem) {
+  const base = volumeOperationalCode_(origem, origem.SUBLOTE) || String(origem.COD_VOLUME || '');
+  const todos = readTable_(TAB.VOLUMES), codes = new Set(todos.map(v => String(v.COD_VOLUME || '').toUpperCase()));
+  let n = todos.filter(v => String(v.ID_VOLUME_ORIGEM_PARCIAL || '') === String(origem.ID_VOLUME)).length + 1;
+  while (codes.has((base + '-C' + n).toUpperCase())) n++;
+  return base + '-C' + n;
+}
+function criarVolumeContinuacaoUnlocked_(retorno, item, remessa, qtd) {
+  const origem = findById_(TAB.VOLUMES, 'ID_VOLUME', retorno.ID_VOLUME);
+  if (!origem) throw new Error('Volume de origem do serviço parcial não encontrado.');
+  const now = new Date(), idVolume = uuid_(), cod = proximoCodigoContinuacao_(origem);
+  const feitas = listaIds_(origem.OPS_FEITAS).concat(listaIds_(item.OPS_FACCAO));
+  const nomeFac = buildMaps_().destinos[remessa.ID_DESTINO] || 'facção';
+  const volume = {
+    ID_VOLUME: idVolume, ID_ESTOQUE_CORTE: origem.ID_ESTOQUE_CORTE || '', SUBLOTE: origem.SUBLOTE || '', VOLUME_SEQ: num_(origem.VOLUME_SEQ),
+    COD_VOLUME: cod, QTD_VOLUME: qtd, STATUS_VOLUME: 'AGUARDANDO_DESTINO', ID_PROCESSO_ATUAL: '', TIPO_LOCAL_ATUAL: 'CONTINUACAO',
+    ID_DESTINO_ATUAL: '', ID_VOLUME_ORIGEM: '', DATA_CRIACAO: now, ID_USUARIO_CRIACAO: currentUser_(), ATUALIZADO_EM: now,
+    OBSERVACAO: 'Serviço parcial de ' + nomeFac + ' (' + (remessa.NUM_REMESSA || '') + ') • continuação de ' + (volumeOperationalCode_(origem, origem.SUBLOTE) || origem.COD_VOLUME),
+    OPS_FEITAS: JSON.stringify([...new Set(feitas)]), ID_VOLUME_ORIGEM_PARCIAL: origem.ID_VOLUME, ID_DESTINO_PARCIAL: remessa.ID_DESTINO || '',
+    ID_ITEM_REMESSA_PARCIAL: item.ID_ITEM_REMESSA || '', ID_RETORNO_ORIGEM: retorno.ID_RETORNO,
+  };
+  appendObject_(TAB.VOLUMES, volume);
+  const conteudos = readTable_(TAB.VOLUME_ITENS).filter(c => String(c.ID_VOLUME) === String(origem.ID_VOLUME));
+  const est = findById_(TAB.ESTOQUE_CORTE, 'ID_ESTOQUE_CORTE', origem.ID_ESTOQUE_CORTE) || {};
+  const fontes = conteudos.length ? conteudos : [{ ID_ESTOQUE_CORTE: origem.ID_ESTOQUE_CORTE, SUBLOTE: origem.SUBLOTE, ID_PRODUTO: est.ID_PRODUTO, ID_COR: est.ID_COR, ID_TAMANHO: est.ID_TAMANHO, QTD_ITEM: qtd }];
+  let restante = qtd; const novos = [];
+  fontes.forEach((c, i) => {
+    if (restante <= 0) return;
+    const q = i === fontes.length - 1 ? restante : Math.min(restante, num_(c.QTD_ITEM));
+    if (q <= 0) return;
+    restante -= q;
+    novos.push({ ID_VOLUME_ITEM: uuid_(), ID_VOLUME: idVolume, ID_ESTOQUE_CORTE: c.ID_ESTOQUE_CORTE || '', SUBLOTE: c.SUBLOTE || '', ID_PRODUTO: c.ID_PRODUTO || '', ID_COR: c.ID_COR || '', ID_TAMANHO: c.ID_TAMANHO || '', QTD_ITEM: q, PRECO_FACCAO_UNIT: '', VALOR_TOTAL_ITEM: '', CRIADO_EM: now, ID_USUARIO: currentUser_(), OBSERVACAO: 'Continuação de serviço parcial' });
+  });
+  if (novos.length) appendObjects_(TAB.VOLUME_ITENS, novos);
+  movement_('CONTINUACAO_PARCIAL', origem.ID_ESTOQUE_CORTE || '', idVolume, remessa.ID_REMESSA, 'INSPECAO', retorno.ID_RETORNO, 'CONTINUACAO', '', '', qtd, '', 'AGUARDANDO_DESTINO', volume.OBSERVACAO);
   return volume;
 }
 /**
@@ -4503,6 +4607,12 @@ function processarQualidadeRetornosUnlocked_(idRemessa) {
     const motivo = String(ret.MOTIVO_DEFEITO || '').trim();
     const patch = { QUALIDADE_PROCESSADA: 'SIM', DEFEITO_FACCAO: (refugo + retrab) > 0 ? (culpa ? 'SIM' : 'NAO') : '' };
     if (num_(ret.QTD_APROVADA) <= 0) patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
+    // v4.23.0: serviço parcial — as aprovadas não vão para a embalagem: seguem num saco de continuação
+    if (itemServicoParcial_(item) && num_(ret.QTD_APROVADA) > 0) {
+      const cont = criarVolumeContinuacaoUnlocked_(ret, item, remessa, num_(ret.QTD_APROVADA));
+      patch.ID_VOLUME_CONTINUACAO = cont.ID_VOLUME; patch.STATUS_EMBALAGEM = 'NAO_APLICAVEL';
+      gerados.push(cont);
+    }
     const vOrig = findById_(TAB.VOLUMES, 'ID_VOLUME', ret.ID_VOLUME) || {};
     const base = { ID_DESTINO: remessa.ID_DESTINO, TIPO: 'DEBITO', ID_REMESSA: remessa.ID_REMESSA, NUM_REMESSA: remessa.NUM_REMESSA, ID_ITEM_REMESSA: ret.ID_ITEM_REMESSA, ID_RETORNO: ret.ID_RETORNO, VALOR_UNITARIO: preco, MOTIVO: motivo };
     if (retrab > 0) {
@@ -4555,6 +4665,36 @@ function corrigirDebitosRetrabalhoSemCusto() {
     if (criados.length) updateRowsByNumber_(ENGINE.CONTROL, [{ row: 2, patch: { REVISAO: uuid_(), ATUALIZADO_EM: new Date() } }]);
     console.log('corrigirDebitosRetrabalhoSemCusto: ' + (criados.length ? criados.join(' | ') : 'nada a corrigir'));
     return { ok: true, debitosCriados: criados };
+  });
+}
+
+/**
+ * v4.23.0 — a produção interna encontrou um problema feito pela facção num saco que voltou de serviço
+ * parcial. Vira ocorrência de qualidade da facção: débito (peças × preço/peça que ela recebeu), pelas
+ * mesmas regras da inspeção. As peças seguem na produção interna (o conserto é feito aqui).
+ */
+function registrarOcorrenciaFaccaoImpl_(payload) {
+  payload = payload || {};
+  return withLock_(() => {
+    const v = findById_(TAB.VOLUMES, 'ID_VOLUME', req_(payload.ID_VOLUME, 'Volume'));
+    if (!v) throw new Error('Volume não encontrado.');
+    const idDest = String(v.ID_DESTINO_PARCIAL || '');
+    if (!idDest) throw new Error('O volume ' + (v.COD_VOLUME || '') + ' não passou por facção.');
+    const qtd = num_(payload.QTD);
+    if (!(qtd > 0) || qtd > num_(v.QTD_VOLUME)) throw new Error('Informe quantas peças têm o problema (de 1 a ' + num_(v.QTD_VOLUME) + ').');
+    const motivo = String(req_(payload.MOTIVO, 'Problema encontrado')).trim();
+    const item = findById_(TAB.REMESSA_ITENS, 'ID_ITEM_REMESSA', v.ID_ITEM_REMESSA_PARCIAL) || {};
+    const remessa = item.ID_REMESSA ? (findById_(TAB.REMESSAS, 'ID_REMESSA', item.ID_REMESSA) || {}) : {};
+    const culpa = !(payload.DEFEITO_FACCAO === false || String(payload.DEFEITO_FACCAO || '').toUpperCase() === 'NAO');
+    const preco = num_(payload.VALOR_UNITARIO) > 0 ? num_(payload.VALOR_UNITARIO) : num_(item.PRECO_FACCAO_UNIT);
+    const lanc = culpa ? lancarFinanceiroFaccao_({ ID_DESTINO: idDest, TIPO: 'DEBITO', ORIGEM: 'OCORRENCIA_INTERNA', ID_REMESSA: remessa.ID_REMESSA || '', NUM_REMESSA: remessa.NUM_REMESSA || '',
+      ID_ITEM_REMESSA: item.ID_ITEM_REMESSA || '', ID_VOLUME: v.ID_VOLUME, COD_VOLUME: v.COD_VOLUME, QTD: qtd, VALOR_UNITARIO: preco, VALOR: qtd * preco, MOTIVO: motivo,
+      OBSERVACAO: 'Problema da facção encontrado na produção interna' }) : null;
+    const now = new Date(), total = num_(v.QTD_OCORRENCIA_FACCAO) + qtd;
+    updateById_(TAB.VOLUMES, 'ID_VOLUME', v.ID_VOLUME, { QTD_OCORRENCIA_FACCAO: total, OBSERVACAO: [v.OBSERVACAO, '⚠ Problema da facção: ' + qtd + ' pç • ' + motivo].filter(Boolean).join(' • '), ATUALIZADO_EM: now });
+    movement_('OCORRENCIA_FACCAO', v.ID_ESTOQUE_CORTE || '', v.ID_VOLUME, remessa.ID_REMESSA || '', 'PRODUCAO', '', 'FACCAO', idDest, '', qtd, '', v.STATUS_VOLUME || '', motivo);
+    audit_('OCORRENCIA_FACCAO', TAB.VOLUMES, v.ID_VOLUME, '', JSON.stringify({ QTD: qtd, MOTIVO: motivo, DEFEITO_FACCAO: culpa ? 'SIM' : 'NAO', DEBITO: lanc ? lanc.VALOR : 0 }), currentUser_());
+    return { ok: true, debito: lanc ? round2_(num_(lanc.VALOR)) : 0, QTD_OCORRENCIA_FACCAO: total };
   });
 }
 
@@ -4663,6 +4803,10 @@ function updateExternalVolumeStatusUnlocked_(idRemessa, idVolume) {
     if (!allInspected) {
       status = 'AGUARDANDO_INSPECAO';
       local = 'INSPECAO';
+    } else if (aprovadas > 0 && itemServicoParcial_(item)) {
+      // v4.23.0: as aprovadas seguiram num saco de continuação; este saco encerra aqui.
+      status = 'CONTINUACAO_GERADA';
+      local = 'FACCAO';
     } else if (aprovadas > 0 && embaladas >= aprovadas) {
       status = 'EMBALADO';
       local = 'EMBALAGEM';
@@ -4716,6 +4860,10 @@ function getRemessasExternasImpl_() {
     if (num && rem.FIN_PAGAMENTOS.indexOf(num) < 0) rem.FIN_PAGAMENTOS.push(num);
   });
   const avisosCampo = avisosCampoMap_();
+  // v4.23.0: nomes das operações do serviço parcial (para card, romaneio e app de campo)
+  const roteiroById = mapBy_(readTable_(TAB.ROTEIRO), 'ID_ROTEIRO');
+  const opsNomes = lista => listaIds_(lista).map(id => roteiroById[id]).filter(Boolean).sort((a, b) => num_(a.ORDEM_PROCESSO) - num_(b.ORDEM_PROCESSO))
+    .map(r => String(num_(r.ORDEM_PROCESSO)).padStart(2, '0') + ' ' + (maps.processos[r.ID_PROCESSO] || r.ID_PROCESSO));
   return remessas
     .sort((a, b) => dateMs_(b.ATUALIZADO_EM || b.DATA_ENVIO || b.DATA_HORA) - dateMs_(a.ATUALIZADO_EM || a.DATA_ENVIO || a.DATA_HORA))
     .map(r => {
@@ -4777,6 +4925,10 @@ function getRemessasExternasImpl_() {
           FIN_PAGO_ITEM: round2_(rs.reduce((t, x) => { const f = finByRetorno[String(x.ID_RETORNO)]; return t + (f && f.FIN_STATUS === 'PAGO' ? f.FIN_VALOR : 0); }, 0)),
           FIN_A_PAGAR_ITEM: round2_(rs.reduce((t, x) => { const f = finByRetorno[String(x.ID_RETORNO)]; return t + (f && f.FIN_STATUS === 'A_PAGAR' ? f.FIN_VALOR : 0); }, 0)),
           CAMPO_STATUS: campoStatusVolume_(avisosCampo[String(r.ID_REMESSA)], i.ID_VOLUME),
+          SERVICO_PARCIAL: itemServicoParcial_(i),
+          OPS_FACCAO_NOMES: itemServicoParcial_(i) ? opsNomes(i.OPS_FACCAO) : [],
+          OPS_TOTAL_PRODUTO: itemServicoParcial_(i) ? active_(Object.values(roteiroById), 'ATIVO').filter(r => String(r.ID_PRODUTO) === String(est.ID_PRODUTO || (conteudos[0] || {}).ID_PRODUTO || '')).length : 0,
+          PASSOU_FACCAO: volume.ID_DESTINO_PARCIAL ? (maps.destinos[volume.ID_DESTINO_PARCIAL] || '') : '',
         };
       });
       const allReturns = remessaItens.flatMap(i => i.retornos || []);
@@ -5144,6 +5296,9 @@ function liberarVolumeEstoquePAImpl_(payload) {
     // Caixas internas fracionadas pertencem à mesma remessa do volume pai.
     if (!itemRemessa && volume.ID_VOLUME_ORIGEM) itemRemessa = remessaItensAll.find(i => String(i.ID_VOLUME) === String(volume.ID_VOLUME_ORIGEM));
     const remessaDoItem = itemRemessa ? findById_(TAB.REMESSAS, 'ID_REMESSA', itemRemessa.ID_REMESSA) : null;
+    if (itemServicoParcial_(itemRemessa) && normKey_(remessaDoItem && remessaDoItem.TIPO_DESTINO || '') === 'FACCAO') {
+      throw new Error('O volume ' + (volume.COD_VOLUME || '') + ' foi um serviço parcial: as peças aprovadas seguem no saco de continuação, em "Aguardando destino".');
+    }
     if (!origem) {
       const tipoRemessa = normKey_(remessaDoItem && remessaDoItem.TIPO_DESTINO || '');
       origem = ['INTERNO','PRODUCAO_INTERNA'].includes(tipoRemessa) ? 'INTERNO' : (itemRemessa ? 'FACCAO' : (cupons.length ? 'INTERNO' : ''));
@@ -5508,6 +5663,10 @@ function ensureExternalSchemaOriginal_() {
   // v4.6.0 — qualidade e financeiro das facções
   ensureColumns_(TAB.RETORNOS_EXTERNOS, ['MOTIVO_DEFEITO','DEFEITO_FACCAO','QUALIDADE_PROCESSADA','ID_VOLUME_RETRABALHO']);
   ensureColumns_(TAB.VOLUMES, ['ID_VOLUME_ORIGEM_RETRABALHO','ID_DESTINO_DEFEITO','ID_RETORNO_ORIGEM','QTD_VOLUME_ORIGINAL']);
+  // v4.23.0 — facção com serviço parcial
+  ensureColumns_(TAB.VOLUMES, ['OPS_FEITAS','ID_VOLUME_ORIGEM_PARCIAL','ID_DESTINO_PARCIAL','ID_ITEM_REMESSA_PARCIAL','QTD_OCORRENCIA_FACCAO']);
+  ensureColumns_(TAB.REMESSA_ITENS, ['ESCOPO_SERVICO','OPS_FACCAO','PRECO_CHEIO_UNIT']);
+  ensureColumns_(TAB.RETORNOS_EXTERNOS, ['ID_VOLUME_CONTINUACAO']);
   ensureSheetWithHeaders_(TAB.FINANCEIRO_FACCAO, FIN_HEADERS);
   ensureSheetWithHeaders_(TAB.PAGAMENTOS_FACCAO, PAG_HEADERS);
 }
@@ -6389,6 +6548,7 @@ function routes_() { return {
   alocarOperadorCupons: alocarOperadorCuponsImpl_,
   salvarCapacidadeFaccoes: salvarCapacidadeFaccoesImpl_,
   retirarVolumeRemessa: retirarVolumeRemessaImpl_,
+  registrarOcorrenciaFaccao: registrarOcorrenciaFaccaoImpl_,
   salvarFichaProduto: salvarFichaProdutoImpl_,
   salvarFotoProduto: salvarFotoProdutoImpl_,
   salvarParametros: salvarParametrosImpl_,
@@ -6403,7 +6563,7 @@ function routes_() { return {
   previewTempoPadraoMarcacao: previewTempoPadraoMarcacaoImpl_,
   aplicarTempoPadraoMarcacao: aplicarTempoPadraoMarcacaoImpl_
 }; }
-function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto"]; }
+function mutationActions_() { return ["pausarMarcacao", "retomarMarcacao", "pausarTodasMarcacoes", "retomarTodasMarcacoes", "salvarAcessoCampo", "marcarAvisosCampoLidos", "salvarParametros", "salvarCadastro", "importarCadastroCSV", "registrarCompra", "baixarEstoqueManual", "ajustarEstoqueManual", "confirmarConsumoCorteEExplodir", "registrarCorte", "editarCorteExecutado", "explodirCorte", "criarVolume", "criarVolumesLote", "criarSeparacaoVolumes", "marcarEtiquetasSeparacaoImpressas", "salvarPrecoFaccao", "destinarVolumesInternos", "criarEnvioFaccaoMassa", "fracionarVolumeInterno", "prepararImpressaoCuponsInternos", "gerarCuponsVolume", "editarVolume", "excluirEntidade", "marcarCuponsImpressos", "biparCupom", "biparCuponsEmLote", "enviarBipagensColetadas", "consolidarBipagens", "registrarJornada", "salvarMetasProducao", "apontarProducaoDireta", "registrarApontamentosDiretosEmLote", "iniciarMarcacaoProducao", "finalizarMarcacaoProducao", "criarRemessaExterna", "registrarRetornoExterno", "registrarInspecaoRetorno", "liberarVolumeEstoquePA", "salvarGradeRemessa", "confirmarEnvioRemessaManual", "registrarBipagensExternasEmLote", "registrarPagamentoFaccao", "cancelarLancamentoFaccao", "registrarContagemRetorno", "salvarCapacidadeMaquinas", "alocarOperadorCupons", "aplicarTempoPadraoMarcacao", "salvarCapacidadeFaccoes", "retirarVolumeRemessa", "salvarFichaProduto", "salvarFotoProduto", "removerFotoProduto", "registrarOcorrenciaFaccao"]; }
 function getInitialData() { return apiCall("getInitialData", Array.prototype.slice.call(arguments)); }
 function getCadastros() { return apiCall("getCadastros", Array.prototype.slice.call(arguments)); }
 function salvarCadastro() { return apiCall("salvarCadastro", Array.prototype.slice.call(arguments)); }
@@ -6474,6 +6634,7 @@ function salvarCapacidadeMaquinas() { return apiCall("salvarCapacidadeMaquinas",
 function alocarOperadorCupons() { return apiCall("alocarOperadorCupons", Array.prototype.slice.call(arguments)); }
 function salvarCapacidadeFaccoes() { return apiCall("salvarCapacidadeFaccoes", Array.prototype.slice.call(arguments)); }
 function retirarVolumeRemessa() { return apiCall("retirarVolumeRemessa", Array.prototype.slice.call(arguments)); }
+function registrarOcorrenciaFaccao() { return apiCall("registrarOcorrenciaFaccao", Array.prototype.slice.call(arguments)); }
 function salvarFichaProduto() { return apiCall("salvarFichaProduto", Array.prototype.slice.call(arguments)); }
 function salvarFotoProduto() { return apiCall("salvarFotoProduto", Array.prototype.slice.call(arguments)); }
 function salvarParametros() { return apiCall("salvarParametros", Array.prototype.slice.call(arguments)); }
