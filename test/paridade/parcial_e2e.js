@@ -59,6 +59,9 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       if (u.includes('qrcode')) return r.fulfill({ contentType: 'application/javascript', body: 'window.QRCode=function(){};QRCode.CorrectLevel={M:0};' });
       return r.fulfill({ body: '' });
     });
+    // leitura rápida do quadro de facções (gut_010; o banco local só carrega as migrações a partir da gut_014)
+    { const m = fs.readFileSync(path.join(ROOT, 'supabase/migrations/gut_010_quadros_web.sql'), 'utf8'); const i = m.indexOf('create or replace function public.web_quadro_interno'); const j = m.indexOf('revoke all on function public.web_quadro_interno');
+      pg.psql(m.slice(i, j) + '\ngrant execute on function public.web_quadro_interno(text), public.web_quadro_faccao(text) to authenticated;'); }
     await page.goto('http://app.local/sistema/'); await page.waitForTimeout(3500);
     const LEIA = pg.psql(`select id_destino from cad_destinos where nome_destino = 'LEIA'`);
     const ANA = pg.psql(`select id_destino from cad_destinos where nome_destino = 'COSTURA DA ANA'`);   // o retrabalho voltaria sem custo para a LEIA (que causou o defeito)
@@ -134,6 +137,9 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.evaluate(() => callServer('getRemessasExternas').then(r => { STATE.remessas = r; }));
     const cardFin = await page.evaluate(OUTRO => { const g = dashActiveRemessaGroups(dashRemessaItems()).find(g => g.items.some(i => String(i.ID_VOLUME) === OUTRO)); return g ? dashRemessaCardHtml(g) : ''; }, livres[1]);
     ok(/status-mini\s+fin/.test(cardFin) && /badge purple[^>]*>finalização interna/.test(cardFin), 'peça pronta de produto com finalização no cadastro: card da remessa na cor de "finalização interna"');
+    // a tela atualiza o quadro pela leitura rápida (wqRemessasExternas): as cores precisam continuar depois de atualizar
+    const rapido = await page.evaluate(async ({ RET, OUTRO }) => { STATE.remessas = await wqRemessasExternas(); const card = id => { const g = dashActiveRemessaGroups(dashRemessaItems()).find(g => g.items.some(i => String(i.ID_VOLUME) === id)); if (!g) return ''; STATE.expandedDashboardRemessas.add(String(g._viewKey || g.id)); return dashRemessaCardHtml(g); }; return { aj: card(RET), fin: card(OUTRO) }; }, { RET, OUTRO: livres[1] });
+    ok(/status-mini\s+ajuste/.test(rapido.aj) && /Ajuste no envio: faz 2 de 3 operações/.test(rapido.aj) && /status-mini\s+fin/.test(rapido.fin) && /Finalização interna: faz 2 de 3/.test(rapido.fin), 'depois de atualizar o quadro, as remessas continuam com a cor (ajuste no envio / finalização interna)');
     const esperaFin = await page.evaluate(({ LEIA }) => { const v = { ...(STATE.volumes || []).find(x => x.ID_PRODUTO && rotOps(volProductId(x)).length === 3) }; v.ID_DESTINO_PARCIAL = LEIA; v.ID_VOLUME_ORIGEM_PARCIAL = 'x'; v.OPS_FEITAS = JSON.stringify(rotOps(volProductId(v)).slice(0, 2).map(o => o.id)); const [g] = dashWaitingLotGroups([v]); return dashWaitingLotCardHtml(g); }, { LEIA });
     ok(/status-mini drag-card fin/.test(esperaFin) && /FINALIZAÇÃO/.test(esperaFin), 'lote que volta só para a finalização do cadastro: card roxo "FINALIZAÇÃO" em Aguardando destino');
     if (SHOT) { await page.click('[data-view="dash-faccoes"]'); await page.waitForTimeout(1500); await page.evaluate(() => { document.querySelectorAll('.status-group-toggle').forEach(b => b.click()); }); await page.waitForTimeout(500); await shot(page, '4-kanban-cores', '#dash-faccoes .fac-flow-head ~ *'); await page.screenshot({ path: path.join(SHOT, '5-kanban-tela.png'), fullPage: false }); }

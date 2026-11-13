@@ -825,7 +825,7 @@ html.ui ::-webkit-scrollbar-thumb:hover{background:rgba(79,70,229,.45);backgroun
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.25.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.25.1 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico">▦</span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico">🚚</span><span>Dashboard facções</span></button>
@@ -1574,6 +1574,9 @@ async function wqQuadroInterno(){
   rows.forEach(r=>{r.ULTIMA_ATIVIDADE_EM=wqFmt(r._ms);delete r._ms});
   return {ok:true,generatedAt:new Date().toISOString(),rows,__direto:true};
 }
+// v4.25.1 — a leitura rápida também marca o serviço parcial (senão o card perdia a cor ao atualizar)
+function wqParcialInfo(i,volume,idProduto){const parc=String(i.ESCOPO_SERVICO||'').toUpperCase()==='PARCIAL',ops=parc?rotOps(idProduto):[],set=new Set(opsIds(i.OPS_FACCAO));
+  return {SERVICO_PARCIAL:parc,ID_PRODUTO:i.ID_PRODUTO||idProduto,OPS_FACCAO_NOMES:ops.filter(o=>set.has(o.id)).map(o=>String(o.ordem).padStart(2,'0')+' '+o.nome),OPS_TOTAL_PRODUTO:ops.length,PASSOU_FACCAO:volume&&volume.ID_DESTINO_PARCIAL?factionName(volume.ID_DESTINO_PARCIAL):''}}
 async function wqRemessasExternas(){
   const t=await wqFetch('web_quadro_faccao');
   const remessas=t.REMESSAS.filter(r=>String(r.TIPO_DESTINO||'').toUpperCase()==='FACCAO');
@@ -1626,7 +1629,8 @@ async function wqRemessasExternas(){
         QTD_APROVADA:rs.reduce((s,x)=>s+wqNum(x.QTD_APROVADA),0),QTD_REPROVADA:rs.reduce((s,x)=>s+wqNum(x.QTD_REPROVADA),0),QTD_RETRABALHO:rs.reduce((s,x)=>s+wqNum(x.QTD_RETRABALHO),0),QTD_EMBALADA:rs.reduce((s,x)=>s+wqNum(x.QTD_EMBALADA),0),
         retornos:rs.map(x=>({...x,...(finByRetorno[String(x.ID_RETORNO)]||{})})),
         PRECO_DEBITO_REF:wqNum(i.PRECO_FACCAO_UNIT)>0||!String(volume.ID_VOLUME_ORIGEM_RETRABALHO||'')?wqNum(i.PRECO_FACCAO_UNIT):precoDebito(i,i.ID_VOLUME),
-        FIN_PAGO_ITEM:finIt('PAGO'),FIN_A_PAGAR_ITEM:finIt('A_PAGAR'),CAMPO_STATUS:stVol(av[String(r.ID_REMESSA)],i.ID_VOLUME)};
+        FIN_PAGO_ITEM:finIt('PAGO'),FIN_A_PAGAR_ITEM:finIt('A_PAGAR'),CAMPO_STATUS:stVol(av[String(r.ID_REMESSA)],i.ID_VOLUME),
+        ...wqParcialInfo(i,volume,(conteudos[0]||{}).ID_PRODUTO||est.ID_PRODUTO||'')};
     });
     const allReturns=remessaItens.flatMap(i=>i.retornos||[]),aprovadas=allReturns.reduce((s,x)=>s+wqNum(x.QTD_APROVADA),0),embaladas=allReturns.reduce((s,x)=>s+wqNum(x.QTD_EMBALADA),0);
     return {...r,CAMPO:resumo(av[String(r.ID_REMESSA)],(itemsByRemessa[r.ID_REMESSA]||[])),DESTINO:maps.destinos[r.ID_DESTINO]||r.ID_DESTINO,PROCESSO:maps.processos[r.ID_PROCESSO]||r.ID_PROCESSO,
@@ -2296,7 +2300,7 @@ function renderLotDestScope(sc){const d=STATE.lotDest,el=$('lotDestScope');if(!e
 // v4.25.0 — o que volta para a fábrica: 'FIN' = só a finalização do cadastro; 'AJUSTE' = alguma operação desmarcada no envio
 function tipoFaltaOps(pid,feitasIds){const ops=rotOps(pid),falta=ops.filter(o=>!feitasIds.includes(o.id));if(!ops.length||!falta.length)return '';return falta.every(o=>o.interno)?'FIN':'AJUSTE'}
 function volPorId(id){return (STATE.volumes||[]).find(x=>String(x.ID_VOLUME)===String(id))||null}
-function itemTipoParcial(i){if(!i||!i.SERVICO_PARCIAL)return '';const v=volPorId(i.ID_VOLUME);const pid=v?volProductId(v):((STATE.cad?.produtos||[]).find(p=>String(i.PRODUTO||'').includes(String(p.PRODUTO||'~')))?.ID_PRODUTO||'');return tipoFaltaOps(pid,[...opsIds(v?.OPS_FEITAS),...opsIds(i.OPS_FACCAO)])||'AJUSTE'}
+function itemTipoParcial(i){if(!i||!(i.SERVICO_PARCIAL||String(i.ESCOPO_SERVICO||'').toUpperCase()==='PARCIAL'))return '';const v=volPorId(i.ID_VOLUME);const pid=i.ID_PRODUTO&&!String(i.ID_PRODUTO).includes(' ')?String(i.ID_PRODUTO):v?volProductId(v):((STATE.cad?.produtos||[]).find(p=>String(i.PRODUTO||'').includes(String(p.PRODUTO||'~')))?.ID_PRODUTO||'');return tipoFaltaOps(pid,[...opsIds(v?.OPS_FEITAS),...opsIds(i.OPS_FACCAO)])||'AJUSTE'}
 function grupoTipoParcial(tipos){return tipos.includes('AJUSTE')?'AJUSTE':tipos.includes('FIN')?'FIN':''}
 const TIPO_PARCIAL_INFO={FIN:{cls:'fin',badge:'purple',txt:'finalização interna'},AJUSTE:{cls:'ajuste',badge:'teal',txt:'ajuste no envio'}};
 function setLotDestScope(m){STATE.lotDest.escopo=m;syncLotDest()}
