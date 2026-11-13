@@ -3367,7 +3367,7 @@ function salvarFichaProdutoImpl_(payload) {
       const sem = truthy_(r.SEM_TEMPO_PADRAO), tempo = sem ? 0 : num_(r.TEMPO_PADRAO_SEG_UN);
       if (!sem && !(tempo > 0)) throw new Error('Informe o tempo de ' + (p.PROCESSO || 'operação') + ' (ou marque "sem padrão").');
       const idMaq = String(r.ID_MAQUINA || p.ID_MAQUINA_PADRAO || ''); if (idMaq && !maqs[idMaq]) throw new Error('Máquina da operação ' + (p.PROCESSO || '') + ' não encontrada.');
-      const row = { ID_PROCESSO: p.ID_PROCESSO, ORDEM_PROCESSO: i + 1, ID_SETOR: r.ID_SETOR || '', ID_MAQUINA: idMaq, TEMPO_PADRAO_SEG_UN: tempo, COMPONENTE_REFERENCIA: r.COMPONENTE_REFERENCIA || '', ATUALIZADO_EM: now };
+      const row = { ID_PROCESSO: p.ID_PROCESSO, ORDEM_PROCESSO: i + 1, ID_SETOR: r.ID_SETOR || '', ID_MAQUINA: idMaq, TEMPO_PADRAO_SEG_UN: tempo, COMPONENTE_REFERENCIA: r.COMPONENTE_REFERENCIA || '', SO_INTERNO: truthy_(r.SO_INTERNO), ATUALIZADO_EM: now };
       const ex = r.ID_ROTEIRO && rotAtual.find(x => String(x.ID_ROTEIRO) === String(r.ID_ROTEIRO));
       if (ex) { keepR.add(String(ex.ID_ROTEIRO)); updR.push({ row: ex._row, patch: row }); }
       else newR.push({ ID_ROTEIRO: uuid_(), ID_PRODUTO: idProduto, ...row, ATIVO: true, VIGENCIA_INICIO: now, VIGENCIA_FIM: '', CRIADO_EM: now });
@@ -3896,20 +3896,25 @@ function criarRemessaExternaUnlocked_(payload) {
     const feitas = new Set(listaIds_(v.OPS_FEITAS));
     const pedeParcial = String(cfg.ESCOPO_SERVICO || '').toUpperCase() === 'PARCIAL';
     let escopo = 'COMPLETO', opsFaccao = [], fracao = 1;
-    if (pedeParcial || feitas.size) {
-      const idUnico = produtoUnicoVolume_(v, volumeItensPreco, estoquePreco);
+    // v4.24.0: operações marcadas na ficha como "só interno" (finalização) ficam para a fábrica
+    const idUnico = produtoUnicoVolume_(v, volumeItensPreco, estoquePreco);
+    const rotUnico = idUnico ? roteiroAtivoProduto_(idUnico, roteirosPreco) : [];
+    const internas = new Set(rotUnico.filter(r => truthy_(r.SO_INTERNO)).map(r => String(r.ID_ROTEIRO)));
+    if (pedeParcial || feitas.size || internas.size) {
       if (!idUnico) throw new Error('O volume ' + v.COD_VOLUME + ' tem mais de um produto: serviço parcial só funciona com um produto por saco.');
-      const rot = roteiroAtivoProduto_(idUnico, roteirosPreco);
+      const rot = rotUnico;
       if (!rot.length) throw new Error('Cadastre o roteiro operacional de ' + (mapsPreco.produtos[idUnico] || idUnico) + ' para enviar serviço parcial.');
       const pendentes = rot.filter(r => !feitas.has(String(r.ID_ROTEIRO))).map(r => String(r.ID_ROTEIRO));
       if (!pendentes.length) throw new Error('O volume ' + v.COD_VOLUME + ' já tem todas as operações feitas.');
-      opsFaccao = pendentes;
       if (pedeParcial) {
         const pend = new Set(pendentes);
         opsFaccao = listaIds_(cfg.OPS_FACCAO).filter(id => pend.has(id));
         if (!opsFaccao.length) throw new Error('Marque pelo menos uma operação que a facção vai fazer no volume ' + v.COD_VOLUME + '.');
-        if (opsFaccao.length < pendentes.length) escopo = 'PARCIAL'; else opsFaccao = pendentes;
+      } else {
+        opsFaccao = pendentes.filter(id => !internas.has(id));
+        if (!opsFaccao.length) throw new Error('No volume ' + v.COD_VOLUME + ' só faltam operações de finalização interna: mande para a produção interna.');
       }
+      if (opsFaccao.length < pendentes.length) escopo = 'PARCIAL'; else opsFaccao = pendentes;
       const total = pesoOperacoes_(rot, rot.map(r => String(r.ID_ROTEIRO)));
       fracao = total > 0 ? pesoOperacoes_(rot, opsFaccao) / total : 1;
     }
@@ -5667,6 +5672,7 @@ function ensureExternalSchemaOriginal_() {
   ensureColumns_(TAB.VOLUMES, ['OPS_FEITAS','ID_VOLUME_ORIGEM_PARCIAL','ID_DESTINO_PARCIAL','ID_ITEM_REMESSA_PARCIAL','QTD_OCORRENCIA_FACCAO']);
   ensureColumns_(TAB.REMESSA_ITENS, ['ESCOPO_SERVICO','OPS_FACCAO','PRECO_CHEIO_UNIT']);
   ensureColumns_(TAB.RETORNOS_EXTERNOS, ['ID_VOLUME_CONTINUACAO']);
+  ensureColumns_(TAB.ROTEIRO, ['SO_INTERNO']);
   ensureSheetWithHeaders_(TAB.FINANCEIRO_FACCAO, FIN_HEADERS);
   ensureSheetWithHeaders_(TAB.PAGAMENTOS_FACCAO, PAG_HEADERS);
 }

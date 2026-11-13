@@ -10,6 +10,7 @@ const { chromium } = require('playwright');
 const pg = require('./pg_base'), criarGas = require('./gas_sim'), { cenario, executorA, chamarRpc, carregarServidor } = require('./rodar');
 const { criarRelogio } = require('./relogio');
 const ROOT = path.join(__dirname, '..', '..');
+const SHOT = process.env.SHOT || ''; const shot = async (page, nome, sel) => { if (!SHOT) return; const el = sel ? await page.$(sel) : null; await (el || page).screenshot({ path: path.join(SHOT, nome + '.png') }); };
 const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '  ✓ ' : '  ✗ ') + m); };
 
 (async () => {
@@ -61,9 +62,12 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.goto('http://app.local/sistema/'); await page.waitForTimeout(3500);
     const LEIA = pg.psql(`select id_destino from cad_destinos where nome_destino = 'LEIA'`);
     const ANA = pg.psql(`select id_destino from cad_destinos where nome_destino = 'COSTURA DA ANA'`);   // o retrabalho voltaria sem custo para a LEIA (que causou o defeito)
-    const RET = pg.psql(`select id_volume from volumes where coalesce(id_volume_origem_retrabalho,'') <> '' and status_volume = 'AGUARDANDO_DESTINO' order by ordem_linha desc limit 1`);
+    // bags da camisa (roteiro de 3 operações) aguardando destino e sem nada feito; a parte 4 do cenário deixou o OVERLOQUE como "só interno"
+    pg.psql(`update roteiro_produto set so_interno = false;`); await page.evaluate(() => callServer('getCadastros', [], { forceFresh: true }).then(c => { STATE.cad = c; }));
+    const livres = await page.evaluate(() => availableDestinationVolumes().filter(x => rotOps(volProductId(x)).length === 3 && !x.OPS_FEITAS && !x.ID_VOLUME_ORIGEM_RETRABALHO).map(x => String(x.ID_VOLUME)));
+    const RET = livres[0];
     const CONT = pg.psql(`select id_volume from volumes where coalesce(id_volume_origem_parcial,'') <> '' limit 1`);
-    ok(RET && CONT && LEIA, 'cenário tem um saco de retrabalho aguardando destino e um saco de continuação na produção interna');
+    ok(livres.length >= 2 && CONT && LEIA, 'cenário tem sacos da camisa aguardando destino (' + livres.length + ') e um saco de continuação na produção interna');
     // ---- janela de destino: serviço parcial
     const jan = await page.evaluate(({ RET, ANA }) => {
       const v = availableDestinationVolumes().find(x => String(x.ID_VOLUME) === RET); if (!v) return { erro: 'volume não está aguardando destino' };
@@ -71,9 +75,10 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       const antes = $('lotDestScope').textContent;
       setLotDestScope('PARCIAL');
       const pid = volProductId(v), ops = rotOps(pid);
-      const lista = [...document.querySelectorAll('#lotDestScope .scope-ops label')].length;
+      const lista = [...document.querySelectorAll('#lotDestScope .lotdest-ops label')].length;
       const precoCheio = n(document.querySelector('[data-lotdest-price]').value);
       lotDestOpToggle(pid, ops[1].id, false);
+      window.__pid = pid;
       const preco = n(document.querySelector('[data-lotdest-price]').value), hint = document.querySelector('.lotdest-prices small').textContent, txt = $('lotDestScope').textContent;
       return { antes, lista, precoCheio, preco, hint, txt, ops: ops.map(o => o.seg) };
     }, { RET, ANA });
@@ -81,17 +86,20 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(jan.lista === 3 && /faz 2 de 3/.test(jan.txt), 'serviço parcial lista as 3 operações do roteiro; desmarcando uma, a facção faz 2 de 3: ' + (jan.txt || jan.erro));
     const esperado = Math.round(2.5 * (jan.ops[0] + jan.ops[2]) / (jan.ops[0] + jan.ops[1] + jan.ops[2]) * 100) / 100;
     ok(Math.abs(jan.preco - esperado) < 0.001 && /tabela .* × \d+% das operações/.test(jan.hint), 'preço sugerido proporcional ao tempo das operações: R$ ' + jan.preco + ' (' + jan.hint + ')');
+    await shot(page, '1-janela-destino', '#lotDestModal .modal-card');
     await page.evaluate(() => confirmLotDest()); await page.waitForTimeout(3000);
     const item = pg.psql(`select escopo_servico || '|' || ops_faccao || '|' || preco_faccao_unit from remessa_itens where id_volume = '${RET}'`);
     ok(/^PARCIAL\|\[".+",".+"\]\|/.test(item) && Math.abs(Number(item.split('|')[2]) - esperado) < 0.001, 'remessa criada como serviço parcial, com as 2 operações e o preço proporcional: ' + item);
     await page.evaluate(() => callServer('getRemessasExternas').then(r => { STATE.remessas = r; }));
     const card = await page.evaluate(RET => { const g = dashActiveRemessaGroups(dashRemessaItems()).find(g => g.items.some(i => String(i.ID_VOLUME) === RET)); if (!g) return ''; STATE.expandedDashboardRemessas.add(String(g._viewKey || g.id)); return dashRemessaCardHtml(g); }, RET);
     ok(/serviço parcial/.test(card) && /Parcial: faz 2 de 3 operações/.test(card), 'card da remessa no kanban mostra "serviço parcial" e o que a facção faz');
+    ok(/class="mini-prod">1001 - CAMISA POLO</.test(card), 'card da remessa mostra o nome do produto sem precisar abrir');
+    if (SHOT) { await page.click('[data-view="dash-faccoes"]'); await page.waitForTimeout(1500); await page.evaluate(() => { document.querySelectorAll('.status-group-toggle').forEach(b => b.click()); }); await page.waitForTimeout(500); await shot(page, '2-kanban-faccoes', '#externalStatusBoard'); }
     const rom = await page.evaluate(RET => { const r = STATE.remessas.find(r => (r.itens || []).some(i => String(i.ID_VOLUME) === RET)); return romaneioEscopoHtml(r); }, RET);
     ok(/SERVIÇO PARCIAL/.test(rom) && /\(2 de 3 operações\)/.test(rom), 'romaneio da facção diz que é serviço parcial e lista as operações dela');
     // ---- aguardando destino: saco que voltou de serviço parcial
-    const espera = await page.evaluate(({ LEIA }) => { const v = { ...(STATE.volumes || []).find(x => x.ID_PRODUTO) }; v.ID_DESTINO_PARCIAL = LEIA; v.OPS_FEITAS = JSON.stringify(rotOps(volProductId(v)).slice(0, 2).map(o => o.id)); const g = { key: 'LOTE::X', lot: 'X', items: [v], _qtd: 1 }; STATE.expandedDashboardLots.add('LOTE::X'); return dashWaitingLotCardHtml(g); }, { LEIA });
-    ok(/Voltou de LEIA • falta terminar/.test(espera) && /LEIA fez 2 de 3 • faltam 1/.test(espera), 'em "Aguardando destino" o saco vem marcado: voltou da facção e quantas operações faltam');
+    const espera = await page.evaluate(({ LEIA }) => { const v = { ...(STATE.volumes || []).find(x => x.ID_PRODUTO && rotOps(volProductId(x)).length === 3) }; v.ID_DESTINO_PARCIAL = LEIA; v.ID_VOLUME_ORIGEM_PARCIAL = 'x'; v.OPS_FEITAS = JSON.stringify(rotOps(volProductId(v)).slice(0, 2).map(o => o.id)); const [g] = dashWaitingLotGroups([v]); STATE.expandedDashboardLots.add(g.key); return dashWaitingLotCardHtml(g); }, { LEIA });
+    ok(/status-mini drag-card fin/.test(espera) && /FINALIZAÇÃO/.test(espera) && /Voltou de <b>LEIA<\/b> • falta: <b>OVERLOQUE<\/b>/.test(espera) && /LEIA fez 2 de 3 operações • faltam 1/.test(espera), 'em "Aguardando destino" o lote de finalização vem num card de outra cor, com a facção e o que falta');
     // ---- quadro interno: continuação
     await page.evaluate(() => loadInternalProductionBoard(true)); await page.waitForTimeout(1500);
     const q = await page.evaluate(CONT => { const v = (STATE.internalBoard?.rows || []).find(x => String(x.ID_VOLUME) === CONT); if (!v) return null; const row = { ...v, _progress: n(v.PROGRESSO_PCT) }; return { html: internalProductionVolumeCardHtml(row), ops: v.OPERACOES.map(o => o.STATUS_CUPOM + '/' + o.METODO_CONCLUSAO), fac: v.FACCAO_PARCIAL, oc: v.QTD_OCORRENCIA_FACCAO }; }, CONT);
@@ -106,6 +114,22 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(pg.psql(`select count(*) from financeiro_faccao where origem = 'OCORRENCIA_INTERNA' and id_volume = '${CONT}' and motivo = 'barra torta'`) === '1' && pg.psql(`select qtd_ocorrencia_faccao from volumes where id_volume = '${CONT}'`) === '3', 'problema registrado: débito no financeiro da facção e o saco soma 3 peças com problema');
     const imp = await page.evaluate(CONT => callServer('prepararImpressaoCuponsInternos', [CONT]).then(r => (r.cupons || []).length), CONT);
     ok(imp === 1, 'imprimir cupons do saco de continuação: só o cupom da operação que falta');
+    // ---- ficha do produto: operação "só interno (finalização)"
+    const fic = await page.evaluate(async () => {
+      const p = STATE.cad.produtos.find(x => x.CODIGO_PRODUTO === '1001'); fichaOpen(p.ID_PRODUTO); await new Promise(r => setTimeout(r, 300));
+      const temCol = [...document.querySelectorAll('#ficha_rot th')].some(th => th.textContent === 'Quem faz');
+      fichaSet('rot', 2, 'SO_INTERNO', true); await fichaSave(); await new Promise(r => setTimeout(r, 1500));
+      return { temCol };
+    });
+    ok(fic.temCol && pg.psql(`select count(*) from roteiro_produto r join cad_produtos p on p.id_produto = r.id_produto and p.empresa_id = r.empresa_id where p.codigo_produto = '1001' and r.ativo and r.so_interno`) === '1', 'ficha do produto: coluna "Quem faz" e a operação marcada como "Só interno (finalização)" fica salva');
+    const pp = await page.evaluate(({ ANA, OUTRO }) => {
+      const v = availableDestinationVolumes().find(x => String(x.ID_VOLUME) === OUTRO); if (!v) return { erro: 'sem volume' };
+      openLotDest('LOTE::' + String(volumeLot(v) || '—'), 'FACCAO', ANA, [v.ID_VOLUME]);
+      return { nota: $('lotDestScope').textContent, hint: document.querySelector('.lotdest-prices small').textContent };
+    }, { ANA, OUTRO: livres[1] });
+    ok(/menos a finalização interna \(OVERLOQUE\)/.test(pp.nota) && /× \d+% das operações/.test(pp.hint), 'Peça pronta com finalização interna: a janela avisa que a facção faz tudo menos a finalização, com preço proporcional: ' + (pp.nota || pp.erro));
+    await shot(page, '3-peca-pronta-finalizacao', '#lotDestModal .modal-card');
+    await page.evaluate(() => closeModal('lotDestModal'));
     ok(errors.length === 0, 'sem erro de JavaScript ' + errors.join(' | '));
   } finally { if (browser) await browser.close(); pg.descer(true); }
   const f = results.filter(x => !x).length; console.log(`\n${results.length - f}/${results.length}`); process.exit(f ? 1 : 0);

@@ -286,6 +286,25 @@ async function cenario(x) {
     const semFac = await x.api('registrarOcorrenciaFaccao', [{ ID_VOLUME: vols[0], QTD: 1, MOTIVO: 'x' }]);
     if (!semFac || !semFac.__error) throw new Error('ocorrência num saco que não passou por facção devia ser recusada');
   });
+  // v4.24.0 — finalização interna marcada na ficha: "Peça pronta" deixa essa operação para a fábrica
+  await passo('parte 4: operação "só interno" na ficha → facção faz o resto → lote de finalização', async () => {
+    const cc = await cad();
+    const rot = (cc.roteiro || []).filter(r => String(r.ID_PRODUTO) === String(P1)).sort((a, b) => a.ORDEM_PROCESSO - b.ORDEM_PROCESSO);
+    x.sql(`update public.roteiro_produto set so_interno = true where id_roteiro = '${rot[2].ID_ROTEIRO}';`);
+    const rt = (await x.api('getVolumes', [])).find(v => v.ID_VOLUME_ORIGEM_RETRABALHO === vols[5] && v.STATUS_VOLUME === 'AGUARDANDO_DESTINO');
+    if (!rt) throw new Error('sem saco de retrabalho aguardando destino');
+    const r = await x.grava('criarRemessaExterna', { volumeIds: [rt.ID_VOLUME], ID_DESTINO: D1, DATA_ENVIO: ontem(1), itemValues: {} });
+    const it = (await x.api('getRemessasExternas', [])).find(z => z.ID_REMESSA === r.remessa.ID_REMESSA).itens[0];
+    if (!it.SERVICO_PARCIAL || it.OPS_FACCAO_NOMES.length !== 2 || /OVERLOQUE/.test(it.OPS_FACCAO_NOMES.join())) throw new Error('peça pronta com finalização interna: ' + JSON.stringify(it.OPS_FACCAO_NOMES));
+    await x.grava('confirmarEnvioRemessaManual', r.remessa.ID_REMESSA, []);
+    await x.grava('registrarContagemRetorno', { ID_REMESSA: r.remessa.ID_REMESSA, itens: [{ ID_VOLUME: rt.ID_VOLUME, QTD_CONTADA: it.QTD_ENVIADA }] });
+    const ret = (await x.api('getRemessasExternas', [])).find(z => z.ID_REMESSA === r.remessa.ID_REMESSA).itens[0].retornos[0];
+    const ins = await x.grava('registrarInspecaoRetorno', { ID_REMESSA: r.remessa.ID_REMESSA, ID_RETORNO: ret.ID_RETORNO, QTD_APROVADA: it.QTD_ENVIADA, QTD_REPROVADA: 0, QTD_RETRABALHO: 0, QTD_EMBALADA: 0, RESPONSAVEL_INSPECAO: 'Carla' });
+    const fin = (await x.api('getVolumes', [])).find(v => v.ID_VOLUME === (ins.continuacoes || [])[0]?.ID_VOLUME);
+    if (!fin || fin.STATUS_VOLUME !== 'AGUARDANDO_DESTINO' || JSON.parse(fin.OPS_FEITAS).length !== 2) throw new Error('lote de finalização: ' + JSON.stringify(fin && [fin.STATUS_VOLUME, fin.OPS_FEITAS]));
+    const outra = await x.api('criarRemessaExterna', [{ volumeIds: [fin.ID_VOLUME], ID_DESTINO: D2, itemValues: {} }]);
+    if (!outra || !outra.__error || !/finalização interna/.test(outra.message)) throw new Error('mandar só a finalização para a facção devia pedir a produção interna');
+  });
   return { passos, ids: { P1, corte: corte1 && corte1.__id, vol: vols[0], vols, rem: rem && rem.remessa && rem.remessa.ID_REMESSA, cupom: cupons[0], cupom2: cupons[2], cont: cont && cont.ID_VOLUME } };
 }
 
