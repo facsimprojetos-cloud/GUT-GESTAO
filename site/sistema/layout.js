@@ -301,7 +301,7 @@
 
   window.gutLayoutAbrir = async function () {
     const root = $('layoutRoot'); if (!root) return;
-    if (!L.carregado) { root.innerHTML = '<div class="card internal-loading">Carregando o layout…</div>'; try { await carregar(); } catch (e) { root.innerHTML = `<div class="card">Não foi possível abrir o layout: ${esc(e.message)}</div>`; return; } montar(); }
+    if (!L.carregado) { root.innerHTML = '<div class="card internal-loading">Carregando o layout…</div>'; try { await carregar(); } catch (e) { root.innerHTML = /web_layout_ler|does not exist|schema cache/i.test(e.message) ? '<div class="card">O Layout da fábrica ainda está sendo instalado no banco. Tente de novo daqui a pouco.</div>' : `<div class="card">Não foi possível abrir o layout: ${esc(e.message)}</div>`; return; } montar(); }
     else if (!$('laySvg')) montar(); else { paleta(); desenhar(); props(); }
     // ocupação: precisa do quadro da produção interna
     try { if (typeof STATE !== 'undefined' && !STATE.internalBoard && typeof loadInternalProductionBoard === 'function') { await loadInternalProductionBoard(); paleta(); desenhar(); props(); } } catch (e) {}

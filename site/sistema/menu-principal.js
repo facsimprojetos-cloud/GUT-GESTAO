@@ -92,6 +92,7 @@
     barra();
   };
   window.gutHomeInicio = function () {
+    return; // v4.31.1: o usuário preferiu o menu lateral (recolhível); o menu em blocos fica desligado
     if (navigator.webdriver) return; // testes automáticos seguem no menu lateral
     if (/^#tv[123]$/.test(location.hash || '')) return;
     gutHomeMostrar();
