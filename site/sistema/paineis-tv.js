@@ -274,7 +274,7 @@ function panel3() {
 }
 
 /* ---------- moldura ---------- */
-const GUT_MARK = '<svg viewBox="0 0 96 96" aria-hidden="true"><rect width="96" height="96" rx="22" fill="#F2D95E"/><path d="M68 34a24 24 0 1 0 4 22H50V44h34v6A36 36 0 1 1 78 26z" fill="#0B0C0F"/></svg>';
+const GUT_MARK = '<svg viewBox="0 0 64 56" aria-hidden="true"><defs><linearGradient id="tvPrata" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f5"/><stop offset="1" stop-color="#8d9099"/></linearGradient></defs><path d="M30 6H8a5 5 0 0 0-5 5v36a5 5 0 0 0 5 5h44a5 5 0 0 0 5-5V22" fill="none" stroke="url(#tvPrata)" stroke-width="3.2" stroke-linecap="round"/><rect x="11" y="34" width="8" height="13" rx="1" fill="#e11d2a"/><rect x="23" y="24" width="8" height="23" rx="1" fill="#e11d2a"/><rect x="35" y="2" width="9" height="45" rx="1" fill="#ff2a36"/></svg>';
 function options(arr, sel, all) {
   return `<option value="">${esc(all)}</option>` + (arr || []).filter(x => x.ativo !== false || String(x.id) === String(sel))
     .map(v => `<option value="${esc(v.id)}"${String(v.id) === String(sel) ? ' selected' : ''}>${esc(v.nome)}</option>`).join('');
@@ -628,17 +628,17 @@ body.gut-tv-open{overflow:hidden}
 @media(max-width:560px){.tv-data-table{min-width:820px}.tv-title h1{font-size:17px}.tv-panel-tab{padding:7px 9px;font-size:11px}}
 
 /* ===== visual v2 (v4.28): mesma família do painel de TV do Apontador — fundo escuro azulado, cartões neon, pílulas ===== */
-.tv-workspace{--nx-y:#f5d33f;--nx-g:#2ee883;--nx-c:#29d8f4;--nx-r:#ff5a60;background:radial-gradient(ellipse at 12% -18%,#132a4f 0,#0a1428 30%,#07090e 62%,#050608 100%);color:#eaf1fb;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-.tv-header{border-bottom:2px solid var(--nx-y);padding-bottom:12px;min-height:0;box-shadow:0 10px 18px -16px #f5d33f88}
+.tv-workspace{--nx-y:#f5d33f;--br:#e11d2a;--nx-g:#2ee883;--nx-c:#29d8f4;--nx-r:#ff5a60;background:radial-gradient(ellipse at 12% -18%,#2a1215 0,#141418 30%,#0a0a0c 62%,#060607 100%);color:#eaf1fb;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.tv-header{border-bottom:2px solid var(--br);padding-bottom:12px;min-height:0;box-shadow:0 10px 18px -16px #e11d2a99}
 .tv-title{border-left-color:#30353f}
 .tv-title span{color:#a9bbd6;letter-spacing:4px;font-weight:700}
 .tv-title h1{color:#fff;text-transform:uppercase;letter-spacing:-.5px}
-.tv-title h1 em{color:var(--nx-y)}
-.tv-clock{color:var(--nx-y);font-weight:900}
+.tv-title h1 em{color:#ff2a36}
+.tv-clock{color:#fff;font-weight:900}
 .tv-live{color:#cfe0f5}.tv-live span{background:var(--nx-g);box-shadow:0 0 10px var(--nx-g)}
 .tv-button,.tv-reset{background:#101216;border-color:#30353f;color:#dce8fa;border-radius:9px}
 .tv-button:hover,.tv-reset:hover{background:#16202f;border-color:var(--nx-c)}
-.tv-reset{border-color:#5c5428;color:#ffe680}
+.tv-reset{border-color:#5c2a2e;color:#ff9aa0}
 .tv-filterbar label span{color:#9fb4d4}
 .tv-filterbar input,.tv-filterbar select{background:#08090b;border-color:#30353f;color:#fff;border-radius:9px}
 .tv-filterbar input:focus,.tv-filterbar select:focus{border-color:var(--nx-c);box-shadow:0 0 0 2px #29d8f433}
@@ -646,10 +646,10 @@ body.gut-tv-open{overflow:hidden}
 .tv-panels{gap:10px;justify-content:center}
 .tv-panel-tab{background:#101216;border:1.5px solid #30353f;color:#e6eefb;border-radius:10px;padding:10px 18px;font-size:clamp(11px,.85vw,15px)}
 .tv-panel-tab:hover{border-color:#5c6b85}
-.tv-panel-tab.on{background:linear-gradient(180deg,#ffe066,#f2c624);border-color:#ffe066;color:#14100a;box-shadow:0 0 18px #f5d33f66}
+.tv-panel-tab.on{background:linear-gradient(180deg,#ff3b47,#c8101c);border-color:#ff3b47;color:#fff;box-shadow:0 0 18px #e11d2a77}
 .tv-rotate{background:#101216;border-color:#30353f;color:#cfe0f5}
 .tv-rotate input[type=number]{background:#08090b;border-color:#30353f}
-.tv-rot-track{background:#1c1f25}.tv-rot-track i{background:var(--nx-y);box-shadow:0 0 8px var(--nx-y)}
+.tv-rot-track{background:#1c1f25}.tv-rot-track i{background:var(--br);box-shadow:0 0 8px var(--br)}
 .tv-full .tv-panels{display:flex}.tv-full .tv-panel-now{display:none}
 .tv-full .tv-rotate{display:none}.tv-full .tv-panelbar:hover .tv-rotate{display:inline-flex}
 .tv-full .tv-panel-tab{padding:7px 14px}
@@ -671,7 +671,7 @@ body.gut-tv-open{overflow:hidden}
 .tv-panel-header{background:transparent;border-bottom:1px solid #22262d}
 .tv-panel-header b{color:#fff;font-family:Manrope,'DM Sans',Arial,sans-serif;font-size:clamp(12px,1vw,19px);letter-spacing:.3px}
 .tv-panel-header small{color:#a9bbd6}
-.tv-panel-header>span{border:1.5px solid var(--nx-y);color:var(--nx-y);border-radius:20px;padding:4px 12px}
+.tv-panel-header>span{border:1.5px solid var(--br);color:#ff6b73;border-radius:20px;padding:4px 12px}
 /* tabela: linhas escuras com faixa colorida e eficiência em pílula */
 .tv-data-table thead th{background:#0e1013;color:#dfe8f6;border-bottom:1px solid #2a2e36}
 .tv-data-table tbody tr,.tv-data-table tbody tr:nth-child(even){background:#14171c}

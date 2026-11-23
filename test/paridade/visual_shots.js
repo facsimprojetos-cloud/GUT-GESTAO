@@ -35,6 +35,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       const u = r.request().url();
       if (u.startsWith('http://app.local/sistema/gut-motor.js')) return r.fulfill({ contentType: 'application/javascript', body: motorJs });
       if (u.startsWith('http://app.local/sistema/paineis-tv.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/paineis-tv.js'), 'utf8') });
+      if (u.startsWith('http://app.local/sistema/menu-principal.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/menu-principal.js'), 'utf8') });
       if (u.startsWith('http://app.local/')) return r.fulfill({ contentType: 'text/html', body: html });
       if (u.startsWith('http://sb.local/rpc/')) {
         const fn = u.split('/rpc/')[1], args = JSON.parse(r.request().postData() || '{}'); RPC.push(fn);
@@ -66,6 +67,11 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     const OUT = process.env.OUT || '/tmp/vis'; fs.mkdirSync(OUT, { recursive: true });
     await page.setViewportSize({ width: 1440, height: 900 });
     const vistas = (process.env.VISTAS || 'dashboard,dash-faccoes,dash-interna,producao,estoque,cadastros,financeiro-faccoes').split(',');
+    if (process.env.HOME_MENU) { await page.evaluate(() => gutHomeMostrar()); await page.waitForTimeout(800); await page.screenshot({ path: path.join(OUT, 'home.png') });
+      await page.evaluate(() => gutHomeAbrir('relatorios')); await page.waitForTimeout(1500); await page.screenshot({ path: path.join(OUT, 'mod-relatorios.png') });
+      await page.evaluate(() => gutHomeAbrir('interna')); await page.waitForTimeout(1500); await page.screenshot({ path: path.join(OUT, 'mod-interna.png') });
+      await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; gutHomeAbrir('qualidade'); }); await page.waitForTimeout(1500); await page.screenshot({ path: path.join(OUT, 'mod-qualidade-dark.png') });
+      await page.evaluate(() => { document.body.classList.remove('mod-mode'); delete document.documentElement.dataset.theme; document.querySelector('.modal.show')?.classList.remove('show'); }); }
     for (const tema of (process.env.TEMAS || 'light,dark').split(',')) {
       await page.evaluate(t => { document.documentElement.dataset.theme = t === 'dark' ? 'dark' : ''; if (t !== 'dark') delete document.documentElement.dataset.theme; }, tema);
       for (const v of vistas) {
