@@ -2,7 +2,8 @@
    Ambiente em metros, grade para encaixar, máquinas do cadastro e blocos livres, cotas entre itens
    (reta e em "L", base para o diagrama de espaguete) e a ocupação de hoje de cada máquina (mesma conta do painel Capacidade). */
 (function () {
-  const L = { lista: [], atual: null, sel: null, modo: 'MOVER', cotaA: null, zoom: 1, sujo: false, salvando: false, timer: 0, carregado: false, arr: null, hist: [] };
+  const L = { lista: [], atual: null, sel: null, modo: 'MOVER', cotaA: null, zoom: 1, sujo: false, salvando: false, timer: 0, carregado: false, arr: null, hist: [], cheia: false, semPal: false, semProp: false, fluxo: true };
+  const LOTE_W = 1, LOTE_H = 0.6;
   const CEL = [0.25, 0.5, 1];
   const BLOCOS = [
     { tipo: 'MESA', nome: 'Mesa de corte', w: 6, h: 1.8 },
@@ -69,6 +70,27 @@
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   }
 
+  function caixas() {
+    const rows = (typeof STATE !== 'undefined' && STATE.internalBoard && STATE.internalBoard.rows) || [];
+    return rows.map(v => {
+      const prox = v.OPERACAO_ATUAL || v.PROXIMA_OPERACAO || null, p = Number(v.PROGRESSO_PCT) || 0;
+      return { id: String(v.ID_VOLUME), cod: v.COD_VOLUME_EXIBICAO || v.COD_VOLUME || v.ID_VOLUME, prod: v.PRODUTO || '', cor: [v.COR, v.TAMANHO].filter(Boolean).join(' / '), qtd: Number(v.QTD_VOLUME) || 0, pct: p,
+        op: prox ? (prox.PROCESSO || '') : '', opMaq: prox ? String(prox.ID_MAQUINA || '') : '', opMaqNome: prox ? (prox.MAQUINA || '') : '', ativa: !!(v.OPERACAO_ATUAL && v.OPERACAO_ATUAL.STATUS_CUPOM === 'EM_PRODUCAO'), feito: p >= 100 };
+    }).sort((a, b) => String(a.cod).localeCompare(String(b.cod), 'pt-BR', { numeric: true }));
+  }
+  const mapaCaixas = () => new Map(caixas().map(c => [c.id, c]));
+  /* lote → unidade mais próxima do tipo de máquina da próxima operação */
+  function fluxos() {
+    const d = D(), cx = mapaCaixas(), out = [];
+    d.itens.filter(i => i.tipo === 'LOTE').forEach(l => {
+      const c = cx.get(l.vol); if (!c || !c.opMaq || c.feito) return;
+      const lx = l.x + l.w / 2, ly = l.y + l.h / 2;
+      const alvo = d.itens.filter(i => i.tipo === 'MAQ' && i.maq === c.opMaq).map(m => ({ m, dist: Math.hypot(m.x + m.w / 2 - lx, m.y + m.h / 2 - ly) })).sort((a, b) => a.dist - b.dist)[0];
+      out.push({ l, c, alvo: alvo ? alvo.m : null, dist: alvo ? alvo.dist : 0, lx, ly });
+    });
+    return out;
+  }
+
   /* ---------- tela ---------- */
   function montar() {
     const root = $('layoutRoot'); if (!root) return;
@@ -86,6 +108,10 @@
       <div class="seg" role="group" aria-label="Ferramenta"><button type="button" data-lm="MOVER" onclick="gutLayout.modo('MOVER')" title="Arrastar e selecionar (atalho V)">Mover</button><button type="button" data-lm="COTA" onclick="gutLayout.modo('COTA')" title="Medir: toque num item e depois em outro (atalho C)">Cota</button></div>
       <div class="seg" role="group" aria-label="Zoom"><button type="button" onclick="gutLayout.zoom(-1)" title="Diminuir">−</button><button type="button" onclick="gutLayout.zoom(0)" title="Caber na tela">Ajustar</button><button type="button" onclick="gutLayout.zoom(1)" title="Aumentar">+</button></div>
       <button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.desfazer()" title="Desfazer (Ctrl+Z)">↶ Desfazer</button>
+      <button class="btn btn-secondary btn-sm lay-only-full" type="button" id="layPalBtn" onclick="gutLayout.lado('pal')" title="Mostrar ou esconder a lista de máquinas e lotes">◧ Lista</button>
+      <button class="btn btn-secondary btn-sm lay-only-full" type="button" id="layPropBtn" onclick="gutLayout.lado('prop')" title="Mostrar ou esconder os detalhes e as cotas">◨ Detalhes</button>
+      <label class="lay-chk" title="Liga cada lote à máquina da próxima operação dele"><input type="checkbox" id="layFluxo" onchange="gutLayout.fluxo(this.checked)" checked> Fluxo dos lotes</label>
+      <button class="btn btn-dark btn-sm" type="button" id="layFullBtn" onclick="gutLayout.cheia()" title="Abrir a planta em tela cheia (Esc volta)">⛶ Tela cheia</button>
       <span id="layStatus" class="lay-status ok">Salvo</span>
     </div>
     <div class="lay-body">
@@ -107,15 +133,19 @@
   function paleta() {
     const el = $('layPal'); if (!el) return; const d = D(), occ = ocupacao();
     const usados = new Map(); d.itens.filter(i => i.tipo === 'MAQ').forEach(i => usados.set(i.maq, (usados.get(i.maq) || 0) + 1));
-    const mq = maquinas();
+    const mq = maquinas(), cxs = caixas(), cxm = new Map(cxs.map(c => [c.id, c])), lotes = d.itens.filter(i => i.tipo === 'LOTE'), noPlano = new Set(lotes.map(i => i.vol)), fora = lotes.filter(i => !cxm.has(i.vol)).length;
     el.innerHTML = `<div class="lay-h">Máquinas do cadastro</div>
       ${mq.length ? mq.map(m => { const u = usados.get(m.id) || 0, o = occ.get(m.id), p = o ? o.pct : 0; return `<button type="button" class="lay-pal" draggable="true" data-add="MAQ" data-maq="${esc(m.id)}" onclick="gutLayout.adicionar('MAQ','${esc(m.id)}')" title="Clique ou arraste para a planta">
         <i class="lay-dot ${classe(p)}"></i><span><b>${esc(m.nome)}</b><small>${u} de ${m.total} na planta${o && o.cap ? ` • ${isFinite(p) ? Math.round(p) : '>999'}% hoje` : ''}</small></span>${u >= m.total && m.total ? '<em>✓</em>' : ''}</button>`; }).join('') : '<p class="hint">Cadastre as máquinas em Cadastros › Máquinas.</p>'}
+      <div class="lay-h">Lotes em produção (${cxs.length})</div>
+      ${cxs.length ? cxs.map(c => { const na = noPlano.has(c.id); return `<button type="button" class="lay-pal lay-pal-lote ${c.feito ? 'feito' : ''}" draggable="true" data-add="LOTE" data-vol="${esc(c.id)}" onclick="gutLayout.adicionar('LOTE','${esc(c.id)}')" title="${esc(c.prod)} ${esc(c.cor)} • ${c.qtd} pç${c.op ? ' • próxima: ' + esc(c.op) : ''}">
+        <i class="lay-dot lote"></i><span><b>${esc(c.cod)}</b><small>${esc(c.prod)} • ${c.qtd} pç • ${Math.round(c.pct)}%${c.op ? ' • ' + esc(c.op) : ''}</small></span>${na ? '<em>✓</em>' : ''}</button>`; }).join('') : '<p class="hint">Nenhuma caixa na produção interna agora.</p>'}
+      ${fora ? `<button type="button" class="btn btn-secondary btn-sm" onclick="gutLayout.limparLotes()">Tirar da planta ${fora} lote(s) que já saíram da produção</button>` : ''}
       <div class="lay-h">Outros itens</div>
       ${BLOCOS.map(b => `<button type="button" class="lay-pal" draggable="true" data-add="${b.tipo}" onclick="gutLayout.adicionar('${b.tipo}')"><i class="lay-dot blk t-${b.tipo.toLowerCase()}"></i><span><b>${esc(b.nome)}</b><small>${fm(b.w)} × ${fm(b.h)} m</small></span></button>`).join('')}
       <div class="lay-legend"><div class="lay-h">Ocupação de hoje</div><span><i class="lay-dot idle"></i>sem carga</span><span><i class="lay-dot ok"></i>até 80%</span><span><i class="lay-dot high"></i>80 a 100%</span><span><i class="lay-dot over"></i>acima de 100%</span>
       <p class="hint">Carga = minutos padrão ainda não concluídos na produção interna ÷ capacidade do dia do tipo de máquina (igual ao painel Capacidade). Máquinas do mesmo tipo mostram a mesma ocupação.</p></div>`;
-    el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('dragstart', e => { L.arr = { tipo: b.dataset.add, maq: b.dataset.maq || '' }; try { e.dataTransfer.setData('text/plain', 'lay'); e.dataTransfer.effectAllowed = 'copy'; } catch (x) {} }));
+    el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('dragstart', e => { L.arr = { tipo: b.dataset.add, maq: b.dataset.maq || b.dataset.vol || '' }; try { e.dataTransfer.setData('text/plain', 'lay'); e.dataTransfer.effectAllowed = 'copy'; } catch (x) {} }));
   }
 
   function props() {
@@ -123,7 +153,15 @@
     const cotas = d.cotas.map(c => ({ c, m: medir(c) })).filter(x => x.m);
     const tot = cotas.reduce((s, x) => s + x.m.reta, 0), totL = cotas.reduce((s, x) => s + x.m.l, 0);
     let h = '';
-    if (it) {
+    if (it && it.tipo === 'LOTE') {
+      const c = mapaCaixas().get(it.vol), f = fluxos().find(x => x.l.id === it.id);
+      h += `<div class="lay-h">Lote na planta</div>${c ? `<div class="lay-lote-card"><b>${esc(c.cod)}</b><span>${esc(c.prod)}${c.cor ? ' • ' + esc(c.cor) : ''}</span><span>${c.qtd} pç • ${Math.round(c.pct)}% concluído</span>
+        <div class="lay-prog"><i style="width:${Math.min(100, c.pct)}%"></i></div>
+        ${c.feito ? '<span class="ok">Todas as operações concluídas</span>' : c.op ? `<span>${c.ativa ? 'Em produção' : 'Próxima operação'}: <b>${esc(c.op)}</b>${c.opMaqNome ? ' • ' + esc(c.opMaqNome) : ''}</span>` : ''}
+        ${f ? (f.alvo ? `<span>Até ${esc(f.alvo.nome)}: <b>${fm(f.dist)} m</b></span>` : `<span class="warn">Nenhuma ${esc(c.opMaqNome || 'máquina desse tipo')} na planta</span>`) : ''}</div>
+        <div class="lay-acts"><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.abrirLote('${esc(it.vol)}')">Abrir no quadro</button><button class="btn btn-secondary btn-sm lay-del" type="button" onclick="gutLayout.excluirItem()">Tirar da planta</button></div>`
+        : `<p class="hint">Este lote já saiu da produção interna.</p><div class="lay-acts"><button class="btn btn-secondary btn-sm lay-del" type="button" onclick="gutLayout.excluirItem()">Tirar da planta</button></div>`}`;
+    } else if (it) {
       const occ = ocupacao().get(it.maq || ''), mq = maquinas();
       h += `<div class="lay-h">${it.tipo === 'MAQ' ? 'Máquina' : 'Item'} selecionado</div>
       <label class="lay-f"><span>Nome na planta</span><input value="${esc(it.nome)}" maxlength="40" oninput="gutLayout.prop('nome',this.value)"></label>
@@ -133,7 +171,7 @@
       ${it.tipo === 'MAQ' && occ ? `<div class="lay-occ ${classe(occ.pct)}"><b>${isFinite(occ.pct) ? Math.round(occ.pct) : '>999'}%</b><span>ocupação hoje do tipo • ${Math.round(occ.load)} de ${Math.round(occ.cap)} min • ${occ.ops} processo(s) a fazer</span></div>` : ''}
       <div class="lay-acts"><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.girar()" title="Girar 90° (R)">⟳ Girar</button><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.duplicar()" title="Duplicar (Ctrl+D)">⧉ Duplicar</button><button class="btn btn-secondary btn-sm lay-del" type="button" onclick="gutLayout.excluirItem()" title="Excluir (Delete)">Excluir</button></div>`;
     } else {
-      h += `<div class="lay-h">Como usar</div><ul class="lay-help"><li>Defina largura e comprimento do ambiente.</li><li>Clique ou arraste uma máquina para a planta; arraste para posicionar (encaixa na grade).</li><li><b>Cota</b>: toque num item e depois em outro para medir a distância entre os centros.</li><li>Atalhos: R gira, Delete exclui, setas movem uma casa, Ctrl+Z desfaz.</li></ul>`;
+      h += `<div class="lay-h">Como usar</div><ul class="lay-help"><li>Defina largura e comprimento do ambiente.</li><li>Clique ou arraste uma máquina para a planta; arraste para posicionar (encaixa na grade).</li><li><b>Cota</b>: toque num item e depois em outro para medir a distância entre os centros.</li><li>Arraste os <b>lotes em produção</b> para perto das máquinas: a linha laranja liga cada lote à máquina da próxima operação.</li><li>Atalhos: R gira, Delete exclui, setas movem uma casa, Ctrl+Z desfaz, F tela cheia.</li></ul>`;
     }
     h += `<div class="lay-h">Cotas (${cotas.length})</div>
       ${cotas.length ? `<div class="lay-cotas">${cotas.map(({ c, m }) => `<div class="lay-cota ${L.selCota === c.id ? 'on' : ''}" onclick="gutLayout.selCota('${c.id}')"><span>${esc(m.a.nome)} → ${esc(m.b.nome)}</span><b>${fm(m.reta)} m</b><small>em L ${fm(m.l)} m</small><button type="button" class="x" onclick="event.stopPropagation();gutLayout.excluirCota('${c.id}')" title="Excluir cota">×</button></div>`).join('')}</div>
@@ -152,7 +190,8 @@
   const PAD = 0.9;
   function escala() {
     const wrap = $('layWrap'), d = D(); if (!wrap || !d) return 40;
-    const fit = Math.max(8, Math.min((wrap.clientWidth - 24) / (d.largura + PAD * 2), (Math.max(360, window.innerHeight - 290)) / (d.comprimento + PAD * 2)));
+    const alt = L.cheia ? wrap.clientHeight - 24 : Math.max(360, window.innerHeight - 290);
+    const fit = Math.max(8, Math.min((wrap.clientWidth - 24) / (d.largura + PAD * 2), alt / (d.comprimento + PAD * 2)));
     return fit * L.zoom;
   }
   function desenhar() {
@@ -163,12 +202,12 @@
     const fs = Math.max(0.16, Math.min(0.3, 14 / s));
     let g = `<defs><pattern id="layG" width="${c}" height="${c}" patternUnits="userSpaceOnUse"><path d="M ${c} 0 L 0 0 0 ${c}" class="lay-grid"/></pattern><pattern id="layG1" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M 1 0 L 0 0 0 1" class="lay-grid1"/></pattern>
       <pattern id="layHatch" width="0.25" height="0.25" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0V0.25" class="lay-hatch"/></pattern>
-      <marker id="layTick" viewBox="-5 -5 10 10" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 -4V4" class="lay-tickm"/></marker></defs>`;
+      <marker id="layArr" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="${fs * 1.3}" markerHeight="${fs * 1.3}" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="lay-arrm"/></marker><marker id="layTick" viewBox="-5 -5 10 10" markerUnits="userSpaceOnUse" markerWidth="${fs * 1.4}" markerHeight="${fs * 1.4}" orient="auto"><path d="M0 -4V4" class="lay-tickm"/></marker></defs>`;
     g += `<rect x="0" y="0" width="${W}" height="${H}" class="lay-floor"/><rect x="0" y="0" width="${W}" height="${H}" fill="url(#layG)"/><rect x="0" y="0" width="${W}" height="${H}" fill="url(#layG1)"/><rect x="0" y="0" width="${W}" height="${H}" class="lay-wall"/>`;
     const passo = W > 60 || H > 60 ? 10 : W > 25 || H > 25 ? 5 : 1;
     for (let x = 0; x <= W + 1e-6; x += passo) g += `<text x="${x}" y="${-0.25}" class="lay-rul" font-size="${fs}" text-anchor="middle">${Math.round(x)}</text>`;
     for (let y = passo; y <= H + 1e-6; y += passo) g += `<text x="${-0.25}" y="${y + fs / 3}" class="lay-rul" font-size="${fs}" text-anchor="end">${Math.round(y)}</text>`;
-    d.itens.forEach(it => {
+    d.itens.filter(it => it.tipo !== 'LOTE').forEach(it => {
       const o = it.tipo === 'MAQ' ? occ.get(it.maq || '') : null, p = o ? o.pct : 0, cl = it.tipo === 'MAQ' ? 'maq ' + classe(p) : 'blk t-' + it.tipo.toLowerCase();
       const sel = it.id === L.sel ? ' sel' : '', ca = L.cotaA === it.id ? ' cota-a' : '';
       const tx = it.x + it.w / 2, ty = it.y + it.h / 2, small = Math.min(it.w, it.h), f = Math.max(0.12, Math.min(fs, it.tipo === 'MAQ' ? Math.max(small * 0.4, it.w * 0.17) : small * 0.36));
@@ -182,6 +221,18 @@
         g += `<text x="${tx}" y="${ty + f * 0.35}" font-size="${f}" class="lay-tx" text-anchor="middle"${rot}>${esc(curto(it.nome, (rot ? it.h : it.w) / f * 1.7))}</text>`;
       }
       g += `<title>${esc(it.nome)} • ${fm(it.w)} × ${fm(it.h)} m${o && o.cap ? ` • ocupação hoje ${isFinite(p) ? Math.round(p) : '>999'}%` : ''}</title></g>`;
+    });
+    const cx = mapaCaixas();
+    if (L.fluxo) fluxos().forEach(f => { if (!f.alvo) return; const bx = f.alvo.x + f.alvo.w / 2, by = f.alvo.y + f.alvo.h / 2, mx = (f.lx + bx) / 2, my = (f.ly + by) / 2;
+      g += `<g class="lay-flx${f.c.ativa ? ' ativa' : ''}"><line x1="${f.lx}" y1="${f.ly}" x2="${bx}" y2="${by}" class="lay-fl" marker-end="url(#layArr)"/><text x="${mx}" y="${my - fs * 0.35}" font-size="${fs * 0.75}" text-anchor="middle" class="lay-ftx" stroke-width="${fs * 0.18}">${esc(curto(f.c.op, 18))} • ${fm(f.dist)} m</text></g>`; });
+    d.itens.filter(it => it.tipo === 'LOTE').forEach(it => {
+      const c = cx.get(it.vol), sel = it.id === L.sel ? ' sel' : '', ca = L.cotaA === it.id ? ' cota-a' : '', st = !c ? ' fora' : c.feito ? ' feito' : c.ativa ? ' ativa' : '';
+      const f = Math.max(0.12, Math.min(fs * 0.85, it.w * 0.16)), pct = c ? Math.min(100, c.pct) : 0;
+      g += `<g class="lay-it lote${st}${sel}${ca}" data-it="${it.id}"><rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" rx="0.06" class="lay-body-r"/>
+        <text x="${it.x + it.w / 2}" y="${it.y + it.h * 0.42}" font-size="${f}" text-anchor="middle" class="lay-tx">${esc(curto(c ? c.cod : 'lote', it.w / f * 1.9))}</text>
+        <text x="${it.x + it.w / 2}" y="${it.y + it.h * 0.42 + f * 1.05}" font-size="${f * 0.85}" text-anchor="middle" class="lay-pct">${c ? c.qtd + ' pç • ' + Math.round(c.pct) + '%' : 'saiu'}</text>
+        <rect x="${it.x + it.w * 0.08}" y="${it.y + it.h - it.h * 0.17}" width="${it.w * 0.84}" height="${it.h * 0.07}" rx="0.02" class="lay-bar-bg"/><rect x="${it.x + it.w * 0.08}" y="${it.y + it.h - it.h * 0.17}" width="${it.w * 0.84 * pct / 100}" height="${it.h * 0.07}" rx="0.02" class="lay-bar"/>
+        <title>${c ? esc(c.cod + ' • ' + c.prod + ' • ' + c.qtd + ' pç • ' + Math.round(c.pct) + '%' + (c.op ? ' • próxima: ' + c.op : '')) : 'Lote que já saiu da produção interna'}</title></g>`;
     });
     d.cotas.forEach(cq => {
       const m = medir(cq); if (!m) return; const mx = (m.ax + m.bx) / 2, my = (m.ay + m.by) / 2, sel = L.selCota === cq.id ? ' sel' : '';
@@ -219,7 +270,7 @@
       if (cg && !g) { L.selCota = cg.dataset.cota; L.sel = null; desenhar(); props(); return; }
       if (!g) { L.sel = null; L.selCota = null; desenhar(); props(); return; }
       const it = D().itens.find(i => i.id === g.dataset.it); if (!it) return;
-      L.sel = it.id; L.selCota = null; const p = pt(e); drag = { it, dx: p.x - it.x, dy: p.y - it.y, x0: it.x, y0: it.y, moveu: false };
+      L.drag = true; L.sel = it.id; L.selCota = null; const p = pt(e); drag = { it, dx: p.x - it.x, dy: p.y - it.y, x0: it.x, y0: it.y, moveu: false };
       try { svg.setPointerCapture(e.pointerId); } catch (x) {}
       desenhar(); props(); e.preventDefault();
     });
@@ -229,7 +280,7 @@
       if (!drag.moveu) { snapshot(); drag.moveu = true; }
       drag.it.x = nx; drag.it.y = ny; limitar(drag.it); desenhar();
     });
-    const fim = () => { if (drag && drag.moveu) { mudou(false); props(); } drag = null; };
+    const fim = () => { if (drag && drag.moveu) { mudou(false); props(); } drag = null; L.drag = false; };
     svg.addEventListener('pointerup', fim); svg.addEventListener('pointercancel', fim);
     wrap.addEventListener('dragover', e => { if (L.arr) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch (x) {} } });
     wrap.addEventListener('drop', e => { if (!L.arr) return; e.preventDefault(); const p = pt(e); adicionar(L.arr.tipo, L.arr.maq, p); L.arr = null; });
@@ -240,6 +291,8 @@
       const k = e.key.toLowerCase(), it = D().itens.find(i => i.id === L.sel);
       if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); desfazer(); return; }
       if ((e.ctrlKey || e.metaKey) && k === 'd' && it) { e.preventDefault(); duplicar(); return; }
+      if (k === 'f' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); return cheia(); }
+      if (k === 'escape' && L.cheia && !document.fullscreenElement) { cheia(false); return; }
       if (k === 'v') return modo('MOVER'); if (k === 'c' && !e.ctrlKey && !e.metaKey) return modo('COTA');
       if (k === 'escape') { L.cotaA = null; L.sel = null; L.selCota = null; desenhar(); props(); return; }
       if ((k === 'delete' || k === 'backspace')) { e.preventDefault(); if (it) excluirItem(); else if (L.selCota) excluirCota(L.selCota); return; }
@@ -257,7 +310,12 @@
   }
   function adicionar(tipo, maq, p) {
     const d = D(); snapshot(); let it;
-    if (tipo === 'MAQ') { const m = maquinas().find(x => x.id === maq); const n = d.itens.filter(i => i.tipo === 'MAQ' && i.maq === maq).length + 1; it = { id: uid(), tipo: 'MAQ', maq, nome: `${m ? m.nome : 'Máquina'} ${n}`, w: MAQ_W, h: MAQ_H }; }
+    if (tipo === 'LOTE') {
+      const ex = d.itens.find(i => i.tipo === 'LOTE' && i.vol === maq);
+      if (ex) { L.hist.pop(); if (p) { snapshot(); ex.x = snap(p.x - ex.w / 2); ex.y = snap(p.y - ex.h / 2); limitar(ex); } L.sel = ex.id; mudou(); props(); return; }
+      it = { id: uid(), tipo: 'LOTE', vol: maq, nome: (mapaCaixas().get(maq) || {}).cod || 'Lote', w: LOTE_W, h: LOTE_H };
+      if (!p) { const c = mapaCaixas().get(maq), alvo = c && d.itens.find(i => i.tipo === 'MAQ' && i.maq === c.opMaq); if (alvo) p = { x: alvo.x + alvo.w / 2, y: alvo.y + alvo.h + LOTE_H / 2 + d.celula }; }
+    } else if (tipo === 'MAQ') { const m = maquinas().find(x => x.id === maq); const n = d.itens.filter(i => i.tipo === 'MAQ' && i.maq === maq).length + 1; it = { id: uid(), tipo: 'MAQ', maq, nome: `${m ? m.nome : 'Máquina'} ${n}`, w: MAQ_W, h: MAQ_H }; }
     else { const b = BLOCOS.find(x => x.tipo === tipo) || BLOCOS[5]; it = { id: uid(), tipo: b.tipo, nome: b.nome, w: b.w, h: b.h }; }
     if (p) { it.x = snap(p.x - it.w / 2); it.y = snap(p.y - it.h / 2); } else Object.assign(it, lugarLivre(it.w, it.h));
     limitar(it); d.itens.push(it); L.sel = it.id; L.selCota = null; if (L.modo !== 'MOVER') modo('MOVER', true); mudou(); paleta(); props();
@@ -269,7 +327,26 @@
   function desfazer() { const s = L.hist.pop(); if (!s) { (window.toast || alert)('Nada para desfazer.'); return; } L.atual.dados = JSON.parse(s); L.sel = null; L.selCota = null; campos(); mudou(); paleta(); props(); }
   function modo(m, silencioso) { L.modo = m; L.cotaA = null; document.querySelectorAll('[data-lm]').forEach(b => b.classList.toggle('active', b.dataset.lm === m)); const w = $('layWrap'); if (w) w.classList.toggle('lay-cota-mode', m === 'COTA'); if (!silencioso) desenhar(); else desenhar(); }
 
+  function cheia(forcar) {
+    const v = $('view-layout'); if (!v) return;
+    L.cheia = typeof forcar === 'boolean' ? forcar : !L.cheia;
+    document.body.classList.toggle('lay-full', L.cheia); v.classList.toggle('lay-full-on', L.cheia);
+    const b = $('layFullBtn'); if (b) b.textContent = L.cheia ? '✕ Sair da tela cheia' : '⛶ Tela cheia';
+    try { if (L.cheia && !document.fullscreenElement && v.requestFullscreen) v.requestFullscreen().catch(() => {}); else if (!L.cheia && document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
+    lados(); L.zoom = 1; setTimeout(desenhar, 60); setTimeout(desenhar, 350);
+  }
+  function lados() {
+    const b = document.querySelector('#view-layout .lay-body'); if (!b) return;
+    b.classList.toggle('sem-pal', L.cheia && L.semPal); b.classList.toggle('sem-prop', L.cheia && L.semProp);
+    $('layPalBtn')?.classList.toggle('active', !L.semPal); $('layPropBtn')?.classList.toggle('active', !L.semProp);
+  }
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && L.cheia) cheia(false); });
+
   window.gutLayout = {
+    cheia: () => cheia(), lado(q) { if (q === 'pal') L.semPal = !L.semPal; else L.semProp = !L.semProp; lados(); setTimeout(desenhar, 30); },
+    fluxo(on) { L.fluxo = !!on; desenhar(); },
+    limparLotes() { const cx = mapaCaixas(); snapshot(); D().itens = D().itens.filter(i => i.tipo !== 'LOTE' || cx.has(i.vol)); const ids = new Set(D().itens.map(i => i.id)); D().cotas = D().cotas.filter(c => ids.has(c.a) && ids.has(c.b)); mudou(); paleta(); props(); },
+    abrirLote(id) { cheia(false); try { showView('dash-interna'); if (typeof setInternalDashboardMode === 'function') setInternalDashboardMode('KANBAN'); openProdOps(id); } catch (e) {} },
     trocar(i) { salvar(); L.atual = L.lista[Number(i)] || L.lista[0]; L.sel = null; L.selCota = null; L.hist = []; campos(); paleta(); desenhar(); props(); status(); },
     novo() { salvar(); const n = { id: '', nome: 'Ambiente ' + (L.lista.length + 1), dados: novoDados() }; L.lista.push(n); L.atual = n; L.sel = null; L.hist = []; preencherAmbientes(); campos(); paleta(); desenhar(); props(); mudou(false); },
     campo(k, v) {
@@ -306,5 +383,6 @@
     // ocupação: precisa do quadro da produção interna
     try { if (typeof STATE !== 'undefined' && !STATE.internalBoard && typeof loadInternalProductionBoard === 'function') { await loadInternalProductionBoard(); paleta(); desenhar(); props(); } } catch (e) {}
   };
+  setInterval(() => { if (visivel() && !L.drag && !document.querySelector('#view-layout input:focus,#view-layout select:focus')) { paleta(); desenhar(); if (L.sel) { const it = D().itens.find(i => i.id === L.sel); if (it && it.tipo === 'LOTE') props(); } } }, 10000);
   window.addEventListener('beforeunload', e => { if (L.sujo) { salvar(); e.preventDefault(); e.returnValue = ''; } });
 })();

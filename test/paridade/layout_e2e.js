@@ -84,10 +84,21 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.waitForTimeout(2500);
     ok(RPC.includes('web_layout_salvar') && await page.evaluate(() => !gutLayout.estado().sujo), 'salva sozinho no banco');
     await page.evaluate(() => { gutLayout.modo('MOVER'); });
+    await page.evaluate(() => loadInternalProductionBoard(true)); await page.waitForTimeout(2500); await page.evaluate(() => { showView('layout'); }); await page.waitForTimeout(800);
+    const lote = await page.evaluate(() => { const r = (STATE.internalBoard?.rows || []).find(v => (v.OPERACAO_ATUAL || v.PROXIMA_OPERACAO)); if (!r) return { sem: true, n: (STATE.internalBoard?.rows || []).length };
+      const op = r.OPERACAO_ATUAL || r.PROXIMA_OPERACAO; if (!op.ID_MAQUINA) op.ID_MAQUINA = String(STATE.cad.maquinas[0].ID_MAQUINA); if (op.ID_MAQUINA) gutLayout.adicionar('MAQ', String(op.ID_MAQUINA)); gutLayout.adicionar('LOTE', String(r.ID_VOLUME)); gutLayout.adicionar('LOTE', String(r.ID_VOLUME));
+      const d = gutLayout.estado().atual.dados; return { lotes: d.itens.filter(i => i.tipo === 'LOTE').length, pal: document.querySelectorAll('.lay-pal-lote').length, svg: document.querySelectorAll('.lay-it.lote').length, fluxo: document.querySelectorAll('.lay-flx').length, temMaq: !!op.ID_MAQUINA }; });
+    ok(!lote.sem && lote.lotes === 1 && lote.pal >= 1 && lote.svg === 1, 'lote da produção interna entra na planta (uma vez só) e aparece na lista: ' + JSON.stringify(lote));
+    ok(!lote.sem && lote.temMaq && lote.fluxo === 1, 'linha de fluxo liga o lote à máquina da próxima operação');
+    await page.evaluate(() => gutLayout.cheia()); await page.waitForTimeout(600);
+    const full = await page.evaluate(() => { const r = document.getElementById('laySvg').getBoundingClientRect(), v = document.getElementById('view-layout').getBoundingClientRect(); return { on: document.getElementById('view-layout').classList.contains('lay-full-on'), w: r.width, vw: v.width, h: v.height }; });
+    ok(full.on && full.vw >= 1400 && full.h >= 880, 'tela cheia ocupa a janela inteira: ' + JSON.stringify(full));
+    if (process.env.SHOT) { fs.mkdirSync(process.env.SHOT, { recursive: true }); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-cheia.png') }); await page.evaluate(() => { gutLayout.lado('pal'); gutLayout.lado('prop'); }); await page.waitForTimeout(400); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-cheia-so-planta.png') }); await page.evaluate(() => { gutLayout.lado('pal'); gutLayout.lado('prop'); }); }
+    await page.evaluate(() => gutLayout.cheia()); await page.waitForTimeout(2500);
     if (process.env.SHOT) { fs.mkdirSync(process.env.SHOT, { recursive: true }); await page.evaluate(() => { const d = gutLayout.estado().atual.dados; gutLayout.adicionar('CORREDOR'); gutLayout.adicionar('ESTOQUE'); }); await page.waitForTimeout(500); await page.screenshot({ path: path.join(process.env.SHOT, 'layout.png') }); await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; }); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-dark.png') }); await page.evaluate(() => { delete document.documentElement.dataset.theme; }); await page.waitForTimeout(2000); }
     await page.reload(); await page.waitForTimeout(3500); await page.evaluate(() => showView('layout')); await page.waitForTimeout(2500);
     const vol = await page.evaluate(() => { const d = gutLayout.estado().atual.dados; return { n: d.itens.length, c: d.cotas.length, w: d.largura, id: gutLayout.estado().atual.id }; });
-    ok(vol.n >= 3 && vol.c === 1 && vol.w === 15 && /^LAY-/.test(vol.id), 'ao reabrir, a planta volta como foi salva: ' + JSON.stringify(vol));
+    ok(vol.n >= 5 && vol.c === 1 && vol.w === 15 && /^LAY-/.test(vol.id), 'ao reabrir, a planta volta como foi salva: ' + JSON.stringify(vol));
     console.log('erros', errors.slice(0, 5)); console.log(`${pass}/${pass + fail}`); if (fail) process.exitCode = 1;
   } finally { if (browser) await browser.close(); pg.descer(true); }
 })().catch(e => { console.error(e); pg.descer(true); process.exit(2); });
