@@ -14,6 +14,7 @@
     selo: `<path ${W} d="M24 4l4 3 5-1 2 5 5 2-1 5 3 4-3 4 1 5-5 2-2 5-5-1-4 3-4-3-5 1-2-5-5-2 1-5-3-4 3-4-1-5 5-2 2-5 5 1z"/><path ${R} d="m17 21 5 5 9-9"/><path ${R} d="m15 34-4 10 6-3 3 5 3-10M33 34l4 10-6-3-3 5-3-10"/>`,
     barras: `<path ${W} d="M5 42h38M37 42V8h-8v34"/><path ${R} d="M9 42V32h7v10M19 42V22h7v20"/>`,
     cadastro: `<path ${R} d="M24 5 5 14l19 9 19-9z"/><path ${W} d="m5 23 19 9 19-9M5 32l19 9 19-9"/>`,
+    planta: `<rect ${W} x="4" y="4" width="40" height="40" rx="3"/><path ${W} d="M4 20h14v24M18 28h26M30 4v12"/><rect ${R} x="24" y="34" width="6" height="4"/><rect ${R} x="34" y="34" width="6" height="4"/><rect ${R} x="8" y="9" width="6" height="4"/><path ${R} d="M11 24v-8" stroke-dasharray="2 2"/>`,
     banco: `<ellipse ${W} cx="20" cy="10" rx="14" ry="5"/><path ${W} d="M6 10v24c0 2.8 6.3 5 14 5M34 10v9M6 18c0 2.8 6.3 5 14 5s14-2.2 14-5M6 26c0 2.8 6.3 5 14 5"/><circle ${R} cx="35" cy="34" r="9"/><path ${R} d="M38 30.5c-.8-1-2-1.5-3.3-1.5-1.9 0-3.2 1-3.2 2.4 0 3.3 6.7 1.7 6.7 5 0 1.5-1.4 2.6-3.4 2.6-1.4 0-2.7-.6-3.5-1.6M35 27v2M35 39v2"/>`
   };
   const fac = (modo, foco) => () => { try { if (typeof setFactionDashboardMode === 'function') setFactionDashboardMode(modo); if (STATE.factionKanbanFocus !== foco) { STATE.factionKanbanFocus = foco; renderExternalDashboard(); } } catch (e) {} };
@@ -29,6 +30,7 @@
     { id: 'ppcp', nome: 'PPCP', ico: 'calendario', abas: [['dashboard', 'Visão geral e TV'], ['estoque-pa', 'Estoque PA']] },
     { id: 'qualidade', nome: 'Qualidade', ico: 'selo', abas: [['dash-faccoes', 'Inspeção das facções', fac('OPERACIONAL', 'INSPECAO')], ['dash-faccoes', 'Remessas concluídas', () => { fac('OPERACIONAL', 'INSPECAO')(); try { openHistoricoRemessas(); } catch (e) {} }]] },
     { id: 'relatorios', nome: 'Relatórios', ico: 'barras', abas: [['dash-faccoes', 'Facções', fac('ANALITICO', '')], ['dash-interna', 'Produção por minutos', int('MINUTOS')], ['dash-interna', 'Eficiência por marcação', int('EFICIENCIA')]] },
+    { id: 'layout', nome: 'Layout da fábrica', ico: 'planta', abas: [['layout', 'Planta baixa']] },
     { id: 'cadastros', nome: 'Cadastros', ico: 'cadastro', abas: [['cadastros', 'Cadastros']] },
     { id: 'financeiro', nome: 'Financeiro', ico: 'banco', abas: [['financeiro', 'Financeiro facções']] }
   ];

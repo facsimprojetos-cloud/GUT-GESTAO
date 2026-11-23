@@ -969,6 +969,65 @@ html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] b{color:#8a99ad}html.u
 html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] .tv-n{background:#eef2f7;color:#8a99ad}html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] em{color:#a3b0c0!important}
 @media (prefers-reduced-motion:reduce){html.ui .tv-launch-btn:hover{transform:none}}
 </style>
+<style id="gut-layout-431">
+/* v4.31 — Layout da fábrica (planta baixa) */
+#view-layout .page-head p{margin:4px 0 0;color:var(--muted)}
+.lay-bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;padding:12px 14px;margin-bottom:12px}
+.lay-f{display:flex;flex-direction:column;gap:4px;min-width:0}.lay-f span{font-size:11.5px;font-weight:700;color:var(--muted)}
+.lay-f input,.lay-f select{height:36px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text);font:inherit;font-size:14px}
+.lay-bar .lay-f input#layNome{width:180px}.lay-n input,.lay-n select{width:96px}
+.lay-area{font-size:13px;color:var(--muted);padding-bottom:9px}.lay-area b{color:var(--text)}
+.lay-grow{flex:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;color:var(--text);font:700 13px inherit;font-family:inherit;padding:8px 12px;cursor:pointer;border-right:1px solid var(--line)}.seg button:last-child{border-right:0}
+.seg button.active{background:#16171b;color:#fff;box-shadow:inset 0 -2px 0 #e11d2a}
+html.ui[data-theme="dark"] .seg button.active{background:#e11d2a}
+.lay-status{font-size:12.5px;font-weight:700;padding:7px 10px;border-radius:9px;align-self:center}.lay-status.ok{color:#12a565;background:rgba(18,165,101,.1)}.lay-status.pend{color:#b7791f;background:rgba(214,158,46,.14)}
+.lay-body{display:grid;grid-template-columns:240px minmax(0,1fr) 270px;gap:12px;align-items:start}
+.lay-side{padding:12px;display:flex;flex-direction:column;gap:7px;max-height:calc(100vh - 230px);overflow:auto;position:sticky;top:90px}
+.lay-h{font-size:12px;font-weight:800;color:var(--muted);margin:8px 0 2px}.lay-h:first-child{margin-top:0}
+.lay-pal{display:flex;align-items:center;gap:10px;text-align:left;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);cursor:grab;font:inherit}
+.lay-pal:hover{border-color:#e11d2a}.lay-pal span{display:flex;flex-direction:column;min-width:0;flex:1}.lay-pal b{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lay-pal small{font-size:11.5px;color:var(--muted)}.lay-pal em{font-style:normal;color:#12a565;font-weight:800}
+.lay-dot{width:14px;height:14px;border-radius:4px;flex:0 0 14px;display:inline-block;border:1.5px solid rgba(0,0,0,.25)}
+.lay-dot.idle{background:#cfd3da}.lay-dot.ok{background:#2ecc71}.lay-dot.high{background:#f5b301}.lay-dot.over{background:#e11d2a}
+.lay-dot.blk{background:#e9eaee}.lay-dot.t-corredor{background:#fff7d6}.lay-dot.t-parede{background:#4b4f58}.lay-dot.t-estoque{background:#dbeafe}.lay-dot.t-mesa{background:#efe4d4}.lay-dot.t-area{background:repeating-linear-gradient(45deg,#e9eaee 0 3px,#fff 3px 6px)}
+.lay-legend{display:flex;flex-direction:column;gap:5px;font-size:12.5px;margin-top:6px}.lay-legend span{display:flex;align-items:center;gap:8px}.lay-legend .hint{font-size:11.5px;margin:4px 0 0}
+.lay-canvas{padding:10px;overflow:auto;position:relative;min-height:420px;max-height:calc(100vh - 230px)}
+.lay-canvas svg{display:block;margin:0 auto;touch-action:none;user-select:none;font-family:'DM Sans',Inter,sans-serif}
+.lay-hint{position:sticky;left:10px;bottom:0;display:inline-block;font-size:12.5px;font-weight:700;color:#e11d2a}
+.lay-floor{fill:#fbfbfc}.lay-grid{fill:none;stroke:#e3e5ea;stroke-width:1;vector-effect:non-scaling-stroke}.lay-grid1{fill:none;stroke:#c9ccd3;stroke-width:1;vector-effect:non-scaling-stroke}
+.lay-wall{fill:none;stroke:#16171b;stroke-width:3;vector-effect:non-scaling-stroke}.lay-rul{fill:#7a7f8a;font-weight:700}
+.lay-it{cursor:grab}.lay-it:active{cursor:grabbing}
+.lay-body-r{stroke:#5b606b;stroke-width:1.2;vector-effect:non-scaling-stroke}
+.lay-it.maq .lay-body-r{fill:#eceef2}.lay-it.maq.ok .lay-body-r{fill:#d8f5e5;stroke:#1f9d5a}.lay-it.maq.high .lay-body-r{fill:#fff1c7;stroke:#c98f00}.lay-it.maq.over .lay-body-r{fill:#ffd9db;stroke:#c8101c}
+.lay-bar-bg{fill:rgba(0,0,0,.1)}.lay-bar{fill:#9aa0aa}.lay-it.ok .lay-bar{fill:#1f9d5a}.lay-it.high .lay-bar{fill:#d99a00}.lay-it.over .lay-bar{fill:#e11d2a}
+.lay-it.blk .lay-body-r{fill:#eef0f3;stroke:#9aa0aa}.lay-it.t-corredor .lay-body-r{fill:#fff8dc;stroke:#e0c25a;stroke-dasharray:6 4}.lay-it.t-parede .lay-body-r{fill:#4b4f58;stroke:#2b2e34}.lay-it.t-parede .lay-tx{fill:#fff}
+.lay-it.t-estoque .lay-body-r{fill:#e3eefc;stroke:#6b8fc7}.lay-it.t-mesa .lay-body-r{fill:#f3eadc;stroke:#a88a5c}.lay-it.t-area .lay-body-r{fill:url(#layHatch);stroke:#9aa0aa;stroke-dasharray:5 4}
+.lay-hatch{stroke:#d5d8de;stroke-width:1;vector-effect:non-scaling-stroke}
+.lay-tx{fill:#1c1e23;font-weight:700;pointer-events:none}.lay-pct{fill:#1c1e23;font-weight:800;pointer-events:none}
+.lay-it.sel .lay-body-r{stroke:#e11d2a;stroke-width:2.6}.lay-it.cota-a .lay-body-r{stroke:#2563eb;stroke-width:2.6;stroke-dasharray:4 3}
+.lay-cota-mode .lay-it{cursor:crosshair}
+.lay-cl{stroke:#2563eb;stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-dasharray:6 4}.lay-chit{stroke:transparent;stroke-width:14;vector-effect:non-scaling-stroke;cursor:pointer}
+.lay-tickm{stroke:#2563eb;stroke-width:1.6}.lay-cp{fill:#2563eb}.lay-cbox{fill:#fff;stroke:#2563eb;stroke-width:1;vector-effect:non-scaling-stroke}.lay-ctx{fill:#1d4ed8;font-weight:800;pointer-events:none}
+.lay-cota-g.sel .lay-cl{stroke:#e11d2a}.lay-cota-g.sel .lay-cbox{stroke:#e11d2a}.lay-cota-g.sel .lay-ctx{fill:#c8101c}
+.lay-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.lay-2 input{width:100%}
+.lay-occ{display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:10px;background:#eceef2;font-size:12px}.lay-occ b{font-size:20px}
+.lay-occ.ok{background:#d8f5e5}.lay-occ.high{background:#fff1c7}.lay-occ.over{background:#ffd9db}
+.lay-acts{display:flex;flex-wrap:wrap;gap:6px}.lay-del{color:#c8101c!important}
+.lay-help{margin:0;padding-left:18px;font-size:12.5px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.lay-cotas{display:flex;flex-direction:column;gap:5px}
+.lay-cota{display:grid;grid-template-columns:1fr auto auto;gap:2px 8px;align-items:center;padding:7px 9px;border:1px solid var(--line);border-radius:9px;cursor:pointer;font-size:12.5px}
+.lay-cota span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lay-cota b{color:#1d4ed8}.lay-cota small{grid-column:1/3;color:var(--muted)}.lay-cota .x{grid-row:1/3;grid-column:3;border:0;background:none;font-size:18px;color:var(--muted);cursor:pointer}
+.lay-cota.on{border-color:#e11d2a}
+.lay-tot{display:flex;flex-direction:column;padding:9px 10px;border-radius:10px;background:#16171b;color:#fff}.lay-tot span{font-size:11.5px;color:#a1a5ae}.lay-tot b{font-size:20px}.lay-tot small{color:#a1a5ae;font-size:11.5px}
+html.ui[data-theme="dark"] .lay-floor{fill:#121316}html.ui[data-theme="dark"] .lay-grid{stroke:#1f2026}html.ui[data-theme="dark"] .lay-grid1{stroke:#2c2e35}html.ui[data-theme="dark"] .lay-wall{stroke:#d4d6db}
+html.ui[data-theme="dark"] .lay-it.maq .lay-body-r{fill:#26272d}html.ui[data-theme="dark"] .lay-it.maq.ok .lay-body-r{fill:#123824;stroke:#2ee883}html.ui[data-theme="dark"] .lay-it.maq.high .lay-body-r{fill:#3a2f0a;stroke:#f5d33f}html.ui[data-theme="dark"] .lay-it.maq.over .lay-body-r{fill:#3a1418;stroke:#ff5a60}
+html.ui[data-theme="dark"] .lay-tx,html.ui[data-theme="dark"] .lay-pct{fill:#eceef2}html.ui[data-theme="dark"] .lay-it.blk .lay-body-r{fill:#1c1d22;stroke:#4b4f58}html.ui[data-theme="dark"] .lay-it.t-corredor .lay-body-r{fill:#2a260f}
+html.ui[data-theme="dark"] .lay-it.t-estoque .lay-body-r{fill:#14233a}html.ui[data-theme="dark"] .lay-it.t-mesa .lay-body-r{fill:#2c241a}html.ui[data-theme="dark"] .lay-cbox{fill:#16171b}html.ui[data-theme="dark"] .lay-ctx{fill:#8fb4ff}
+html.ui[data-theme="dark"] .lay-occ{background:#202127}html.ui[data-theme="dark"] .lay-occ.ok{background:#123824}html.ui[data-theme="dark"] .lay-occ.high{background:#3a2f0a}html.ui[data-theme="dark"] .lay-occ.over{background:#3a1418}html.ui[data-theme="dark"] .lay-tot{background:#24252b}
+@media(max-width:1200px){.lay-body{grid-template-columns:200px minmax(0,1fr)}.lay-body>#layProp{grid-column:1/-1;position:static;max-height:none}}
+@media(max-width:820px){.lay-body{grid-template-columns:1fr}.lay-side{position:static;max-height:none}}
+</style>
 <style id="gut-home-430">
 /* v4.30 — menu principal (tela de entrada) e modo módulo */
 #homeMenu{display:none}
@@ -990,7 +1049,7 @@ body.home-open{overflow:hidden}
 .hm-ppcp{display:flex;align-items:center;gap:26px;margin:22px 0 30px;width:min(760px,90%)}
 .hm-ppcp i{flex:1;height:2px;background:linear-gradient(90deg,transparent,#e11d2a)}.hm-ppcp i:last-child{background:linear-gradient(90deg,#e11d2a,transparent)}
 .hm-ppcp h1{margin:0;font:800 46px/1 Manrope,'DM Sans',sans-serif;letter-spacing:1px;color:#f2f3f5}
-.hm-grid{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.hm-grid{width:100%;display:flex;flex-wrap:wrap;justify-content:center;gap:16px}.hm-grid>.hm-tile{flex:0 0 calc((100% - 48px)/4)}
 .hm-tile{display:flex;align-items:center;gap:22px;min-height:132px;padding:22px 26px;border-radius:18px;cursor:pointer;text-align:left;color:#f2f3f5;
   background:linear-gradient(160deg,#25262b 0,#1a1b1f 55%,#141518);border:1px solid #2e3036;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 16px 30px -18px rgba(0,0,0,.9);transition:border-color .18s,box-shadow .18s,transform .18s}
 .hm-tile:hover,.hm-tile:focus-visible{border-color:#e11d2a;outline:none;transform:translateY(-2px);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(225,29,42,.35),0 0 26px -6px rgba(225,29,42,.55),0 18px 34px -18px rgba(0,0,0,.9)}
@@ -1000,8 +1059,8 @@ body.home-open{overflow:hidden}
 .hm-tile:hover .hm-ico .r{filter:drop-shadow(0 0 5px rgba(255,42,54,.8))}
 .hm-name{font:700 24px/1.2 Manrope,'DM Sans',sans-serif;letter-spacing:-.2px}
 .hm-vazio{grid-column:1/-1;text-align:center;color:#a1a5ae}
-@media(max-width:1100px){.hm-grid{grid-template-columns:repeat(3,1fr)}.hm-name{font-size:20px}.hm-word b{font-size:58px}}
-@media(max-width:780px){.hm-grid{grid-template-columns:repeat(2,1fr);gap:10px}.hm-tile{min-height:96px;gap:12px;padding:14px}.hm-ico{padding-right:12px}.hm-ico svg{width:40px;height:40px}.hm-name{font-size:16px}.hm-word b{font-size:44px}.hm-ppcp h1{font-size:32px}.hm-mark{width:54px;height:48px}}
+@media(max-width:1100px){.hm-grid>.hm-tile{flex-basis:calc((100% - 32px)/3)}.hm-name{font-size:20px}.hm-word b{font-size:58px}}
+@media(max-width:780px){.hm-grid{gap:10px}.hm-grid>.hm-tile{flex-basis:calc((100% - 10px)/2)}.hm-tile{min-height:96px;gap:12px;padding:14px}.hm-ico{padding-right:12px}.hm-ico svg{width:40px;height:40px}.hm-name{font-size:16px}.hm-word b{font-size:44px}.hm-ppcp h1{font-size:32px}.hm-mark{width:54px;height:48px}}
 @media(prefers-reduced-motion:reduce){.hm-tile{transition:none}.hm-tile:hover{transform:none}}
 /* modo módulo: sem menu lateral; botão Menu e abas do módulo no topo */
 .home-back,.mod-tabs{display:none}
@@ -1034,7 +1093,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.30.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.31.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -1046,6 +1105,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
       <button data-view="volumes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3.5 7.5v9L12 21l8.5-4.5v-9z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></svg></span><span>Lotes / volumes</span></button>
       <button data-view="estoque-pa"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3 3 6l2 4 2-1v12h10V9l2 1 2-4-5-3a4 4 0 0 1-8 0z"/></svg></span><span>Estoque PA</span></button>
       <button data-view="interna"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V10l6 4V10l6 4V5h6v16z"/><path d="M7 17h2M12 17h2M17 17h1"/></svg></span><span>Produção interna</span></button>
+      <button data-view="layout"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 10h7v11M10 14h11M15 3v7"/></svg></span><span>Layout da fábrica</span></button>
       <button data-view="faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span><span>Facções</span></button>
       <button data-view="romaneios"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg></span><span>Romaneios</span></button>
       <button data-view="financeiro"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg></span><span>Financeiro facções</span></button>
@@ -1428,6 +1488,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
         <div class="table-wrap scan-collection"><table><thead><tr><th>#</th><th>Cupom</th><th>Produto</th><th>Processo</th><th>Qtd.</th><th>Minutos</th><th></th></tr></thead><tbody id="scanListRows"><tr><td colspan="7" class="empty">Nenhum QR coletado.</td></tr></tbody></table></div>
       </section>
 
+      <section class="view" id="view-layout"><div id="layoutRoot"></div></section>
       <section class="view" id="view-cadastros">
         <div class="page-head"><div><h3>Cadastros</h3><p>Cadastro manual ou importação rápida por CSV usando modelos prontos.</p></div></div>
         <div class="card">
@@ -1536,7 +1597,7 @@ function showView(v){
   uiGuard('sair do foco',()=>{if(document.body.classList.contains('dashboard-focus')&&STATE.dashboardFocusView&&STATE.dashboardFocusView!==v)exitDashboardFocus(false)});
   STATE.view=v;document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));target.classList.add('active');document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===v));
   flushLazyRender(v);
-  const titles={dashboard:'Dashboard','dash-faccoes':'Dashboard facções','dash-interna':'Dashboard produção interna',compras:'Compras',materiais:'Estoque de materiais',corte:'Novo corte',estoque:'Estoque de corte',volumes:'Lotes / volumes','estoque-pa':'Estoque PA',interna:'Produção interna',faccoes:'Facções',romaneios:'Romaneios',bipagem:'Bipagem',cadastros:'Cadastros',financeiro:'Financeiro facções'};if($('topTitle'))$('topTitle').textContent=titles[v]||'GUT PPCP';if(window.gutHomeSync)gutHomeSync(v);
+  const titles={dashboard:'Dashboard','dash-faccoes':'Dashboard facções','dash-interna':'Dashboard produção interna',compras:'Compras',materiais:'Estoque de materiais',corte:'Novo corte',estoque:'Estoque de corte',volumes:'Lotes / volumes','estoque-pa':'Estoque PA',interna:'Produção interna',faccoes:'Facções',romaneios:'Romaneios',bipagem:'Bipagem',cadastros:'Cadastros',financeiro:'Financeiro facções',layout:'Layout da fábrica'};if($('topTitle'))$('topTitle').textContent=titles[v]||'GUT PPCP';if(window.gutHomeSync)gutHomeSync(v);if(v==='layout'&&window.gutLayoutAbrir)gutLayoutAbrir();
   if(!operationalReady&&v!=='dashboard')ensureOperationalData().catch(e=>toast('Não foi possível atualizar os dados operacionais. A navegação continua disponível. '+e.message,true));
   if(['dash-interna','interna','romaneios'].includes(v))ensureInternalRemessas().catch(e=>console.warn('Remessas internas:',e));
   if(v==='estoque'){STATE.expandedStockLots.clear();uiGuard('estoque de corte',()=>renderStock());}
@@ -1631,7 +1692,7 @@ function gutBaseSistema(){const p=location.pathname,i=p.indexOf('/sistema/');ret
 function gutSlugDaUrl(){const q=new URLSearchParams(location.search).get('e');if(q)return q.trim().toLowerCase();
   const p=location.pathname,i=p.indexOf('/sistema/');if(i<0)return '';const s=decodeURIComponent(p.slice(i+9).split('/')[0]||'');return /^(index\.html?)?$/i.test(s)?'':s.trim().toLowerCase()}
 // módulos do app de gestão que cada tela usa (sem acesso ao módulo = menu escondido; "ver" mostra, e o servidor não deixa alterar)
-const GUT_VIEW_MODULO={'dash-faccoes':'faccoes','dash-interna':'producao',compras:'estoque',materiais:'estoque',corte:'corte',estoque:'corte',volumes:'corte','estoque-pa':'producao',interna:'producao',faccoes:'faccoes',romaneios:'faccoes',financeiro:'financeiro',bipagem:'producao',cadastros:'cadastros'};
+const GUT_VIEW_MODULO={layout:'producao','dash-faccoes':'faccoes','dash-interna':'producao',compras:'estoque',materiais:'estoque',corte:'corte',estoque:'corte',volumes:'corte','estoque-pa':'producao',interna:'producao',faccoes:'faccoes',romaneios:'faccoes',financeiro:'financeiro',bipagem:'producao',cadastros:'cadastros'};
 function gutPodeVer(view){const e=GUT_EMPRESA;if(!e||!GUT_WEB)return true;if(['DONO','ADMIN'].includes(String(e.papel||'').toUpperCase())||(GUT_EU&&GUT_EU.admin))return true;
   const m=GUT_VIEW_MODULO[view];if(!m)return true;const n=String((e.permissoes||{})[m]||'').toLowerCase();return n==='ver'||n==='editar'}
 function gutAplicarPermissoes(){document.querySelectorAll('#nav [data-view]').forEach(b=>{b.style.display=gutPodeVer(b.dataset.view)?'':'none'})}
@@ -4953,6 +5014,7 @@ function pageRows(rows,id,render,size=100){
 }
 
 </script>
-<script src="menu-principal.js?v=4.30.0"></script>
+<script src="menu-principal.js?v=4.31.0"></script>
+<script src="layout.js?v=4.31.0"></script>
 </body>
 </html>
