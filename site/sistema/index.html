@@ -1083,6 +1083,24 @@ html.ui[data-theme="dark"] .lay-optx{fill:#ffd0a8}
 .lay-sug-cmp i{font-style:normal;font-size:22px;color:var(--muted)}.lay-sug-cmp .novo b{color:#e11d2a}.lay-sug-cmp .ganho{padding:6px 12px;border-radius:10px;background:rgba(120,125,135,.1)}.lay-sug-cmp .ganho.bom{background:rgba(18,165,101,.12)}.lay-sug-cmp .ganho.bom b{color:#12a565}
 .lay-roc summary{cursor:pointer;font-weight:700;font-size:13px}.lay-mx.roc td{min-width:26px;width:26px;height:24px}.lay-mx.roc td.on{background:#16171b;color:#fff;font-weight:800}html.ui[data-theme="dark"] .lay-mx.roc td.on{background:#e11d2a}
 .lay-mx.roc tbody th{max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.lay-wiz{position:fixed;inset:0;z-index:1200;background:rgba(10,11,14,.55);display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto}.lay-wiz.show{display:flex}
+.wz-card{width:100%;max-width:760px;background:var(--surface);color:var(--text);border-radius:20px;padding:22px 24px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5);border:1px solid var(--line);display:flex;flex-direction:column;gap:16px}
+.wz-head{display:flex;gap:12px;align-items:flex-start}.wz-head>div{flex:1}.wz-head h3{margin:0;font-size:22px}.wz-head p{margin:6px 0 0;color:var(--muted);font-size:13.5px}
+.wz-head .cr-x{border:0;background:none;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}
+.wz-step{display:grid;grid-template-columns:32px 1fr;gap:12px}.wz-step>div>b{display:block;font-size:15px;margin-bottom:8px}
+.wz-n{width:28px;height:28px;border-radius:50%;background:#16171b;color:#fff;display:grid;place-items:center;font-weight:800;font-size:14px}html.ui[data-theme="dark"] .wz-n{background:#e11d2a}
+.wz-ops{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.wz-op{display:flex;flex-direction:column;gap:3px;text-align:left;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--text);cursor:pointer;font:inherit}
+.wz-op b{font-size:14px}.wz-op span{font-size:12px;color:var(--muted)}.wz-op:hover{border-color:#e11d2a}
+.wz-op.on{border-color:#e11d2a;box-shadow:0 0 0 3px rgba(225,29,42,.14);background:linear-gradient(180deg,rgba(225,29,42,.06),transparent)}
+.wz-row{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}.wz-row select{min-width:260px}
+.wz-chk{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13.5px;cursor:pointer}.wz-chk input{width:18px;height:18px;accent-color:#e11d2a;margin-top:1px}.wz-chk small{color:var(--muted)}
+.wz-foot{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-top:6px;border-top:1px solid var(--line)}.wz-foot .muted{font-size:12.5px}
+.lay-vazio{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;max-width:360px;padding:20px 22px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 20px 40px -20px rgba(0,0,0,.35)}
+.lay-vazio[hidden]{display:none}.lay-vazio b{font-size:17px}.lay-vazio span{font-size:13px;color:var(--muted)}
+.lay-cel{fill:rgba(225,29,42,.035);stroke:rgba(225,29,42,.45);stroke-width:1.2;stroke-dasharray:6 4;vector-effect:non-scaling-stroke;pointer-events:none}.lay-celtx{fill:#c8101c;font-weight:800;pointer-events:none}
+.lay-it.ponta .lay-body-r{stroke:#16171b;stroke-width:2.2}html.ui[data-theme="dark"] .lay-it.ponta .lay-body-r{stroke:#d4d6db}
+.lay-it.maq.posto .lay-body-r{stroke-width:2}
 .lay-float{display:none}
 #view-layout.lay-so .lay-bar,#view-layout.lay-so .lay-side,#view-layout.lay-so .lay-hint{display:none!important}
 #view-layout.lay-so{padding:0}
@@ -1182,7 +1200,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.35.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.36.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -5105,6 +5123,6 @@ function pageRows(rows,id,render,size=100){
 </script>
 <script src="menu-principal.js?v=4.31.1"></script>
 <script src="crachas.js?v=4.33.0"></script>
-<script src="layout.js?v=4.35.0"></script>
+<script src="layout.js?v=4.36.0"></script>
 </body>
 </html>

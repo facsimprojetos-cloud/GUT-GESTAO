@@ -131,6 +131,11 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     }, cr.id);
     ok(bip.maq && bip.perto && bip.dist < 2.2 && !bip.sobre, 'bipar a máquina e depois a caixa põe a caixa encostada nela, sem sobrepor: ' + JSON.stringify(bip));
     ok(bip.op && bip.label, 'bipar o crachá põe o funcionário no posto da máquina');
+    const posto = await page.evaluate((opId) => { const rows = STATE.internalBoard.rows, d = gutLayout.estado().atual.dados, m = d.itens.find(i => i.op === opId);
+      const op = rows.flatMap(v => v.OPERACOES || []).find(o => !/CONCLU/.test(String(o.STATUS_CUPOM)) && Number(o.MINUTOS_PADRAO_TOTAL) > 0); if (!op || !m) return { sem: true };
+      op.ID_OPERADOR_ALOCADO = opId; op.ID_MAQUINA = m.maq; gutLayout.estado().sel = m.id; gutLayout.prop('w', String(m.w).replace('.', ','));
+      const t = document.getElementById('layProp').innerText; return { t: (t.match(/carga do posto hoje[^\n]*/) || [''])[0], min: Math.round(Number(op.MINUTOS_PADRAO_TOTAL)) }; }, cr.id);
+    ok(!posto.sem && posto.t.includes(posto.min + ' de'), 'máquina com costureira no posto mostra a carga dos processos alocados a ela: ' + JSON.stringify(posto));
     ok(/não é uma máquina numerada nem uma caixa/.test(bip.msg), 'código desconhecido avisa');
     // análise de fluxo: matriz De-Para × distâncias
     const an = await page.evaluate(() => {
@@ -160,17 +165,29 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       const sobre = maqs.some((a, i) => maqs.some((b, j) => i < j && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
       const dentro = maqs.every(i => i.x >= 0 && i.y >= 0 && i.x + i.w <= d.largura && i.y + i.h <= d.comprimento);
       const r = gutLayout.analise();
-      return { novo: L.lista.length === antes + 1 && L.atual !== orig && /^Sugestão/.test(L.atual.nome), n: maqs.length, esperado, sobre, dentro, card: !!g, porPeca: r.porPeca, intacto: JSON.stringify(orig.dados.itens) === origItens, txt: (g && g.innerText || '').slice(0, 160) };
+      return { novo: L.lista.length === antes + 1 && L.atual !== orig && /^Planta sugerida/.test(L.atual.nome), n: maqs.length, esperado, sobre, dentro, card: !!g, porPeca: r.porPeca, intacto: JSON.stringify(orig.dados.itens) === origItens, txt: (g && g.innerText || '').slice(0, 160) };
     });
     ok(sg.novo && sg.n >= sg.esperado && !sg.sobre && sg.dentro && sg.card && sg.intacto, 'sugestão cria um ambiente novo com todas as máquinas, sem sobrepor, sem mexer no original: ' + JSON.stringify(sg));
     const melhor = await page.evaluate(() => { const t = document.querySelector('.lay-sug').innerText; const m = t.match(/ROC: ([\d,]+) m\/pç → depois das trocas: ([\d,]+) m\/pç/); return m ? [Number(m[1].replace(',', '.')), Number(m[2].replace(',', '.'))] : null; });
     ok(melhor && melhor[1] <= melhor[0], 'as trocas nunca pioram o arranjo inicial: ' + JSON.stringify(melhor));
     if (process.env.SHOT) { await page.evaluate(() => gutLayout.zoom(0)); await page.waitForTimeout(400); await page.screenshot({ path: path.join(process.env.SHOT, 'sugestao.png') }); await page.evaluate(() => document.getElementById('layAn').scrollIntoView()); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'sugestao-quadro.png') }); }
     await page.evaluate(() => gutLayout.trocar(0)); await page.waitForTimeout(500);
+    // assistente: montar a planta pela produção, com corte e expedição e tamanho ideal
+    await page.evaluate(() => gutLayout.wizard()); await page.waitForTimeout(300);
+    const wz1 = await page.evaluate(() => ({ aberto: document.getElementById('layWiz').classList.contains('show'), ops: document.querySelectorAll('.wz-op').length }));
+    ok(wz1.aberto && wz1.ops >= 8, 'assistente "Montar planta" abre com as escolhas (produção, formato, espaço)');
+    await page.click('.wz-op:has-text("Calcular o tamanho ideal")'); await page.click('.wz-op:has-text("Automático")');
+    await page.click('#wzGo'); await page.waitForTimeout(4500);
+    const wz2 = await page.evaluate(() => { const L = gutLayout.estado(), d = L.atual.dados, r = gutLayout.analise();
+      const its = d.itens, novo = x => x.tipo === 'MAQ' || x.papel, sobre = its.some((a, i) => its.some((b, j) => i < j && (novo(a) || novo(b)) && a.tipo !== 'AREA' && b.tipo !== 'AREA' && a.tipo !== 'CORREDOR' && b.tipo !== 'CORREDOR' && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
+      return { fechou: !document.getElementById('layWiz').classList.contains('show'), nome: L.atual.nome, corte: its.some(i => i.papel === 'CORTE'), exped: its.some(i => i.papel === 'EXPED'), maqs: its.filter(i => i.tipo === 'MAQ').length, sobre, temCorte: r.tipos.includes('@CORTE') && r.tipos.includes('@EXPED'), W: d.largura, H: d.comprimento, card: !!document.querySelector('.lay-sug') }; });
+    ok(wz2.fechou && /^Planta sugerida/.test(wz2.nome) && wz2.corte && wz2.exped && !wz2.sobre && wz2.temCorte && wz2.card, 'monta a planta com corte e expedição no fluxo, sem sobrepor: ' + JSON.stringify(wz2));
+    if (process.env.SHOT) { await page.evaluate(() => { window.scrollTo(0, 0); gutLayout.zoom(0); }); await page.waitForTimeout(400); await page.screenshot({ path: path.join(process.env.SHOT, 'planta-montada.png') }); await page.evaluate(() => gutLayout.wizard()); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'assistente.png') }); await page.evaluate(() => document.getElementById('layWiz').classList.remove('show')); }
+    await page.evaluate(() => gutLayout.trocar(0)); await page.waitForTimeout(500);
     if (process.env.SHOT) { await page.evaluate(() => { document.getElementById('layAn').scrollIntoView(); }); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-analise.png'), fullPage: false }); await page.evaluate(() => window.scrollTo(0, 0)); }
     if (process.env.SHOT) { await page.evaluate(() => gutLayout.zoom(0)); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-bipagem.png') }); }
     await page.reload(); await page.waitForTimeout(3500); await page.evaluate(() => showView('layout')); await page.waitForTimeout(2500);
-    const vol = await page.evaluate(() => { const d = gutLayout.estado().atual.dados; return { n: d.itens.length, c: d.cotas.length, w: d.largura, id: gutLayout.estado().atual.id }; });
+    const vol = await page.evaluate(() => { gutLayout.trocarNome('Salão de costura'); const d = gutLayout.estado().atual.dados; return { n: d.itens.length, c: d.cotas.length, w: d.largura, id: gutLayout.estado().atual.id }; });
     ok(vol.n >= 6 && vol.c === 1 && vol.w === 15 && /^LAY-/.test(vol.id), 'ao reabrir, a planta volta como foi salva: ' + JSON.stringify(vol));
     console.log('erros', errors.slice(0, 5)); console.log(`${pass}/${pass + fail}`); if (fail) process.exitCode = 1;
   } finally { if (browser) await browser.close(); pg.descer(true); }

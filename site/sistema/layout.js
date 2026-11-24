@@ -62,6 +62,19 @@
     try { if (typeof computeMachineLoad === 'function') computeMachineLoad().forEach(x => m.set(String(x.id), x)); } catch (e) {}
     return m;
   }
+  /* carga da máquina física pelo posto: processos alocados (ou em marcação) à costureira ligada à máquina, no tipo daquela máquina */
+  function postoCarga(it) {
+    const rows = (typeof STATE !== 'undefined' && STATE.internalBoard && STATE.internalBoard.rows) || [], o = ocupacao().get(it.maq || '') || {}, cap = Number(o.day) || 420;
+    let load = 0, ops = 0, feitoHoje = 0; const hoje = new Date().toISOString().slice(0, 10);
+    rows.forEach(v => (v.OPERACOES || []).forEach(op => {
+      const quem = String(op.ID_OPERADOR_MARCACAO || op.ID_OPERADOR_ALOCADO || op.ID_OPERADOR_BIPAGEM || ''); if (quem !== String(it.op)) return;
+      const tipo = String(op.ID_MAQUINA || ''); if (tipo && tipo !== String(it.maq)) return;
+      const feito = /CONCLU|FINAL/.test(String(op.STATUS_CUPOM || '')), min = Number(op.MINUTOS_PADRAO_TOTAL) || 0;
+      if (feito) { const fim = String(op.DATA_HORA_FIM_MARCACAO || op.DATA_HORA_BIPAGEM || op.ATUALIZADO_EM || ''); if (fim.slice(0, 10) === hoje) feitoHoje += min; } else { load += min; ops++; }
+    }));
+    const agora = new Date(), ini = new Date(agora); ini.setHours(7, 0, 0, 0); const decorrido = Math.max(0, Math.min(cap, (agora - ini) / 60000));
+    return { load, ops, cap, pct: cap ? load / cap * 100 : 0, feitoHoje, efic: decorrido > 30 && feitoHoje ? feitoHoje / decorrido * 100 : null };
+  }
   const classe = p => (!isFinite(p) || p > 100) ? 'over' : p >= 80 ? 'high' : p > 0 ? 'ok' : 'idle';
   function maquinas() {
     return (typeof STATE !== 'undefined' && STATE.cad && STATE.cad.maquinas || [])
@@ -102,6 +115,7 @@
     root.innerHTML = `
     <div class="page-head"><div><h3>Layout da fábrica</h3><p>Monte a planta baixa em metros, posicione as máquinas e meça as distâncias. A cor de cada máquina é a ocupação de hoje.</p></div></div>
     <div class="card lay-bar">
+      <button class="btn btn-primary btn-sm lay-wiz-btn" type="button" onclick="gutLayout.wizard()" title="O sistema monta a planta com as suas máquinas e o roteiro dos produtos">🏭 Montar planta</button>
       <label class="lay-f"><span>Ambiente</span><select id="layAmb" onchange="gutLayout.trocar(this.value)"></select></label>
       <button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.novo()">+ Novo ambiente</button>
       <label class="lay-f"><span>Nome</span><input id="layNome" maxlength="60" oninput="gutLayout.campo('nome',this.value)"></label>
@@ -124,7 +138,7 @@
     </div>
     <div class="lay-body">
       <aside class="card lay-side" id="layPal"></aside>
-      <div class="card lay-canvas" id="layWrap"><svg id="laySvg" xmlns="http://www.w3.org/2000/svg"></svg><div class="lay-hint" id="layHint"></div><div class="lay-float"><button type="button" onclick="gutLayout.zoom(-1)" title="Diminuir">−</button><button type="button" onclick="gutLayout.zoom(0)" title="Caber na tela">Ajustar</button><button type="button" onclick="gutLayout.zoom(1)" title="Aumentar">+</button><button type="button" class="sai" onclick="gutLayout.soPlanta(false)" title="Mostrar os controles (Esc)">✕ Mostrar controles</button></div></div>
+      <div class="card lay-canvas" id="layWrap"><svg id="laySvg" xmlns="http://www.w3.org/2000/svg"></svg><div class="lay-vazio" id="layVazio" hidden><b>Planta vazia</b><span>Monte em um clique a partir das suas máquinas e dos roteiros dos produtos, ou arraste as máquinas da lista.</span><button class="btn btn-primary" type="button" onclick="gutLayout.wizard()">🏭 Montar planta pela produção</button></div><div class="lay-hint" id="layHint"></div><div class="lay-float"><button type="button" onclick="gutLayout.zoom(-1)" title="Diminuir">−</button><button type="button" onclick="gutLayout.zoom(0)" title="Caber na tela">Ajustar</button><button type="button" onclick="gutLayout.zoom(1)" title="Aumentar">+</button><button type="button" class="sai" onclick="gutLayout.soPlanta(false)" title="Mostrar os controles (Esc)">✕ Mostrar controles</button></div></div>
       <aside class="card lay-side" id="layProp"></aside>
     </div>
     <section class="card lay-an" id="layAn"></section>`;
@@ -153,7 +167,7 @@
       <div class="lay-h">Outros itens</div>
       ${BLOCOS.map(b => `<button type="button" class="lay-pal" draggable="true" data-add="${b.tipo}" onclick="gutLayout.adicionar('${b.tipo}')"><i class="lay-dot blk t-${b.tipo.toLowerCase()}"></i><span><b>${esc(b.nome)}</b><small>${fm(b.w)} × ${fm(b.h)} m</small></span></button>`).join('')}
       <div class="lay-legend"><div class="lay-h">Ocupação de hoje</div><span><i class="lay-dot idle"></i>sem carga</span><span><i class="lay-dot ok"></i>até 80%</span><span><i class="lay-dot high"></i>80 a 100%</span><span><i class="lay-dot over"></i>acima de 100%</span>
-      <p class="hint">Carga = minutos padrão ainda não concluídos na produção interna ÷ capacidade do dia do tipo de máquina (igual ao painel Capacidade). Máquinas do mesmo tipo mostram a mesma ocupação.</p></div>`;
+      <p class="hint">Carga = minutos padrão ainda não concluídos na produção interna ÷ capacidade do dia do tipo de máquina (igual ao painel Capacidade). Máquinas do mesmo tipo mostram a mesma ocupação, a não ser que tenham costureira no posto (bipe o crachá na máquina): aí a cor é a carga dos processos alocados a ela.</p></div>`;
     el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('dragstart', e => { L.arr = { tipo: b.dataset.add, maq: b.dataset.maq || b.dataset.vol || '' }; try { e.dataTransfer.setData('text/plain', 'lay'); e.dataTransfer.effectAllowed = 'copy'; } catch (x) {} }));
   }
 
@@ -177,10 +191,12 @@
       ${it.tipo === 'MAQ' ? `<label class="lay-f"><span>Máquina nº (etiqueta QR)</span><select onchange="gutLayout.prop('uni',this.value)"><option value="">— sem número —</option>${unisTipo(it.maq).map(u => { const outro = d.itens.find(x => x.uni === u.id && x.id !== it.id); return `<option value="${esc(u.id)}" ${u.id === it.uni ? 'selected' : ''} ${outro ? 'disabled' : ''}>${esc(u.codigo)}${u.descricao ? ' • ' + esc(u.descricao) : ''}${outro ? ' (já na planta)' : ''}</option>`; }).join('')}</select></label>
       ${unisTipo(it.maq).length ? '' : `<p class="hint">Numere as máquinas em Cadastros › Máquinas › 🏷 Numerar / QR.</p>`}
       ${it.op ? `<div class="lay-opr">👤 ${esc(operadorNome(it.op) || it.op)} <button type="button" class="x" onclick="gutLayout.prop('op','')" title="Tirar o funcionário deste posto">×</button></div>` : ''}` : ''}
+      ${it.tipo !== 'MAQ' ? `<label class="lay-f"><span>Papel no fluxo da peça</span><select onchange="gutLayout.prop('papel',this.value)"><option value="">— nenhum —</option><option value="CORTE" ${it.papel === 'CORTE' ? 'selected' : ''}>Início: corte (a peça sai daqui)</option><option value="EXPED" ${it.papel === 'EXPED' ? 'selected' : ''}>Fim: expedição (a peça termina aqui)</option></select></label>` : ''}
       ${it.tipo === 'MAQ' ? `<label class="lay-f"><span>Tipo de máquina</span><select onchange="gutLayout.prop('maq',this.value)">${mq.map(m => `<option value="${esc(m.id)}" ${m.id === it.maq ? 'selected' : ''}>${esc(m.nome)}</option>`).join('')}</select></label>` : ''}
       <div class="lay-2"><label class="lay-f"><span>Largura (m)</span><input inputmode="decimal" value="${fm(it.w)}" onchange="gutLayout.prop('w',this.value)"></label><label class="lay-f"><span>Profundidade (m)</span><input inputmode="decimal" value="${fm(it.h)}" onchange="gutLayout.prop('h',this.value)"></label></div>
       <div class="lay-2"><label class="lay-f"><span>X (m)</span><input inputmode="decimal" value="${fm(it.x)}" onchange="gutLayout.prop('x',this.value)"></label><label class="lay-f"><span>Y (m)</span><input inputmode="decimal" value="${fm(it.y)}" onchange="gutLayout.prop('y',this.value)"></label></div>
-      ${it.tipo === 'MAQ' && occ ? `<div class="lay-occ ${classe(occ.pct)}"><b>${isFinite(occ.pct) ? Math.round(occ.pct) : '>999'}%</b><span>ocupação hoje do tipo • ${Math.round(occ.load)} de ${Math.round(occ.cap)} min • ${occ.ops} processo(s) a fazer</span></div>` : ''}
+      ${it.tipo === 'MAQ' && it.op ? (() => { const pc = postoCarga(it); return `<div class="lay-occ ${classe(pc.pct)}"><b>${isFinite(pc.pct) ? Math.round(pc.pct) : '>999'}%</b><span>carga do posto hoje (${esc(operadorNome(it.op).split(/\s+/)[0] || 'costureira')}) • ${Math.round(pc.load)} de ${Math.round(pc.cap)} min • ${pc.ops} processo(s) alocado(s)${pc.feitoHoje ? ` • ${Math.round(pc.feitoHoje)} min padrão entregues hoje${pc.efic != null ? ` • eficiência ${Math.round(pc.efic)}%` : ''}` : ''}</span></div>`; })() : ''}
+      ${it.tipo === 'MAQ' && occ && !it.op ? `<div class="lay-occ ${classe(occ.pct)}"><b>${isFinite(occ.pct) ? Math.round(occ.pct) : '>999'}%</b><span>ocupação hoje do tipo • ${Math.round(occ.load)} de ${Math.round(occ.cap)} min • ${occ.ops} processo(s) a fazer</span></div>` : ''}
       <div class="lay-acts"><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.girar()" title="Girar 90° (R)">⟳ Girar</button><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.duplicar()" title="Duplicar (Ctrl+D)">⧉ Duplicar</button><button class="btn btn-secondary btn-sm lay-del" type="button" onclick="gutLayout.excluirItem()" title="Excluir (Delete)">Excluir</button></div>`;
     } else {
       h += `<div class="lay-h">Como usar</div><ul class="lay-help"><li>Defina largura e comprimento do ambiente.</li><li>Clique ou arraste uma máquina para a planta; arraste para posicionar (encaixa na grade).</li><li><b>Cota</b>: toque num item e depois em outro para medir a distância entre os centros.</li><li>Arraste os <b>lotes em produção</b> para perto das máquinas: a linha laranja liga cada lote à máquina da próxima operação.</li><li>Atalhos: R gira, Delete exclui, setas movem uma casa, Ctrl+Z desfaz, F tela cheia.</li></ul>`;
@@ -216,9 +232,22 @@
     const m = new Map(); ((STATE.internalBoard && STATE.internalBoard.rows) || []).forEach(v => { const pid = String(v.ID_PRODUTO || ''); if (pid) m.set(pid, (m.get(pid) || 0) + (Number(v.QTD_VOLUME) || 0)); });
     return [...m].map(([pid, qtd]) => ({ pid, qtd })).filter(x => x.qtd > 0);
   }
+  /* nós do fluxo: tipos de máquina + pontas (corte no início, expedição no fim) marcadas nos blocos com "papel" */
+  const PONTA = { CORTE: '@CORTE', EXPED: '@EXPED' };
+  const nomeNo = id => id === PONTA.CORTE ? 'Corte' : id === PONTA.EXPED ? 'Expedição' : ((maquinas().find(m => m.id === id) || {}).nome || 'Máquina sem cadastro');
+  function nosDe(itens) {
+    const unid = new Map(), add = (k, i) => { if (!unid.has(k)) unid.set(k, []); unid.get(k).push(i); };
+    itens.forEach(i => { if (i.tipo === 'MAQ') add(i.maq, i); else if (i.papel === 'CORTE') add(PONTA.CORTE, i); else if (i.papel === 'EXPED') add(PONTA.EXPED, i); });
+    return unid;
+  }
+  /* sequência com as pontas quando o ambiente tem corte/expedição marcados */
+  function seqCom(pid, unid) {
+    const s = seqMaquinas(pid).filter(x => x.maq); if (!s.length) return s;
+    return (unid.has(PONTA.CORTE) ? [{ maq: PONTA.CORTE, op: 'Corte' }] : []).concat(s, unid.has(PONTA.EXPED) ? [{ maq: PONTA.EXPED, op: 'Expedição' }] : []);
+  }
   function analisar() {
-    const d = D(); if (!d) return; const mq = new Map(maquinas().map(m => [m.id, m.nome]));
-    const unid = new Map(); d.itens.filter(i => i.tipo === 'MAQ').forEach(i => { if (!unid.has(i.maq)) unid.set(i.maq, []); unid.get(i.maq).push(i); });
+    const d = D(); if (!d) return; const mq = { get: nomeNo };
+    const unid = nosDe(d.itens);
     const ctr = i => [i.x + i.w / 2, i.y + i.h / 2];
     const dd = (a, b) => A.dist === 'L' ? Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) : Math.hypot(a[0] - b[0], a[1] - b[1]);
     const par = new Map(); // menor distância entre uma unidade do tipo A e uma do tipo B
@@ -227,7 +256,7 @@
     const fluxo = new Map(), faltam = new Set(), semMaq = new Set(), porProd = [];
     let pecas = 0, metros = 0;
     demanda().forEach(({ pid, qtd }) => {
-      const seq = seqMaquinas(pid).filter(x => x.maq); if (!seq.length) { semMaq.add(pid); return; }
+      const seq = seqCom(pid, unid); if (!seq.length) { semMaq.add(pid); return; }
       let m1 = 0, ok = true;
       for (let k = 1; k < seq.length; k++) {
         const a = seq[k - 1].maq, b = seq[k].maq; if (a === b) continue;
@@ -238,18 +267,22 @@
     });
     const lista = [...fluxo.values()].map(f => { const bd = distTipos(f.a, f.b); return Object.assign(f, { d: bd ? bd.d : null, ua: bd && bd.a, ub: bd && bd.b, custo: bd ? bd.d * f.qtd : null }); });
     const tipos = []; lista.forEach(f => { [f.a, f.b].forEach(t => { if (!tipos.includes(t)) tipos.push(t); }); });
+    tipos.sort((a, b) => (a === PONTA.CORTE ? -1 : b === PONTA.CORTE ? 1 : a === PONTA.EXPED ? 1 : b === PONTA.EXPED ? -1 : 0));
     A.res = { pecas, metros, porPeca: pecas ? metros / pecas : 0, lista, tipos, mq, faltam: [...faltam], semMaq: [...semMaq], porProd };
     painelAnalise();
   }
-  /* ---------- sugestão de layout ----------
-     1) matriz produto × tipo de máquina, ordenada por Rank Order Clustering (King) → ordem inicial das máquinas;
-     2) posições em fileiras (serpentina), com espaço para a costureira e corredor;
-     3) melhora por trocas de lugar entre duas máquinas (estilo CRAFT / 2-opt), aceitando só o que reduz Σ peças × metros. */
+
+  /* ---------- montagem automática da planta ----------
+     1) matriz produto × máquina ordenada por Rank Order Clustering (King) → famílias de produtos e a ordem das máquinas;
+     2) vagas: em LINHA (fileiras em serpentina) ou em CÉLULAS EM U (uma por família), desviando de paredes, mesas e corredores fixos;
+     3) melhora por trocas de lugar (estilo CRAFT / 2-opt), várias partidas, aceitando só o que reduz Σ peças × metros;
+     4) no modo Automático monta os dois formatos e fica com o de menos metros por peça. */
   function custoDe(itens, dem, dist, seqs) {
-    const unid = new Map(); itens.filter(i => i.tipo === 'MAQ').forEach(i => { if (!unid.has(i.maq)) unid.set(i.maq, []); unid.get(i.maq).push(i); });
+    const unid = nosDe(itens);
     const c = i => [i.x + i.w / 2, i.y + i.h / 2], dd = (a, b) => dist === 'L' ? Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) : Math.hypot(a[0] - b[0], a[1] - b[1]);
     const memo = new Map(); let tot = 0, pecas = 0, falta = 0;
-    dem.forEach(({ pid, qtd }) => { const seq = seqs ? seqs.get(pid) : seqMaquinas(pid).filter(x => x.maq); if (!seq || !seq.length) return; pecas += qtd;
+    dem.forEach(({ pid, qtd }) => { let seq = seqs ? seqs.get(pid) : seqMaquinas(pid).filter(x => x.maq); if (!seq || !seq.length) return; pecas += qtd;
+      seq = (unid.has(PONTA.CORTE) ? [{ maq: PONTA.CORTE }] : []).concat(seq, unid.has(PONTA.EXPED) ? [{ maq: PONTA.EXPED }] : []);
       for (let k = 1; k < seq.length; k++) { const a = seq[k - 1].maq, b = seq[k].maq; if (a === b) continue; const key = a + '>' + b;
         if (!memo.has(key)) { const ua = unid.get(a), ub = unid.get(b); let best = null; if (ua && ub) ua.forEach(x => ub.forEach(y => { const v = dd(c(x), c(y)); if (best == null || v < best) best = v; })); memo.set(key, best); }
         const v = memo.get(key); if (v == null) falta++; else tot += v * qtd; } });
@@ -258,79 +291,206 @@
   function rocOrdem(dem, tipos) {
     const prods = dem.map(x => x.pid); let rows = prods.slice(), cols = tipos.slice();
     const usa = new Map(prods.map(p => [p, new Set(seqMaquinas(p).map(x => x.maq))]));
+    const peso = bits => bits.reduce((s, b, i) => s + (b ? Math.pow(2, Math.min(50, bits.length - 1 - i)) : 0), 0);
     for (let it = 0; it < 12; it++) {
-      const peso = (bits) => bits.reduce((s, b, i) => s + (b ? Math.pow(2, bits.length - 1 - i) : 0), 0);
       const nr = rows.slice().sort((a, b) => peso(cols.map(c => usa.get(b).has(c))) - peso(cols.map(c => usa.get(a).has(c))));
       const nc = cols.slice().sort((a, b) => peso(nr.map(r => usa.get(r).has(b))) - peso(nr.map(r => usa.get(r).has(a))));
       const igual = nr.join() === rows.join() && nc.join() === cols.join(); rows = nr; cols = nc; if (igual) break;
     }
     return { rows, cols, usa };
   }
-  function sugerir() {
-    const d = D(); if (!d) return; const dem = demanda();
-    if (!dem.length) { (window.toast || alert)('Escolha a base: produção interna, um produto ou todos os produtos com roteiro.', true); return; }
-    const mq = maquinas(); if (!mq.length) { (window.toast || alert)('Cadastre as máquinas primeiro.', true); return; }
-    // unidades a posicionar: as numeradas (ativas) de cada tipo; sem numeração, a quantidade do cadastro
-    const unidades = []; mq.forEach(m => { const us = unisTipo(m.id); if (us.length) us.forEach(u => unidades.push({ maq: m.id, uni: u.id, nome: u.codigo })); else for (let k = 1; k <= Math.max(1, m.total); k++) unidades.push({ maq: m.id, uni: '', nome: `${m.nome} ${k}` }); });
-    // ordem inicial: tipos usados nos roteiros, pela ordem ROC; depois os que nenhum roteiro usa
-    const usados = [...new Set(dem.flatMap(x => seqMaquinas(x.pid).map(s => s.maq)).filter(Boolean))].filter(t => mq.some(m => m.id === t));
-    const roc = rocOrdem(dem, usados), ordem = roc.cols.concat(mq.map(m => m.id).filter(t => !roc.cols.includes(t)));
-    unidades.sort((a, b) => ordem.indexOf(a.maq) - ordem.indexOf(b.maq) || String(a.nome).localeCompare(String(b.nome), 'pt-BR', { numeric: true }));
-    // vagas em fileiras: máquina 1,2 × 0,6 m; 0,4 m entre máquinas; 0,8 m para a costureira; corredor de 1,2 m entre pares de fileiras
-    const W = d.largura, H = d.comprimento, m0 = 1, px = MAQ_W + 0.4;
-    const cols = Math.max(1, Math.floor((W - 2 * m0 + 0.4) / px)), vagas = [];
+  /* famílias: produtos seguidos na ordem do ROC que dividem boa parte das máquinas */
+  function familias(roc, dem) {
+    const fams = [], qtd = new Map(dem.map(x => [x.pid, x.qtd]));
+    roc.rows.forEach(p => {
+      const s = roc.usa.get(p), f = fams[fams.length - 1];
+      if (f) { const inter = [...s].filter(x => f.tipos.has(x)).length, uni = new Set([...s, ...f.tipos]).size; if (uni && inter / uni >= 0.34) { f.prods.push(p); s.forEach(x => f.tipos.add(x)); f.qtd += qtd.get(p) || 0; return; } }
+      fams.push({ prods: [p], tipos: new Set(s), qtd: qtd.get(p) || 0 });
+    });
+    return fams;
+  }
+  const sobrepoe = (a, b, folga = 0) => a.x < b.x + b.w + folga && a.x + a.w + folga > b.x && a.y < b.y + b.h + folga && a.y + a.h + folga > b.y;
+  /* vaga = posição da máquina + a área da costureira (à frente da máquina) */
+  function vagaLivre(v, W, H, obst) {
+    const caixa = { x: v.x - 0.05, y: v.y - 0.05, w: v.area.w + 0.1, h: v.area.h + 0.1 };
+    if (v.x < 0.3 || v.y < 0.3 || v.x + v.area.w > W - 0.3 || v.y + v.area.h > H - 0.3) return false;
+    return !obst.some(o => o.tipo !== 'AREA' && sobrepoe(caixa, o));
+  }
+  function vagasLinha(n, W, H, obst) {
+    const m0 = 1, px = MAQ_W + 0.4, cols = Math.max(1, Math.floor((W - 2 * m0 + 0.4) / px)), vagas = [];
     let y = m0, fila = 0;
-    while (vagas.length < unidades.length && y + MAQ_H <= H - 0.5) {
-      const xs = Array.from({ length: cols }, (_, k) => m0 + k * px); if (fila % 2) xs.reverse(); // serpentina: a linha continua na fileira de baixo
-      xs.forEach(x => vagas.push({ x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 }));
+    while (vagas.length < n && y + MAQ_H <= H - 0.5) {
+      const xs = Array.from({ length: cols }, (_, k) => m0 + k * px); if (fila % 2) xs.reverse();
+      xs.forEach(x => { const v = { x: r2(x), y: r2(y), w: MAQ_W, h: MAQ_H, celula: 0, area: { w: MAQ_W, h: MAQ_H + 0.8 } }; if (vagaLivre(v, W, H, obst)) vagas.push(v); });
       y += MAQ_H + 0.8 + (fila % 2 ? 1.2 : 0); fila++;
     }
-    if (vagas.length < unidades.length) { (window.toast || alert)(`Não cabem ${unidades.length} máquinas em ${fm(W)} × ${fm(H)} m com espaço para a costureira e corredores. Aumente o ambiente e tente de novo.`, true); return; }
-    let pos = unidades.map((u, k) => k); // unidade k ocupa a vaga pos[k]
-    const montar = () => unidades.map((u, k) => ({ id: 'sg' + k, tipo: 'MAQ', maq: u.maq, uni: u.uni, nome: u.nome, x: vagas[pos[k]].x, y: vagas[pos[k]].y, w: MAQ_W, h: MAQ_H }));
-    const seqs = new Map(dem.map(x => [x.pid, seqMaquinas(x.pid).filter(s => s.maq)]));
-    const custo = () => custoDe(montar(), dem, A.dist, seqs).tot;
+    return vagas.length >= n ? vagas : null;
+  }
+  /* uma célula em U: desce pelo braço esquerdo, segue pelo fundo e sobe pelo braço direito; costureiras do lado de dentro */
+  function formaU(n) {
+    const lado = Math.max(0, Math.floor(n / 3)), fundo = Math.max(1, n - 2 * lado), P = 1.6;
+    const larg = Math.max(0.6 + 0.8 + fundo * P - 0.4 + 0.8 + 0.6, 0.6 + 2.4 + 0.6), alt = Math.max(lado * P, 0) + 0.8 + MAQ_H + 0.3;
+    const out = [];
+    for (let k = 0; k < lado; k++) out.push({ dx: 0, dy: k * P, w: MAQ_H, h: MAQ_W, area: { w: MAQ_H + 0.8, h: MAQ_W } });
+    const x0 = (larg - (fundo * P - 0.4)) / 2;
+    for (let k = 0; k < fundo; k++) out.push({ dx: x0 + k * P, dy: alt - MAQ_H, w: MAQ_W, h: MAQ_H, area: { w: MAQ_W, h: MAQ_H }, frente: -0.8 });
+    for (let k = lado - 1; k >= 0; k--) out.push({ dx: larg - MAQ_H, dy: k * P, w: MAQ_H, h: MAQ_W, area: { w: MAQ_H + 0.8, h: MAQ_W }, esq: true });
+    return { larg, alt, vagas: out };
+  }
+  function vagasU(grupos, W, H, obst) {
+    const todas = []; let cx = 1, cy = 1, linhaAlt = 0;
+    for (let g = 0; g < grupos.length; g++) {
+      const f = formaU(grupos[g]); let ok = false;
+      for (let tent = 0; tent < 400 && !ok; tent++) {
+        if (cx + f.larg > W - 0.7) { cx = 1; cy += linhaAlt + 1.6; linhaAlt = 0; }
+        if (cy + f.alt > H - 0.7) return null;
+        const vs = f.vagas.map(v => { const x = r2(cx + v.dx), y = r2(cy + v.dy); const ax = v.esq ? x - 0.8 : x, ay = v.frente ? y - 0.8 : y; return { x, y, w: v.w, h: v.h, celula: g + 1, area: v.area, ax, ay }; });
+        const livre = vs.every(v => vagaLivre({ x: v.ax, y: v.ay, area: v.frente ? { w: v.w, h: v.h + 0.8 } : v.area }, W, H, obst)) && !obst.some(o => o.tipo !== 'AREA' && sobrepoe({ x: cx, y: cy, w: f.larg, h: f.alt }, o, 0.2));
+        if (livre) { vs.forEach(v => todas.push(v)); cx += f.larg + 1.6; linhaAlt = Math.max(linhaAlt, f.alt); ok = true; }
+        else cx += 0.5;
+      }
+      if (!ok) return null;
+    }
+    return todas;
+  }
+  function otimizar(unidades, vagas, montarItens, dem, seqs, celulas) {
+    let pos = unidades.map((u, k) => k);
+    const custo = () => custoDe(montarItens(pos), dem, A.dist, seqs).tot;
     const ini = custo(), t0 = Date.now(); let passos = 0, rodadas = 0, melhorPos = pos.slice(), melhorCusto = ini;
-    // busca local por trocas (2-opt / CRAFT); várias partidas: a 1ª pela ordem do ROC, as outras embaralhadas
-    while (rodadas < 40 && Date.now() - t0 < 3000) {
-      if (rodadas > 0) { pos = unidades.map((u, k) => k); for (let k = pos.length - 1; k > 0; k--) { const r = Math.floor(Math.random() * (k + 1)); [pos[k], pos[r]] = [pos[r], pos[k]]; } }
+    const mesmaCel = (a, b) => !celulas || vagas[a].celula === vagas[b].celula;
+    while (rodadas < 30 && Date.now() - t0 < 2500) {
+      if (rodadas > 0) { pos = unidades.map((u, k) => k); // embaralha só dentro de cada célula (no U) ou geral (na linha)
+        const grupos = new Map(); pos.forEach((p, k) => { const c = celulas ? vagas[p].celula : 0; if (!grupos.has(c)) grupos.set(c, []); grupos.get(c).push(k); });
+        grupos.forEach(ks => { const ps = ks.map(k => pos[k]); for (let i = ps.length - 1; i > 0; i--) { const r = Math.floor(Math.random() * (i + 1)); [ps[i], ps[r]] = [ps[r], ps[i]]; } ks.forEach((k, i) => { pos[k] = ps[i]; }); }); }
       const livres = vagas.map((v, i) => i).filter(i => !pos.includes(i));
       let atual = custo(), melhorou = true;
-      while (melhorou && Date.now() - t0 < 6000) {
+      while (melhorou && Date.now() - t0 < 5000) {
         melhorou = false;
-        for (let i = 0; i < unidades.length; i++) {
-          for (let j = i + 1; j < unidades.length + livres.length; j++) {
-            if (j < unidades.length && unidades[i].maq === unidades[j].maq) continue;
-            const ant = pos.slice();
-            if (j < unidades.length) { [pos[i], pos[j]] = [pos[j], pos[i]]; } else { const l = j - unidades.length, v = livres[l]; livres[l] = pos[i]; pos[i] = v; }
-            const c = custo(); passos++;
-            if (c < atual - 1e-9) { atual = c; melhorou = true; }
-            else { if (j >= unidades.length) { const l = j - unidades.length; livres[l] = pos[i]; } pos = ant; }
-          }
+        for (let i = 0; i < unidades.length; i++) for (let j = i + 1; j < unidades.length + livres.length; j++) {
+          if (j < unidades.length && (unidades[i].maq === unidades[j].maq || !mesmaCel(pos[i], pos[j]))) continue;
+          if (j >= unidades.length && !mesmaCel(pos[i], livres[j - unidades.length])) continue;
+          const ant = pos.slice();
+          if (j < unidades.length) [pos[i], pos[j]] = [pos[j], pos[i]]; else { const l = j - unidades.length, v = livres[l]; livres[l] = pos[i]; pos[i] = v; }
+          const c = custo(); passos++;
+          if (c < atual - 1e-9) { atual = c; melhorou = true; } else { if (j >= unidades.length) livres[j - unidades.length] = pos[i]; pos = ant; }
         }
       }
       if (atual < melhorCusto - 1e-9 || rodadas === 0) { melhorCusto = atual; melhorPos = pos.slice(); }
       rodadas++;
     }
-    pos = melhorPos;
-    const itens = montar(), resAtual = custoDe(d.itens, dem, A.dist), resSug = custoDe(itens, dem, A.dist);
-    const novo = { id: '', nome: 'Sugestão ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), dados: { largura: W, comprimento: H, celula: d.celula, itens, cotas: [] } };
-    A.sug = { de: L.atual.nome, antes: resAtual, depois: resSug, inicial: ini / Math.max(1, resSug.pecas), rodadas, maquinas: unidades.length, passos, roc, nome: novo.nome, faltaAntes: resAtual.falta, base: A.base, dem: dem.length };
+    return { pos: melhorPos, ini, fim: melhorCusto, passos, rodadas };
+  }
+  /* opções: { formato: 'AUTO'|'LINHA'|'U', tamanho: 'AUTO'|'ATUAL', fixos: bool, pontas: bool } */
+  function montarPlanta(op) {
+    const d = D(); if (!d) return null; const dem = demanda();
+    if (!dem.length) return { erro: 'Não há produção na base escolhida. Escolha "Todos os produtos" ou um produto com roteiro.' };
+    const mq = maquinas(); if (!mq.length) return { erro: 'Cadastre as máquinas primeiro (Cadastros › Máquinas).' };
+    const unidades = []; mq.forEach(m => { const us = unisTipo(m.id); if (us.length) us.forEach(u => unidades.push({ maq: m.id, uni: u.id, nome: u.codigo })); else for (let k = 1; k <= Math.max(1, m.total); k++) unidades.push({ maq: m.id, uni: '', nome: `${m.nome} ${k}` }); });
+    const usados = [...new Set(dem.flatMap(x => seqMaquinas(x.pid).map(s => s.maq)).filter(Boolean))].filter(t => mq.some(m => m.id === t));
+    if (!usados.length) return { erro: 'Os roteiros desses produtos não têm máquina nas operações. Complete a máquina de cada operação na ficha do produto.' };
+    const roc = rocOrdem(dem, usados), ordem = roc.cols.concat(mq.map(m => m.id).filter(t => !roc.cols.includes(t)));
+    const fams = familias(roc, dem), seqs = new Map(dem.map(x => [x.pid, seqMaquinas(x.pid).filter(s => s.maq)]));
+    // máquinas por família: cada tipo é dividido entre as famílias que o usam, pelo volume (pelo menos 1 para cada, se houver)
+    const famDe = new Map(); ordem.forEach(t => {
+      const us = unidades.filter(u => u.maq === t), quem = fams.map((f, i) => ({ i, q: f.tipos.has(t) ? Math.max(1, f.qtd) : 0 })).filter(x => x.q > 0);
+      if (!quem.length) { us.forEach(u => famDe.set(u, fams.length)); return; } // não usado em nenhum roteiro: vai para o fim
+      const tot = quem.reduce((s, x) => s + x.q, 0); let k = 0;
+      quem.forEach((x, n) => { const cota = n === quem.length - 1 ? us.length - k : Math.max(1, Math.round(us.length * x.q / tot)); for (let c = 0; c < cota && k < us.length; c++) famDe.set(us[k++], x.i); });
+      while (k < us.length) famDe.set(us[k++], quem[0].i);
+    });
+    unidades.sort((a, b) => famDe.get(a) - famDe.get(b) || ordem.indexOf(a.maq) - ordem.indexOf(b.maq) || String(a.nome).localeCompare(String(b.nome), 'pt-BR', { numeric: true }));
+    // itens fixos e pontas
+    const fixos = op.fixos ? d.itens.filter(i => i.tipo !== 'MAQ' && i.tipo !== 'LOTE').map(i => Object.assign({}, i, { id: uid() })) : [];
+    const tentar = (formato, W, H, soCabe) => {
+      const obst = fixos.map(i => Object.assign({}, i)); let corte = obst.find(i => i.papel === 'CORTE') || (op.pontas && obst.find(i => i.tipo === 'MESA'));
+      let exped = obst.find(i => i.papel === 'EXPED') || (op.pontas && obst.find(i => i.tipo === 'ESTOQUE' && /exped/i.test(i.nome)));
+      if (op.pontas) {
+        // cria o que faltar num lugar livre: o corte perto do canto de cima à esquerda, a expedição perto do canto de baixo à direita
+        const lugar = (w, h, deBaixo) => { const xs = [], ys = []; for (let x = 0.5; x + w <= W - 0.5; x += 0.5) xs.push(x); for (let y = 0.5; y + h <= H - 0.5; y += 0.5) ys.push(y); if (deBaixo) { xs.reverse(); ys.reverse(); }
+          for (const y of ys) for (const x of xs) { const c = { x, y, w, h }; if (!obst.some(o => o.tipo !== 'AREA' && sobrepoe(c, o, 0.6))) return { x, y }; } return null; };
+        if (corte) corte.papel = 'CORTE'; else { const w = Math.min(6, W - 2), p = lugar(w, 1.8, false); if (!p) return null; corte = { id: uid(), tipo: 'MESA', nome: 'Mesa de corte', papel: 'CORTE', w, h: 1.8, x: p.x, y: p.y }; obst.push(corte); }
+        if (exped) exped.papel = 'EXPED'; else { const p = lugar(2, 1.5, true); if (!p) return null; exped = { id: uid(), tipo: 'ESTOQUE', nome: 'Expedição', papel: 'EXPED', w: 2, h: 1.5, x: p.x, y: p.y }; obst.push(exped); }
+      }
+      const grupos = []; if (formato === 'U') { const porFam = new Map(); unidades.forEach(u => { const f = famDe.get(u); porFam.set(f, (porFam.get(f) || 0) + 1); }); [...porFam.keys()].sort((a, b) => a - b).forEach(f => grupos.push(porFam.get(f))); }
+      const vagas = formato === 'U' ? vagasU(grupos, W, H, obst) : vagasLinha(unidades.length, W, H, obst);
+      if (!vagas) return null; if (soCabe) return true;
+      const montarItens = pos => obst.concat(unidades.map((u, k) => { const v = vagas[pos[k]]; return { id: 'sg' + k, tipo: 'MAQ', maq: u.maq, uni: u.uni, nome: u.nome, x: v.x, y: v.y, w: v.w, h: v.h }; }));
+      const r = otimizar(unidades, vagas, montarItens, dem, seqs, formato === 'U');
+      const itens = montarItens(r.pos); itens.filter(i => i.tipo === 'MAQ').forEach((i, k) => { if (vagas[r.pos[k]].celula) i.celula = vagas[r.pos[k]].celula; });
+      return { formato, W, H, itens, r, res: custoDe(itens, dem, A.dist, seqs), celulas: formato === 'U' ? grupos.length : 0 };
+    };
+    const formatos = op.formato === 'AUTO' ? ['LINHA', 'U'] : [op.formato];
+    const resultados = [];
+    formatos.forEach(f => {
+      if (op.tamanho === 'ATUAL') { const x = tentar(f, d.largura, d.comprimento); if (x) resultados.push(x); return; }
+      // tamanho ideal: largura pela raiz da área necessária; o comprimento cresce até caber tudo
+      const area = unidades.length * 4.2 + (op.pontas ? 16 : 0) + fixos.reduce((s, i) => s + (i.tipo === 'AREA' ? 0 : i.w * i.h), 0);
+      let W = Math.max(10, Math.ceil(Math.sqrt(area * 1.6))), x = null;
+      fixos.forEach(i => { W = Math.max(W, Math.ceil(i.x + i.w + 1)); });
+      let Hok = 0; const minH = fixos.reduce((m, i) => Math.max(m, i.y + i.h + 1), 0);
+      for (let H = Math.max(8, Math.ceil(area / W), Math.ceil(minH)); H <= 300 && !Hok; H += 1) if (tentar(f, W, H, true)) Hok = H;
+      if (Hok) x = tentar(f, W, Hok);
+      if (x) resultados.push(x);
+    });
+    if (!resultados.length) return { erro: `Não coube: ${unidades.length} máquinas em ${fm(d.largura)} × ${fm(d.comprimento)} m com espaço para as costureiras e corredores. Use "Calcular o tamanho ideal" ou aumente o ambiente.` };
+    resultados.sort((a, b) => a.res.porPeca - b.res.porPeca);
+    return { melhor: resultados[0], todos: resultados, dem, roc, fams, unidades: unidades.length };
+  }
+  function sugerir(op) {
+    op = Object.assign({ formato: 'AUTO', tamanho: 'ATUAL', fixos: true, pontas: false }, op || {});
+    const d = D(), out = montarPlanta(op); if (!out) return;
+    if (out.erro) { (window.toast || alert)(out.erro, true); return out; }
+    const m = out.melhor, antes = custoDe(d.itens, out.dem, A.dist);
+    const agora = new Date(), novo = { id: '', nome: `Planta sugerida ${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, dados: { largura: m.W, comprimento: m.H, celula: d.celula, itens: m.itens, cotas: [] } };
+    A.sug = { de: L.atual.nome, antes, depois: m.res, inicial: m.r.ini / Math.max(1, m.res.pecas), rodadas: m.r.rodadas, passos: m.r.passos, maquinas: out.unidades, roc: out.roc, fams: out.fams.length, nome: novo.nome, faltaAntes: antes.falta || !antes.pecas, base: A.base,
+      formato: m.formato, celulas: m.celulas, W: m.W, H: m.H, todos: out.todos.map(x => ({ formato: x.formato, porPeca: x.res.porPeca, W: x.W, H: x.H })), pontas: op.pontas };
     salvar(); L.lista.push(novo); L.atual = novo; L.sel = null; L.selCota = null; L.hist = []; L.zoom = 1;
     preencherAmbientes(); campos(); paleta(); props(); mudou(); analisar(); desenhar();
-    (window.toast || console.log)(`Sugestão pronta: ${unidades.length} máquinas posicionadas. Ela foi salva como o ambiente "${novo.nome}".`);
+    (window.toast || console.log)(`Planta montada: ${out.unidades} máquinas em ${m.formato === 'U' ? m.celulas + ' célula(s) em U' : 'linha'}. Salva como "${novo.nome}".`);
+    return out;
   }
   function sugHtml() {
-    const g = A.sug, nm = id => (maquinas().find(m => m.id === id) || {}).nome || 'Máquina';
-    const ganho = g.antes.pecas && g.antes.porPeca > 0 && !g.faltaAntes ? (1 - g.depois.porPeca / g.antes.porPeca) * 100 : null;
+    const g = A.sug, nm = nomeNo;
+    const ganho = !g.faltaAntes && g.antes.porPeca > 0 ? (1 - g.depois.porPeca / g.antes.porPeca) * 100 : null;
     const rows = g.roc.rows.slice(0, 14), cols = g.roc.cols;
-    return `<div class="lay-sug"><div class="lay-sug-top"><div><b>✨ ${esc(g.nome)}</b><span>${g.maquinas} máquinas posicionadas • ${g.passos.toLocaleString('pt-BR')} trocas testadas em ${g.rodadas} partidas (ordem pelo ROC: ${fm(g.inicial)} m/pç → depois das trocas: ${fm(g.depois.porPeca)} m/pç) • base: ${g.base === 'QUADRO' ? 'produção interna agora' : g.base === 'TODOS' ? 'todos os produtos com roteiro' : 'um produto'}</span></div>
-      <div class="lay-sug-cmp"><div><small>${esc(g.de)}</small><b>${g.faltaAntes ? '—' : fm(g.antes.porPeca) + ' m'}</b><span>${g.faltaAntes ? 'faltam máquinas nesse desenho' : 'por peça'}</span></div><i>→</i><div class="novo"><small>Sugestão</small><b>${fm(g.depois.porPeca)} m</b><span>por peça</span></div>${ganho != null ? `<div class="ganho ${ganho > 0 ? 'bom' : ''}"><b>${ganho > 0 ? '−' : '+'}${Math.abs(Math.round(ganho))}%</b><span>de deslocamento</span></div>` : ''}</div>
+    const fmtNome = f => f === 'U' ? 'Células em U' : 'Linha';
+    return `<div class="lay-sug"><div class="lay-sug-top"><div><b>✨ ${esc(g.nome)}</b><span>${g.maquinas} máquinas • ${g.formato === 'U' ? `${g.celulas} célula(s) em U, uma por família de produtos` : 'em linha (serpentina)'} • ambiente de ${fm(g.W)} × ${fm(g.H)} m${g.pontas ? ' • do corte até a expedição' : ''}</span>
+      ${g.todos.length > 1 ? `<span>Comparou os formatos: ${g.todos.map(x => `${fmtNome(x.formato)} ${fm(x.porPeca)} m/pç`).join(' • ')} → ficou com ${fmtNome(g.formato)}.</span>` : ''}
+      <span class="muted">${g.passos.toLocaleString('pt-BR')} trocas testadas em ${g.rodadas} partidas (ordem pelo ROC: ${fm(g.inicial)} m/pç → depois das trocas: ${fm(g.depois.porPeca)} m/pç)</span></div>
+      <div class="lay-sug-cmp"><div><small>${esc(g.de)}</small><b>${g.faltaAntes ? '—' : fm(g.antes.porPeca) + ' m'}</b><span>${g.faltaAntes ? 'desenho incompleto' : 'por peça'}</span></div><i>→</i><div class="novo"><small>Planta sugerida</small><b>${fm(g.depois.porPeca)} m</b><span>por peça</span></div>${ganho != null ? `<div class="ganho ${ganho > 0 ? 'bom' : ''}"><b>${ganho > 0 ? '−' : '+'}${Math.abs(Math.round(ganho))}%</b><span>de deslocamento</span></div>` : ''}</div>
       <div class="lay-acts"><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.trocarNome('${esc(g.de)}')">Voltar para ${esc(g.de)}</button><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.fecharSug()">Fechar</button></div></div>
-      <details class="lay-roc"><summary>Matriz produto × máquina ordenada (Rank Order Clustering) — mostra as famílias de produtos e as máquinas que devem ficar juntas</summary>
+      <details class="lay-roc"><summary>Matriz produto × máquina ordenada (Rank Order Clustering) — ${g.fams} família(s) de produtos</summary>
       <div class="lay-mx-wrap"><table class="lay-mx roc"><thead><tr><th>Produto \\ Máquina</th>${cols.map(c => `<th title="${esc(nm(c))}">${esc(nm(c).slice(0, 14))}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr><th>${esc(nomeProd(r).slice(0, 26))}</th>${cols.map(c => `<td class="${g.roc.usa.get(r).has(c) ? 'on' : ''}">${g.roc.usa.get(r).has(c) ? '1' : ''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${g.roc.rows.length > 14 ? `<p class="hint">Mostrando 14 de ${g.roc.rows.length} produtos.</p>` : ''}</details>
-      <p class="hint">A sugestão usa as fileiras com espaço para a costureira (0,8 m) e um corredor de 1,2 m a cada duas fileiras. Ajuste à vontade: arraste as máquinas e os metros por peça se recalculam. O seu layout original não foi alterado.</p></div>`;
+      <p class="hint">Cada máquina tem 0,8 m para a costureira; entre fileiras e células ficam corredores de 1,2 a 1,6 m. Arraste o que quiser: os metros por peça se recalculam. O ambiente original não foi alterado.</p></div>`;
   }
+
+  /* ---------- assistente "Montar planta pela produção" ---------- */
+  function assistente() {
+    const d = D(), cxs = caixas(), prods = produtos().filter(p => seqMaquinas(p.ID_PRODUTO).filter(x => x.maq).length >= 2), mq = maquinas();
+    const nMaq = mq.reduce((s, m) => s + (unisTipo(m.id).length || Math.max(1, m.total)), 0), temFixos = d && d.itens.some(i => i.tipo !== 'MAQ' && i.tipo !== 'LOTE');
+    const W0 = Object.assign({ base: A.base === 'PRODUTO' ? 'PRODUTO' : cxs.length ? 'QUADRO' : 'TODOS', formato: 'AUTO', tamanho: d && d.itens.some(i => i.tipo === 'MAQ') ? 'ATUAL' : 'AUTO', fixos: !!temFixos, pontas: true }, L.wiz || {});
+    L.wiz = W0;
+    let m = $('layWiz'); if (!m) { m = document.createElement('div'); m.id = 'layWiz'; m.className = 'lay-wiz'; document.body.appendChild(m); m.addEventListener('mousedown', e => { if (e.target === m) m.classList.remove('show'); }); }
+    const card = (grupo, val, tit, sub, on) => `<button type="button" class="wz-op ${on ? 'on' : ''}" onclick="gutLayout.wz('${grupo}','${val}')"><b>${tit}</b><span>${sub}</span></button>`;
+    m.innerHTML = `<div class="wz-card" role="dialog" aria-modal="true" aria-labelledby="wzT"><div class="wz-head"><div><h3 id="wzT">🏭 Montar a planta pela produção</h3><p>O sistema usa as suas ${nMaq} máquinas cadastradas e o roteiro dos produtos para posicionar tudo com o menor caminho para a peça.</p></div><button class="cr-x" type="button" onclick="document.getElementById('layWiz').classList.remove('show')" aria-label="Fechar">×</button></div>
+      <div class="wz-step"><span class="wz-n">1</span><div><b>Qual produção usar?</b><div class="wz-ops">
+        ${card('base', 'QUADRO', 'O que está em produção agora', cxs.length ? `${cxs.length} caixa(s) no quadro interno` : 'nenhuma caixa no quadro agora', W0.base === 'QUADRO')}
+        ${card('base', 'TODOS', 'Todos os meus produtos', `${prods.length} produto(s) com roteiro completo`, W0.base === 'TODOS')}
+        ${card('base', 'PRODUTO', 'Um produto', 'escolha o produto e a quantidade', W0.base === 'PRODUTO')}</div>
+        ${W0.base === 'PRODUTO' ? `<div class="wz-row"><label class="lay-f"><span>Produto</span><select onchange="gutLayout.an('prod',this.value);gutLayout.wizard()"><option value="">Escolha…</option>${prods.map(p => `<option value="${esc(p.ID_PRODUTO)}" ${String(p.ID_PRODUTO) === A.prod ? 'selected' : ''}>${esc(nomeProd(p.ID_PRODUTO))}</option>`).join('')}</select></label><label class="lay-f lay-n"><span>Peças</span><input inputmode="numeric" value="${esc(A.qtd)}" onchange="gutLayout.an('qtd',this.value)"></label></div>` : ''}</div></div>
+      <div class="wz-step"><span class="wz-n">2</span><div><b>Formato da produção</b><div class="wz-ops">
+        ${card('formato', 'AUTO', 'Automático', 'monta em linha e em células e fica com o melhor', W0.formato === 'AUTO')}
+        ${card('formato', 'LINHA', 'Linha', 'fileiras seguindo a sequência das operações', W0.formato === 'LINHA')}
+        ${card('formato', 'U', 'Células em U', 'uma célula para cada família de produtos', W0.formato === 'U')}</div></div></div>
+      <div class="wz-step"><span class="wz-n">3</span><div><b>Espaço</b><div class="wz-ops">
+        ${card('tamanho', 'AUTO', 'Calcular o tamanho ideal', 'o sistema diz quantos m² você precisa', W0.tamanho === 'AUTO')}
+        ${card('tamanho', 'ATUAL', `Usar este ambiente`, d ? `${fm(d.largura)} × ${fm(d.comprimento)} m (${fm(d.largura * d.comprimento)} m²)` : '', W0.tamanho === 'ATUAL')}</div>
+        <label class="wz-chk"><input type="checkbox" ${W0.pontas ? 'checked' : ''} onchange="gutLayout.wz('pontas',this.checked)"><span>Incluir o caminho do <b>corte</b> até a <b>expedição</b> <small>(usa a mesa de corte e a expedição do ambiente ou cria as duas)</small></span></label>
+        ${temFixos ? `<label class="wz-chk"><input type="checkbox" ${W0.fixos ? 'checked' : ''} onchange="gutLayout.wz('fixos',this.checked)"><span>Manter no lugar as paredes, mesas, estoques e corredores deste ambiente</span></label>` : ''}</div></div>
+      <div class="wz-foot"><span class="muted">${nMaq} máquinas • ${mq.length} tipos • o ambiente atual não é alterado: a planta sai num ambiente novo</span><button class="btn btn-primary" type="button" id="wzGo" onclick="gutLayout.wzMontar()">Montar planta</button></div></div>`;
+    m.classList.add('show'); setTimeout(() => $('wzGo')?.focus(), 30);
+  }
+
   function painelAnalise() {
     const el = $('layAn'); if (!el) return; const r = A.res || { lista: [], tipos: [], porProd: [], faltam: [], semMaq: [], mq: new Map() };
     const nm = id => r.mq.get(id) || 'Máquina sem cadastro', abrev = id => { const t = String(nm(id)); return t.length > 14 ? t.slice(0, 13) + '…' : t; };
@@ -342,7 +502,7 @@
       ${A.base === 'PRODUTO' ? `<label class="lay-f"><span>Produto</span><select onchange="gutLayout.an('prod',this.value)"><option value="">Escolha…</option>${prods.map(p => `<option value="${esc(p.ID_PRODUTO)}" ${String(p.ID_PRODUTO) === A.prod ? 'selected' : ''}>${esc(nomeProd(p.ID_PRODUTO))}</option>`).join('')}</select></label><label class="lay-f lay-n"><span>Peças</span><input inputmode="numeric" value="${esc(A.qtd)}" onchange="gutLayout.an('qtd',this.value)"></label>` : ''}
       <label class="lay-f"><span>Distância</span><select onchange="gutLayout.an('dist',this.value)"><option value="L" ${A.dist === 'L' ? 'selected' : ''}>Em L (corredores)</option><option value="R" ${A.dist === 'R' ? 'selected' : ''}>Em linha reta</option></select></label>
       <label class="lay-chk"><input type="checkbox" ${A.ver ? 'checked' : ''} onchange="gutLayout.an('ver',this.checked)"> Desenhar o fluxo na planta</label>
-      <button class="btn btn-primary btn-sm" type="button" onclick="gutLayout.sugerir()" title="Monta um ambiente novo com todas as máquinas do cadastro na posição que dá menos metros por peça, pela base escolhida">✨ Sugerir layout</button></div></div>
+      <button class="btn btn-primary btn-sm" type="button" onclick="gutLayout.wizard()" title="Monta um ambiente novo com todas as máquinas do cadastro na posição que dá menos metros por peça">🏭 Montar planta pela produção</button></div></div>
       ${A.sug ? sugHtml() : ''}
       ${!r.pecas && !r.lista.length ? `<p class="hint">${A.base === 'PRODUTO' ? 'Escolha um produto com roteiro.' : 'Não há caixas na produção interna agora. Use a base "Um produto".'}${r.semMaq.length ? ' Alguns produtos não têm máquina nas operações do roteiro.' : ''}</p>` : `
       <div class="lay-kpis"><div class="k"><small>Metros por peça</small><b>${fm(r.porPeca)} m</b><span>caminho médio de uma peça entre as máquinas do roteiro</span></div>
@@ -377,8 +537,10 @@
     const passo = W > 60 || H > 60 ? 10 : W > 25 || H > 25 ? 5 : 1;
     for (let x = 0; x <= W + 1e-6; x += passo) g += `<text x="${x}" y="${-0.25}" class="lay-rul" font-size="${fs}" text-anchor="middle">${Math.round(x)}</text>`;
     for (let y = passo; y <= H + 1e-6; y += passo) g += `<text x="${-0.25}" y="${y + fs / 3}" class="lay-rul" font-size="${fs}" text-anchor="end">${Math.round(y)}</text>`;
+    { const cel = new Map(); d.itens.filter(i => i.tipo === 'MAQ' && i.celula).forEach(i => { const b = cel.get(i.celula) || { x1: 1e9, y1: 1e9, x2: -1e9, y2: -1e9 }; b.x1 = Math.min(b.x1, i.x); b.y1 = Math.min(b.y1, i.y); b.x2 = Math.max(b.x2, i.x + i.w); b.y2 = Math.max(b.y2, i.y + i.h); cel.set(i.celula, b); });
+      cel.forEach((b, k) => { g += `<rect x="${b.x1 - 0.25}" y="${b.y1 - 0.25}" width="${b.x2 - b.x1 + 0.5}" height="${b.y2 - b.y1 + 0.5}" rx="0.3" class="lay-cel"/><text x="${b.x1 - 0.2}" y="${b.y1 - 0.4}" font-size="${fs * 0.85}" class="lay-celtx">Célula ${k}</text>`; }); }
     d.itens.filter(it => it.tipo !== 'LOTE').forEach(it => {
-      const o = it.tipo === 'MAQ' ? occ.get(it.maq || '') : null, p = o ? o.pct : 0, cl = it.tipo === 'MAQ' ? 'maq ' + classe(p) : 'blk t-' + it.tipo.toLowerCase();
+      const po = it.tipo === 'MAQ' && it.op ? postoCarga(it) : null, o = it.tipo === 'MAQ' ? (po || occ.get(it.maq || '')) : null, p = o ? o.pct : 0, cl = it.tipo === 'MAQ' ? 'maq ' + classe(p) + (po ? ' posto' : '') : 'blk t-' + it.tipo.toLowerCase() + (it.papel ? ' ponta' : '');
       const sel = it.id === L.sel ? ' sel' : '', ca = L.cotaA === it.id ? ' cota-a' : '';
       const tx = it.x + it.w / 2, ty = it.y + it.h / 2, small = Math.min(it.w, it.h), f = Math.max(0.12, Math.min(fs, it.tipo === 'MAQ' ? Math.max(small * 0.4, it.w * 0.17) : small * 0.36));
       const rot = it.h > it.w * 1.6 && it.tipo !== 'MAQ' ? ` transform="rotate(-90 ${tx} ${ty})"` : '';
@@ -417,6 +579,7 @@
         <rect x="${mx - fs * 1.9}" y="${my - fs * 0.75}" width="${fs * 3.8}" height="${fs * 1.4}" rx="${fs * 0.3}" class="lay-cbox"/><text x="${mx}" y="${my + fs * 0.3}" font-size="${fs * 0.9}" text-anchor="middle" class="lay-ctx">${fm(m.reta)} m</text></g>`;
     });
     svg.innerHTML = g;
+    const vz = $('layVazio'); if (vz) vz.hidden = d.itens.length > 0 || L.so;
     const hint = $('layHint'); if (hint) hint.textContent = L.modo === 'COTA' ? (L.cotaA ? 'Agora toque no segundo item para medir.' : 'Cota: toque no primeiro item.') : '';
   }
   function curto(t, max) { t = String(t || ''); max = Math.max(3, Math.floor(max)); return t.length > max ? t.slice(0, max - 1) + '…' : t; }
@@ -591,7 +754,11 @@
 
   window.gutLayout = {
     bipar, camera, alvo: () => L.alvo, analise: () => A.res,
-    sugerir, fecharSug() { A.sug = null; painelAnalise(); },
+    sugerir, wizard: () => assistente(),
+    wz(k, v) { L.wiz = Object.assign(L.wiz || {}, { [k]: v }); if (k === 'base') { A.base = v; analisar(); } if (k !== 'pontas' && k !== 'fixos') assistente(); },
+    wzMontar() { const w = L.wiz || {}, b = $('wzGo'); if (b) { b.disabled = true; b.textContent = 'Montando…'; }
+      setTimeout(() => { const out = sugerir({ formato: w.formato || 'AUTO', tamanho: w.tamanho || 'AUTO', fixos: !!w.fixos, pontas: w.pontas !== false }); if (out && !out.erro) { $('layWiz')?.classList.remove('show'); setTimeout(() => $('layAn')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300); } else if (b) { b.disabled = false; b.textContent = 'Montar planta'; } }, 30); },
+    fecharSug() { A.sug = null; painelAnalise(); },
     trocarNome(n) { const i = L.lista.findIndex(x => x.nome === n); if (i >= 0) { gutLayout.trocar(i); preencherAmbientes(); analisar(); desenhar(); } },
     an(k, v) { if (k === 'ver') A.ver = !!v; else if (k === 'qtd') A.qtd = Math.max(1, Math.round(num(v)) || 1); else A[k] = v; analisar(); desenhar(); },
     cheia: () => { if (L.so) soPlanta(false); cheia(); }, soPlanta: on => soPlanta(on), lado(q) { if (q === 'pal') L.semPal = !L.semPal; else L.semProp = !L.semProp; lados(); setTimeout(desenhar, 30); },
@@ -613,6 +780,7 @@
       if (k === 'maq') { it.maq = v; it.uni = ''; mudou(); paleta(); props(); return; }
       if (k === 'uni') { it.uni = v; const u = unis().find(x => x.id === v); if (u) it.nome = u.codigo; mudou(); paleta(); props(); return; }
       if (k === 'op') { it.op = v; mudou(); props(); return; }
+      if (k === 'papel') { if (v) D().itens.forEach(i => { if (i !== it && i.papel === v) delete i.papel; }); if (v) it.papel = v; else delete it.papel; mudou(); props(); return; }
       const x = num(v); if (k === 'w' || k === 'h') { if (x <= 0) return props(); it[k] = r2(x); } else it[k] = r2(x);
       limitar(it); mudou(); props();
     },
