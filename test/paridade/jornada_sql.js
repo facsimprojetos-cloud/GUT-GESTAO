@@ -23,6 +23,13 @@ const salvar = (e, s, ii, fi, d) => pg.comoUsuario(`select public.web_jornada_sa
     ok(/início e o fim do intervalo/.test(erro(salvar('07:00', '17:00', '12:00', '', '1'))), 'intervalo pela metade é recusado');
     ok(/pelo menos um dia/.test(erro(salvar('07:00', '17:00', '', '', '9'))), 'sem dia de trabalho é recusado');
     ok(/Horário inválido/.test(erro(salvar('7h', '17:00', '', '', '1'))), 'horário em formato errado é recusado');
+    const sem = JSON.stringify([1, 2, 3, 4, 5, 6, 7].map(d => ({ dia: d, trabalha: d <= 6, entrada: '07:00', saida: d === 5 ? '16:00' : d === 6 ? '11:00' : '17:00', intervalo_ini: d === 6 ? '' : '12:00', intervalo_fim: d === 6 ? '' : '13:00' })));
+    r = j(pg.comoUsuario(`select public.web_jornada_salvar_semana('gut', '${sem}');`));
+    ok(Number(r.minutos_semana) === 2880 && Number(r.minutos_dia) === 480 && r.dias.join() === '1,2,3,4,5,6' && Number(r.semana[4].minutos) === 480 && Number(r.semana[5].minutos) === 240 && r.semana[6].trabalha === false,
+      'por dia da semana: sexta até 16h (8h), sábado 7h–11h (4h), domingo folga = 48h por semana, média 8h: ' + JSON.stringify({ s: r.minutos_semana, d: r.minutos_dia }));
+    r = j(pg.comoUsuario(`select public.web_jornada_ler('gut');`));
+    ok(r.semana[5].saida === '11:00' && r.semana[5].intervalo_ini === '' && r.entrada === '07:00', 'ler devolve o horário de cada dia');
+    ok(/Na sexta, a saída/.test(erro(pg.comoUsuario(`select public.web_jornada_salvar_semana('gut', '${sem.replace('"16:00"', '"06:00"')}');`))), 'erro diz o dia com problema');
     ok(pg.psql(`select has_function_privilege('anon', 'public.web_jornada_salvar(text, text, text, text, text, text)', 'execute')::text;`) === 'false'
       && pg.psql(`select has_function_privilege('authenticated', 'private.jornada_json(uuid)', 'execute')::text;`) === 'false', 'fechado para anônimo; função interna fechada');
   } finally {

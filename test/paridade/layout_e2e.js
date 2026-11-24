@@ -203,23 +203,30 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.reload(); await page.waitForTimeout(3500); await page.evaluate(() => showView('layout')); await page.waitForTimeout(2500);
     const vol = await page.evaluate(() => { gutLayout.trocarNome('Salão de costura'); const d = gutLayout.estado().atual.dados; return { n: d.itens.length, c: d.cotas.length, w: d.largura, id: gutLayout.estado().atual.id }; });
     ok(vol.n >= 6 && vol.c === 1 && vol.w === 15 && /^LAY-/.test(vol.id), 'ao reabrir, a planta volta como foi salva: ' + JSON.stringify(vol));
-    // Cadastros → Jornada de trabalho
+    // Cadastros → Jornada de trabalho (por dia da semana)
     pg.psql(`delete from private.empresa_jornada;`);
     await page.evaluate(() => openCadTab('jornada')); await page.waitForTimeout(1200);
-    const jr0 = await page.evaluate(() => ({ aviso: !!document.querySelector('.jr-aviso'), resumo: document.getElementById('jrResumo')?.innerText || '', dias: document.querySelectorAll('.jr-dia.on').length }));
-    ok(jr0.aviso && /9h por dia/.test(jr0.resumo) && /45h por semana/.test(jr0.resumo) && jr0.dias === 5, 'aba Jornada de trabalho abre com o padrão (07–17, 1h de almoço, seg a sex) e o aviso de não salva: ' + JSON.stringify(jr0));
-    await page.fill('#jrEntrada', '07:30'); await page.fill('#jrSaida', '17:18'); await page.click('.jr-dia:has-text("Sáb")'); await page.click('.jr-dia:has-text("Sáb")'); await page.click('.jr-dia:has-text("Sex")');
-    const jr1 = await page.evaluate(() => document.getElementById('jrResumo').innerText);
-    ok(/8h48 por dia/.test(jr1) && /4 dias/.test(jr1) && /35h12 por semana/.test(jr1), 'o resumo acompanha o que se digita: ' + jr1);
-    await page.click('.jr-dia:has-text("Sex")'); await page.click('#jrSalvar'); await page.waitForTimeout(2000);
-    const jrDb = JSON.parse(pg.psql(`select row_to_json(x) from (select to_char(entrada, 'HH24:MI') e, to_char(saida, 'HH24:MI') s, dias from private.empresa_jornada) x;`));
+    const jr0 = await page.evaluate(() => ({ aviso: !!document.querySelector('.jr-aviso'), resumo: document.getElementById('jrResumo')?.innerText || '', linhas: document.querySelectorAll('.jr-dialinha').length, on: document.querySelectorAll('.jr-dialinha:not(.off)').length, sex: document.getElementById('jrTot5')?.innerText }));
+    ok(jr0.aviso && jr0.linhas === 7 && jr0.on === 5 && /45h por semana/.test(jr0.resumo) && jr0.sex === '9h', 'aba Jornada abre com 7 dias, o padrão seg a sex (9h, 45h por semana) e o aviso de não salva: ' + JSON.stringify(jr0));
+    await page.fill('#jrsaida5', '16:00');
+    await page.click('.jr-dialinha:nth-child(6) .jr-tg input'); await page.waitForTimeout(150);
+    await page.fill('#jrsaida6', '11:00'); await page.click('.jr-dialinha:nth-child(6) .jr-int .jr-link'); await page.waitForTimeout(150);
+    const jr1 = await page.evaluate(() => ({ r: document.getElementById('jrResumo').innerText, sex: document.getElementById('jrTot5').innerText, sab: document.getElementById('jrTot6').innerText, ent6: document.getElementById('jrentrada6').value }));
+    ok(jr1.sex === '8h' && jr1.sab === '4h' && jr1.ent6 === '07:00' && /48h por semana/.test(jr1.r) && /6 dias/.test(jr1.r) && /média de 8h/.test(jr1.r), 'sexta até 16h e sábado 7h–11h sem intervalo: 48h por semana, média 8h: ' + JSON.stringify(jr1));
+    await page.click('#jrSalvar'); await page.waitForTimeout(2000);
+    const jrDb = JSON.parse(pg.psql(`select row_to_json(x) from (select dias, horarios from private.empresa_jornada) x;`));
     const cap = await page.evaluate(() => (STATE.cad.maquinas || []).map(m => Number(m.MINUTOS_DISP_DIA)));
-    ok(jrDb.e === '07:30' && jrDb.s === '17:18' && jrDb.dias.join() === '1,2,3,4,5' && cap.length && cap.every(v => v === 528) && !(await page.$('.jr-aviso')), 'salvar grava a jornada no banco e a capacidade das máquinas vira 528 min/dia: ' + JSON.stringify({ jrDb, cap }));
-    const plan = await page.evaluate(() => [gutJornada.planejadoAte(new Date(2026, 10, 24, 10, 0)), gutJornada.planejadoAte(new Date(2026, 10, 24, 12, 30)), gutJornada.planejadoAte(new Date(2026, 10, 24, 20, 0)), gutJornada.planejadoAte(new Date(2026, 10, 28, 10, 0))]);
-    ok(plan.join() === '150,270,528,0', 'jornada até a hora: 10h = 150 min, 12h30 (almoço) = 270, depois da saída = 528, sábado = 0: ' + plan);
-    await page.fill('#jrEntrada', '18:00'); await page.click('#jrSalvar'); await page.waitForTimeout(800);
-    ok(/Confira os horários/.test(await page.evaluate(() => document.getElementById('jrResumo').innerText)) && JSON.parse(pg.psql(`select row_to_json(x) from (select to_char(entrada, 'HH24:MI') e from private.empresa_jornada) x;`)).e === '07:30', 'entrada depois da saída avisa e não grava');
-    if (process.env.SHOT) { await page.evaluate(() => gutJornada.abrir()); await page.waitForTimeout(800); await page.screenshot({ path: path.join(process.env.SHOT, 'cadastro-jornada.png') }); }
+    ok(jrDb.dias.join() === '1,2,3,4,5,6' && jrDb.horarios['5'].saida === '16:00' && jrDb.horarios['6'].saida === '11:00' && jrDb.horarios['6'].intervalo_ini === '' && !jrDb.horarios['7']
+      && cap.length && cap.every(v => v === 480) && !(await page.$('.jr-aviso')), 'salvar grava o horário de cada dia e a capacidade das máquinas vira a média (480 min/dia): ' + JSON.stringify({ h: jrDb.horarios['6'], cap }));
+    const plan = await page.evaluate(() => [gutJornada.planejadoAte(new Date(2026, 10, 24, 10, 0)), gutJornada.planejadoAte(new Date(2026, 10, 24, 12, 30)), gutJornada.planejadoAte(new Date(2026, 10, 27, 20, 0)), gutJornada.planejadoAte(new Date(2026, 10, 28, 10, 0)), gutJornada.planejadoAte(new Date(2026, 10, 29, 10, 0))]);
+    ok(plan.join() === '180,300,480,180,0', 'jornada até a hora: ter 10h = 180, ter 12h30 (almoço) = 300, sex à noite = 480, sáb 10h = 180, dom = 0: ' + plan);
+    await page.evaluate(() => gutJornada.abrir()); await page.waitForTimeout(800);
+    ok(await page.evaluate(() => document.getElementById('jrsaida5').value === '16:00' && document.getElementById('jrTot6').innerText === '4h' && document.getElementById('jrTot7').innerText === '—'), 'ao reabrir, mostra o que foi salvo (sexta 16h, sábado 4h, domingo folga)');
+    await page.click('.jr-atalhos .btn'); await page.waitForTimeout(150);
+    ok(await page.evaluate(() => document.getElementById('jrsaida5').value === '17:00' && document.getElementById('jrsaida6').value === '17:00'), '"copiar o horário de segunda" aplica nos outros dias marcados');
+    await page.fill('#jrentrada3', '18:00'); await page.click('#jrSalvar'); await page.waitForTimeout(800);
+    ok(/Confira/.test(await page.evaluate(() => document.getElementById('jrResumo').innerText)) && JSON.parse(pg.psql(`select row_to_json(x) from (select horarios->'5'->>'saida' s from private.empresa_jornada) x;`)).s === '16:00', 'entrada depois da saída avisa e não grava');
+    if (process.env.SHOT) { await page.evaluate(() => gutJornada.abrir()); await page.waitForTimeout(800); await page.screenshot({ path: path.join(process.env.SHOT, 'cadastro-jornada.png'), fullPage: false }); }
     console.log('erros', errors.slice(0, 5)); console.log(`${pass}/${pass + fail}`); if (fail) process.exitCode = 1;
   } finally { if (browser) await browser.close(); pg.descer(true); }
 })().catch(e => { console.error(e); pg.descer(true); process.exit(2); });
