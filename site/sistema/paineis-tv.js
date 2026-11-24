@@ -2,7 +2,8 @@
  * 1. Peças prontas · 2. Produção (eficiências) · 3. Produção em tela cheia
  * Dados direto do Supabase (RPC web_paineis_tv), ao vivo pelo canal campo-<empresa> e a cada 15 s.
  * Design e lógica de referência: facsimprojetos-cloud/apontador-de-producao (tv-dashboard.js).
- * Abrir: GUT_TV.abrir(1|2|3) ou o link /sistema/#tv1, #tv2, #tv3.
+ * 4. Kanban de produtos (RPC web_fluxo_produtos): quantidade por produto/tamanho/cor em cada etapa, sem lotes.
+ * Abrir: GUT_TV.abrir(1..4) ou o link /sistema/#tv1 … #tv4.
  */
 (() => {
 'use strict';
@@ -21,17 +22,20 @@ const $id = id => document.getElementById(id);
 /* Cores: até 80% vermelho; acima de 80% até 100% azul; acima de 100% verde */
 const cls = e => e == null || !isFinite(e) ? 'tv-neutral' : e > 100 ? 'tv-good' : e > 80 ? 'tv-mid' : 'tv-bad';
 
-const PANELS = [[1, 'PEÇAS PRONTAS'], [2, 'PRODUÇÃO'], [3, 'PRODUÇÃO · TELA CHEIA']];
+const PANELS = [[1, 'PEÇAS PRONTAS'], [2, 'PRODUÇÃO'], [3, 'PRODUÇÃO · TELA CHEIA'], [4, 'KANBAN DE PRODUTOS']];
 const CFG_KEY = 'gut-tv-cfg';
-const cfg = { panel: 2, rotate: false, secs: 30 };
+const cfg = { panel: 2, rotate: false, secs: 30, fxNivel: 'P' };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); } catch (_) { /* sem armazenamento */ }
-const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify({ panel: cfg.panel, rotate: cfg.rotate, secs: cfg.secs })); } catch (_) {} };
+const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify({ panel: cfg.panel, rotate: cfg.rotate, secs: cfg.secs, fxNivel: cfg.fxNivel })); } catch (_) {} };
 
 const filtrosPadrao = () => { const h = hojeSP(); return { inicio: h, fim: h, funcionario: '', produto: '', processo: '', setor: '' }; };
 const filters = filtrosPadrao();
 
 let DADOS = null;      // período dos filtros
 let DADOS_HOJE = null; // só hoje (painel 3)
+let FLUXO = null;      // Kanban de produtos (painel 4)
+let FX_ERRO = '';
+const fx = { busca: '', hist: false, exp: {} }; // exp: produto → 'T' (por tamanho) | 'TC' (tamanho e cor) | 'P'
 let active = false, busy = false, lastUpdated = null, lastError = '', pendingLive = false;
 let timer = null, clockTimer = null, scrollTimer = null, rotTimer = null, liveTimer = null, rotElapsed = 0;
 let vistosP3 = new Set();
@@ -48,8 +52,9 @@ async function carregar() {
   const h = hojeSP();
   const ini = filters.inicio || h, fim = filters.fim || ini;
   const incluiHoje = ini <= h && h <= fim;
-  const [a, b] = await Promise.all([rpc(ini, fim), incluiHoje ? null : rpc(h, h)]);
-  DADOS = a; DADOS_HOJE = b || a;
+  const fluxo = (cfg.panel === 4 || cfg.rotate) ? GUT_SB.rpc('web_fluxo_produtos', { p_slug: slug(), p_dias_hist: 30 }).then(r => { if (r.error) throw new Error(r.error.message); FX_ERRO = ''; return r.data; }).catch(e => { FX_ERRO = e.message || 'Falha ao ler o Kanban de produtos.'; return null; }) : null;
+  const [a, b, f] = await Promise.all([rpc(ini, fim), incluiHoje ? null : rpc(h, h), fluxo]);
+  DADOS = a; DADOS_HOJE = b || a; if (f) FLUXO = f;
 }
 
 /* ---------- contas ----------
@@ -273,6 +278,56 @@ function panel3() {
   return html;
 }
 
+/* ---------- painel 4: Kanban de produtos (sem lotes: junta tudo por produto, tamanho e cor) ---------- */
+const FX_ETAPAS = [
+  ['CORTE', 'ESTOQUE DE CORTE', 'cortado, falta volumar', 'fx-c0'], ['VOLUMADO', 'VOLUMADO', 'aguardando destino', 'fx-c1'],
+  ['DESTINO', 'DESTINO DEFINIDO', 'aguardando envio', 'fx-c2'], ['FACCAO', 'NA FACÇÃO', 'enviado', 'fx-c3'],
+  ['INSPECAO', 'RETORNO / INSPEÇÃO', 'voltou da facção', 'fx-c4'], ['INTERNA', 'PRODUÇÃO INTERNA', 'em produção', 'fx-c5'],
+  ['EMBALAR', 'PRONTO P/ EMBALAR', 'falta embalar e enviar', 'fx-c6']];
+const FX_NIVEIS = [['P', 'PRODUTO'], ['T', '+ TAMANHO'], ['TC', '+ COR']];
+const fxNivelDe = p => fx.exp[p] || cfg.fxNivel || 'P';
+function fxGrupos(itens) {
+  const m = new Map(), q = fx.busca.trim().toLowerCase();
+  itens.forEach(i => {
+    if (q && !(`${i.pc} ${i.pn}`.toLowerCase().includes(q))) return;
+    const n = fxNivelDe(i.p), k = [i.e, i.p, n === 'P' ? '' : i.t, n === 'TC' ? i.c : ''].join('|');
+    let g = m.get(k); if (!g) { g = { e: i.e, p: i.p, pn: i.pn, pc: i.pc, t: n === 'P' ? '' : i.tn, to: i.to, c: n === 'TC' ? i.cn : '', n, q: 0, v: 0, partes: new Map() }; m.set(k, g); }
+    g.q += Number(i.q) || 0; g.v += Number(i.v) || 0;
+    if (n !== 'TC') { const sk = n === 'P' ? i.tn : i.cn; g.partes.set(sk, (g.partes.get(sk) || 0) + (Number(i.q) || 0)); }
+  });
+  return [...m.values()];
+}
+function fxCard(g) {
+  const prox = g.n === 'P' ? 'T' : g.n === 'T' ? 'TC' : null;
+  const partes = [...g.partes.entries()].filter(([k]) => k).slice(0, 8).map(([k, v]) => `<span>${esc(k)} <b>${fmt(v)}</b></span>`).join('');
+  return `<div class="fx-card"><div class="fx-top"><div class="fx-nome"><b>${esc(g.pc ? g.pc + ' · ' : '')}${esc(g.pn)}</b>${g.t || g.c ? `<small>${[g.t, g.c].filter(Boolean).map(esc).join(' · ')}</small>` : ''}</div><div class="fx-q">${fmt(g.q)}<small>pç</small></div></div>
+    ${partes ? `<div class="fx-partes">${partes}</div>` : ''}
+    <div class="fx-acoes">${g.e !== 'CORTE' && g.v ? `<span class="fx-vol">${fmt(g.v)} vol.</span>` : '<span></span>'}<span>${prox ? `<button type="button" data-tv-action="fx-abrir" data-p="${esc(g.p)}" data-n="${prox}" title="Separar este produto por ${prox === 'T' ? 'tamanho' : 'cor'} em todas as colunas">⤢ ${prox === 'T' ? 'por tamanho' : 'por cor'}</button>` : ''}${g.n !== (cfg.fxNivel || 'P') ? `<button type="button" data-tv-action="fx-juntar" data-p="${esc(g.p)}" title="Voltar este produto para um card só">juntar</button>` : ''}</span></div></div>`;
+}
+const fxOrdem = (a, b) => b.q - a.q || String(a.pn).localeCompare(String(b.pn), 'pt-BR') || (a.to - b.to) || String(a.c).localeCompare(String(b.c), 'pt-BR');
+function panel4() {
+  const F = FLUXO; if (!F) return `<div class="tvg-empty tvg-empty-big">${FX_ERRO ? esc(FX_ERRO) : 'Carregando o Kanban de produtos…'}</div>`;
+  const itens = (F.itens || []);
+  if (fx.hist) {
+    const gs = fxGrupos(itens.filter(i => i.e === 'HIST')).sort(fxOrdem), tot = gs.reduce((t, g) => t + g.q, 0);
+    return `<section class="tvg-box fx-hist"><div class="tv-panel-header"><div><b>HISTÓRICO · ENVIADO PARA O ESTOQUE</b><small>Últimos ${F.dias_hist || 30} dias · saiu do Kanban</small></div><span>${fmt(tot)} pç</span></div>
+      <div class="fx-hist-grid tv-autoscroll">${gs.length ? gs.map(fxCard).join('') : '<div class="tvg-empty">Nada foi para o estoque nos últimos dias.</div>'}</div></section>`;
+  }
+  const ativos = itens.filter(i => i.e !== 'HIST'), gs = fxGrupos(ativos);
+  const total = gs.reduce((t, g) => t + g.q, 0);
+  const cols = FX_ETAPAS.map(([e, nome, sub, c]) => {
+    const cards = gs.filter(g => g.e === e).sort(fxOrdem), q = cards.reduce((t, g) => t + g.q, 0);
+    return `<section class="fx-col ${c}"><div class="fx-col-h"><div><b>${nome}</b><small>${sub}</small></div><span>${fmt(q)}<small> pç</small></span></div>
+      <div class="fx-cards">${cards.length ? cards.map(fxCard).join('') : '<div class="fx-vazio">—</div>'}</div></section>`;
+  }).join('');
+  return `<div class="fx-resumo"><span><b>${fmt(total)}</b> peças em andamento</span><span><b>${new Set(gs.map(g => g.p)).size}</b> produto(s)</span><span class="fx-dica">Sem lotes: cada card junta todas as caixas daquele produto na etapa</span></div><div class="fx-board">${cols}</div>`;
+}
+function fxBar() {
+  return `<div class="fx-seg" role="group" aria-label="Mostrar cards por">${FX_NIVEIS.map(([k, l]) => `<button type="button" class="${(cfg.fxNivel || 'P') === k ? 'on' : ''}" data-tv-action="fx-nivel" data-n="${k}">${l}</button>`).join('')}</div>
+  <label><span>PRODUTO</span><input type="search" id="tvFxBusca" placeholder="Buscar código ou nome" value="${esc(fx.busca)}"></label>
+  <button type="button" class="tv-reset${fx.hist ? ' fx-on' : ''}" data-tv-action="fx-hist">${fx.hist ? '← Voltar ao Kanban' : '🕘 Histórico (30 dias)'}</button>`;
+}
+
 /* ---------- moldura ---------- */
 const GUT_MARK = '<svg viewBox="0 0 64 56" aria-hidden="true"><defs><linearGradient id="tvPrata" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f5"/><stop offset="1" stop-color="#8d9099"/></linearGradient></defs><path d="M30 6H8a5 5 0 0 0-5 5v36a5 5 0 0 0 5 5h44a5 5 0 0 0 5-5V22" fill="none" stroke="url(#tvPrata)" stroke-width="3.2" stroke-linecap="round"/><rect x="11" y="34" width="8" height="13" rx="1" fill="#e11d2a"/><rect x="23" y="24" width="8" height="23" rx="1" fill="#e11d2a"/><rect x="35" y="2" width="9" height="45" rx="1" fill="#ff2a36"/></svg>';
 function options(arr, sel, all) {
@@ -289,6 +344,7 @@ function filterSummary() {
   return p.join(' · ');
 }
 function filterBar() {
+  if (cfg.panel === 4) return fxBar();
   const D = DADOS || { operadores: [], produtos: [], processos: [], setores: [] };
   return `<label><span>DATA INICIAL</span><input type="date" id="tvInicio" value="${esc(filters.inicio)}"></label>
   <label><span>DATA FINAL</span><input type="date" id="tvFim" value="${esc(filters.fim)}"></label>
@@ -312,15 +368,17 @@ function template() {
  <div class="tv-p" id="tvBody"><div class="tvg-empty tvg-empty-big">Carregando do Supabase…</div></div>
  <footer class="tv-bottom"><span>GUT PPCP • GESTÃO INDUSTRIAL</span><span id="tvFoot"></span><span id="tvLastSync">Sincronizando com o Supabase</span></footer></section>`;
 }
-const TITULOS = { 1: 'PEÇAS <em>PRONTAS</em>', 2: 'PRODUÇÃO <em>EFICIÊNCIAS</em>', 3: 'PRODUÇÃO <em>DO DIA</em>' };
+const TITULOS = { 1: 'PEÇAS <em>PRONTAS</em>', 2: 'PRODUÇÃO <em>EFICIÊNCIAS</em>', 3: 'PRODUÇÃO <em>DO DIA</em>', 4: 'KANBAN DE <em>PRODUTOS</em>' };
 const RODAPE = {
   1: 'Pronta = peça que passou pela operação final da sequência operacional · ignora os filtros de funcionário e processo',
   2: 'Até 80% vermelho · até 100% azul · acima de 100% verde · cupom e apontamento direto: eficiência no fim do dia',
-  3: 'Hoje, sem filtros · marcação dá eficiência na hora · cupom e apontamento direto fecham no fim do dia'
+  3: 'Hoje, sem filtros · marcação dá eficiência na hora · cupom e apontamento direto fecham no fim do dia',
+  4: 'Quantidade de cada produto em cada etapa, somando todos os lotes · o que vai para o estoque sai do Kanban e fica no histórico'
 };
 function applyPanel() {
   const ws = $id('tvWorkspace'); if (!ws) return;
   ws.dataset.panel = String(cfg.panel);
+  const fbar = $id('tvFilterBar'); if (fbar && fbar.dataset.p !== String(cfg.panel)) { fbar.innerHTML = filterBar(); fbar.dataset.p = String(cfg.panel); }
   ws.querySelectorAll('[data-tv-panel]').forEach(b => b.classList.toggle('on', Number(b.dataset.tvPanel) === cfg.panel));
   const n = $id('tvPanelName'); if (n) n.textContent = (PANELS.find(p => p[0] === cfg.panel) || [])[1] || '';
   const dots = $id('tvDots'); if (dots) dots.innerHTML = PANELS.map(([k]) => `<i class="${k === cfg.panel ? 'on' : ''}"></i>`).join('');
@@ -334,10 +392,10 @@ function updateUi() {
   const body = $id('tvBody');
   if (body && DADOS) {
     const sc = body.querySelector('.tv-autoscroll'), keep = sc ? sc.scrollTop : 0;
-    body.innerHTML = cfg.panel === 1 ? panel1() : cfg.panel === 3 ? panel3() : panel2();
+    body.innerHTML = cfg.panel === 1 ? panel1() : cfg.panel === 3 ? panel3() : cfg.panel === 4 ? panel4() : panel2();
     const ns = body.querySelector('.tv-autoscroll'); if (ns) ns.scrollTop = keep;
   }
-  const fs = $id('tvFilterSummary'); if (fs) fs.textContent = cfg.panel === 3 ? 'Hoje · ' + dateLabel(hojeSP()) : filterSummary();
+  const fs = $id('tvFilterSummary'); if (fs) fs.textContent = cfg.panel === 3 ? 'Hoje · ' + dateLabel(hojeSP()) : cfg.panel === 4 ? (fx.hist ? 'Histórico' : 'Agora') : filterSummary();
   const s = $id('tvLastSync'); if (s) s.textContent = lastError || (lastUpdated ? 'Atualizado às ' + lastUpdated.toLocaleTimeString('pt-BR') : 'Sincronizando com o Supabase');
   const lv = $id('tvLive'); if (lv) lv.classList.toggle('tv-off', !!lastError);
   updateClock();
@@ -358,7 +416,7 @@ function rotTick() {
   if (!active || !cfg.rotate) return;
   rotElapsed++;
   const bar = $id('tvRotBar'); if (bar) bar.style.width = Math.min(100, rotElapsed / cfg.secs * 100) + '%';
-  if (rotElapsed >= cfg.secs) { rotElapsed = 0; cfg.panel = cfg.panel % PANELS.length + 1; saveCfg(); applyPanel(); updateUi(); }
+  if (rotElapsed >= cfg.secs) { rotElapsed = 0; cfg.panel = cfg.panel % PANELS.length + 1; saveCfg(); applyPanel(); updateUi(); if (cfg.panel === 4 && !FLUXO) refresh(); }
 }
 function setRotation() {
   rotElapsed = 0; if (rotTimer) { clearInterval(rotTimer); rotTimer = null; }
@@ -386,7 +444,7 @@ function setFull(on) {
 /* ---------- abrir / fechar ---------- */
 function abrir(n) {
   injectCss();
-  if (n) cfg.panel = Math.max(1, Math.min(3, Number(n) || 2));
+  if (n) cfg.panel = Math.max(1, Math.min(PANELS.length, Number(n) || 2));
   saveCfg();
   let root = $id('gutTv');
   if (!root) { root = document.createElement('div'); root.id = 'gutTv'; document.body.appendChild(root); }
@@ -411,7 +469,7 @@ function fechar() {
   try { if (/^#tv\d/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
 }
 // chamado pelo canal ao vivo do sistema (wqAoVivo) quando o banco avisa que algo mudou
-const TAB_VIVO = ['cupons_producao', 'apontamentos_producao', 'jornada_operador', 'roteiro_produto', 'cad_operadores', 'cad_produtos', 'cad_processos'];
+const TAB_VIVO = ['volumes', 'remessas', 'remessa_itens', 'estoque_corte', 'cupons_producao', 'apontamentos_producao', 'jornada_operador', 'roteiro_produto', 'cad_operadores', 'cad_produtos', 'cad_processos'];
 function aviso(tabela) {
   if (!active) return;
   if (tabela && !TAB_VIVO.includes(tabela)) return;
@@ -438,11 +496,15 @@ document.addEventListener('change', ev => {
 document.addEventListener('click', ev => {
   if (!active) return;
   const pb = ev.target.closest('#gutTv [data-tv-panel]');
-  if (pb) { cfg.panel = Number(pb.dataset.tvPanel); rotElapsed = 0; saveCfg(); applyPanel(); updateUi(); return; }
+  if (pb) { cfg.panel = Number(pb.dataset.tvPanel); rotElapsed = 0; saveCfg(); applyPanel(); updateUi(); if (cfg.panel === 4 && !FLUXO) refresh(); return; }
   const b = ev.target.closest('#gutTv [data-tv-action]'); if (!b) return;
   const a = b.dataset.tvAction;
   if (a === 'back') { fechar(); return; }
   if (a === 'refresh') { refresh(); return; }
+  if (a === 'fx-nivel') { cfg.fxNivel = b.dataset.n; fx.exp = {}; saveCfg(); const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); updateUi(); return; }
+  if (a === 'fx-abrir') { fx.exp[b.dataset.p] = b.dataset.n; updateUi(); return; }
+  if (a === 'fx-juntar') { delete fx.exp[b.dataset.p]; updateUi(); return; }
+  if (a === 'fx-hist') { fx.hist = !fx.hist; const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); updateUi(); return; }
   if (a === 'reset') { Object.assign(filters, filtrosPadrao()); const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); refresh(); return; }
   if (a === 'fullscreen') {
     const el = $id('tvWorkspace');
@@ -453,6 +515,7 @@ document.addEventListener('click', ev => {
   }
 });
 document.addEventListener('fullscreenchange', () => { if (active && !document.fullscreenElement && cfg.panel !== 3) setFull(false); });
+document.addEventListener('input', ev => { if (active && ev.target.id === 'tvFxBusca') { fx.busca = ev.target.value; clearTimeout(fx.t); fx.t = setTimeout(updateUi, 200); } });
 document.addEventListener('pointerover', ev => { if (ev.target.closest?.('#gutTv .tv-autoscroll')) scrollHold = true; });
 document.addEventListener('pointerout', ev => { if (ev.target.closest?.('#gutTv .tv-autoscroll') && !ev.relatedTarget?.closest?.('#gutTv .tv-autoscroll')) scrollHold = false; });
 document.addEventListener('keydown', ev => {
@@ -721,6 +784,28 @@ body.gut-tv-open{overflow:hidden}
 .tv-launch-btn em{position:absolute;right:16px;top:18px;font-style:normal;font-size:10px;font-weight:900;letter-spacing:1px;color:#65dea2}
 .tv-launch-btn[disabled]{opacity:.45;cursor:not-allowed;border-color:#5c5428;transform:none}
 .tv-launch-btn[disabled] b{color:#cfc9a0}
+
+/* ===== painel 4: Kanban de produtos (v4.41) ===== */
+.tv-workspace[data-panel="4"] .tv-filterbar{grid-template-columns:auto minmax(220px,360px) auto;justify-content:start}
+.fx-resumo{display:flex;gap:22px;align-items:baseline;flex-wrap:wrap;color:#c9ccd3;font-size:13px}.fx-resumo b{color:#fff;font-size:22px;font-weight:900;margin-right:4px}.fx-dica{color:#8b8f99;font-size:11.5px;margin-left:auto}
+.fx-board{display:grid;grid-template-columns:repeat(7,minmax(190px,1fr));gap:10px;flex:1;min-height:0;overflow-x:auto}
+.fx-col{--fx:#9aa0aa;display:flex;flex-direction:column;min-height:0;border:1px solid #2a2c33;border-top:3px solid var(--fx);border-radius:11px;background:#0b0c10}
+.fx-c0{--fx:#9aa0aa}.fx-c1{--fx:#f5d33f}.fx-c2{--fx:#c084fc}.fx-c3{--fx:#29d8f4}.fx-c4{--fx:#fb923c}.fx-c5{--fx:#60a5fa}.fx-c6{--fx:#2ee883}
+.fx-col-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:10px 12px;border-bottom:1px solid #22242a}
+.fx-col-h b{display:block;color:var(--fx);font-size:11.5px;letter-spacing:.7px;font-weight:900}.fx-col-h small{display:block;color:#8b8f99;font-size:10px;margin-top:2px}
+.fx-col-h>span{color:#fff;font-size:20px;font-weight:900;white-space:nowrap;line-height:1}.fx-col-h>span small{font-size:10px;color:#8b8f99;font-weight:700}
+.fx-cards{display:flex;flex-direction:column;gap:8px;padding:10px;overflow-y:auto;min-height:0;flex:1}
+.fx-card{background:#15171d;border:1px solid #2c2f37;border-left:3px solid var(--fx);border-radius:9px;padding:9px 10px;display:flex;flex-direction:column;gap:6px}
+.fx-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.fx-nome{min-width:0}.fx-nome b{display:block;color:#eef0f4;font-size:13px;line-height:1.25;overflow-wrap:anywhere}.fx-nome small{display:block;color:var(--fx);font-weight:800;font-size:12px;margin-top:2px}
+.fx-q{font-size:24px;font-weight:900;color:#fff;line-height:1;white-space:nowrap;text-align:right}.fx-q small{display:block;font-size:9.5px;color:#8b8f99;font-weight:700;margin-top:2px}
+.fx-partes{display:flex;flex-wrap:wrap;gap:4px}.fx-partes span{font-size:10.5px;color:#b9bdc6;background:#1e2128;border:1px solid #2c2f37;border-radius:6px;padding:2px 6px}.fx-partes b{color:#fff}
+.fx-acoes{display:flex;justify-content:space-between;align-items:center;gap:6px;min-height:18px}.fx-vol{font-size:10.5px;color:#8b8f99}
+.fx-acoes button{background:transparent;border:1px solid #3a3d46;color:#d8dbe2;border-radius:6px;font-size:10.5px;font-weight:800;padding:3px 7px;cursor:pointer;margin-left:4px}.fx-acoes button:hover,.fx-acoes button:focus-visible{border-color:var(--fx);color:#fff;outline:none}
+.fx-vazio{color:#4b4f59;text-align:center;padding:14px 0}
+.fx-seg{display:inline-flex;border:1px solid #3a3d46;border-radius:999px;overflow:hidden;align-self:flex-end}.fx-seg button{background:transparent;border:0;color:#c9ccd3;font-weight:900;font-size:11.5px;letter-spacing:.5px;padding:9px 14px;cursor:pointer}.fx-seg button.on{background:linear-gradient(180deg,#ff3b47,#c8101c);color:#fff}
+.tv-reset.fx-on{border-color:#ff3b47;color:#fff}
+.fx-hist{flex:1;min-height:0}.fx-hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:12px;overflow-y:auto;--fx:#2ee883}
+.tv-full .fx-q{font-size:clamp(22px,1.7vw,34px)}.tv-full .fx-nome b{font-size:clamp(12px,.95vw,17px)}.tv-full .fx-col-h>span{font-size:clamp(18px,1.4vw,28px)}
 `;
   document.head.appendChild(st);
 }

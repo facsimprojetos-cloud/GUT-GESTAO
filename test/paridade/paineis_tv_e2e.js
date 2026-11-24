@@ -87,7 +87,7 @@ insert into apontamentos_producao(empresa_id,id_apontamento,data_hora,data_produ
       return r.fulfill({ body: '' });
     });
     await page.goto('http://app.local/sistema/'); await page.waitForTimeout(3500);
-    ok(await page.locator('#kpiCards .tv-launch-btn').count() === 5 && await page.locator('#kpiCards .tv-launch-btn[disabled]').count() === 2, 'Dashboard mostra os 5 botões (1, 2 e 3 ativos; 4 e 5 em breve)');
+    ok(await page.locator('#kpiCards .tv-launch-btn').count() === 5 && await page.locator('#kpiCards .tv-launch-btn[disabled]').count() === 1, 'Dashboard mostra os 5 botões (1 a 4 ativos; 5 em breve)');
     await page.screenshot({ path: '/tmp/gut_tv_dashboard.png' });
 
     // painel 2 com o período ontem → hoje
@@ -134,7 +134,7 @@ insert into apontamentos_producao(empresa_id,id_apontamento,data_hora,data_produ
     await page.evaluate(() => { document.getElementById('tvWorkspace').classList.remove('tv-full'); });
     await page.check('#tvRotOn'); await page.fill('#tvRotSecs', '10'); await page.dispatchEvent('#tvRotSecs', 'change');
     await page.waitForTimeout(10600);
-    ok(await page.getAttribute('#tvWorkspace', 'data-panel') === '1', 'rodízio passa para o próximo painel');
+    ok(await page.getAttribute('#tvWorkspace', 'data-panel') === '4', 'rodízio passa para o próximo painel (3 → 4)');
     await page.uncheck('#tvRotOn');
     await page.click('[data-tv-action="back"]'); await page.waitForTimeout(200);
     ok(!(await page.$('#gutTv')) && !/#tv/.test(page.url()), 'Voltar fecha o painel e limpa o link');

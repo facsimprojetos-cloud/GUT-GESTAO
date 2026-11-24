@@ -1237,7 +1237,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.40.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.41.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -2168,7 +2168,7 @@ async function wqConectar(){if(!GUT_SB||WEBQ.canal)return;try{const {data,error}
 if(GUT_WEB)setInterval(()=>{if(!WEBQ.canal||!wqPodeAtualizar())return;
   if(STATE.view==='dash-interna'&&WEBQ.sujo.interno&&!STATE.internalBoardLoading){WEBQ.sujo.interno=false;refreshInternalBoard(true)}
   else if(STATE.view==='dash-faccoes'&&WEBQ.sujo.faccao){WEBQ.sujo.faccao=false;refreshFactionSilent()}},1000);
-function startShell(){gutWebExtras();if(window.gutHomeInicio)setTimeout(gutHomeInicio,0);{const m=/^#tv([123])$/.exec(location.hash||'');if(m&&GUT_WEB)setTimeout(()=>gutTvAbrir(Number(m[1])),300)}if(GUT_WEB)setTimeout(wqConectar,1500);installLazyRender();initTheme();bindNav();setOperationalNavigation(true);Promise.resolve(init()).catch(e=>{console.error('[GUT INIT]',e);toast('O sistema abriu em modo de segurança. Alguns dados podem não ter carregado: '+(e?.message||e),true)})}
+function startShell(){gutWebExtras();if(window.gutHomeInicio)setTimeout(gutHomeInicio,0);{const m=/^#tv([1-4])$/.exec(location.hash||'');if(m&&GUT_WEB)setTimeout(()=>gutTvAbrir(Number(m[1])),300)}if(GUT_WEB)setTimeout(wqConectar,1500);installLazyRender();initTheme();bindNav();setOperationalNavigation(true);Promise.resolve(init()).catch(e=>{console.error('[GUT INIT]',e);toast('O sistema abriu em modo de segurança. Alguns dados podem não ter carregado: '+(e?.message||e),true)})}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',gutBoot,{once:true});else gutBoot();
 window.addEventListener('error',e=>console.error('[GUT WINDOW ERROR]',e.error||e.message));
 window.addEventListener('unhandledrejection',e=>console.error('[GUT PROMISE ERROR]',e.reason));
@@ -2361,12 +2361,12 @@ function renderDashboard(){const d=STATE.dashboard||{cards:{},operadores:[],tren
 }
 // v4.16.0 — Painéis de TV (modo escuro): dados direto do Supabase (web_paineis_tv), ao vivo pelo canal da empresa
 let GUT_TV_P=null;
-function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.30.0';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
+function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.41.0';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
 function gutTvAbrir(n){if(!GUT_WEB){toast('Os painéis de TV abrem no sistema web (/sistema).',true);return}gutTvCarregar().then(tv=>tv.abrir(n)).catch(e=>toast(e.message,true))}
-window.addEventListener('hashchange',()=>{const m=/^#tv([123])$/.exec(location.hash||'');if(m&&GUT_WEB&&GUT_STARTED&&!document.getElementById('tvWorkspace'))gutTvAbrir(Number(m[1]))});
+window.addEventListener('hashchange',()=>{const m=/^#tv([1-4])$/.exec(location.hash||'');if(m&&GUT_WEB&&GUT_STARTED&&!document.getElementById('tvWorkspace'))gutTvAbrir(Number(m[1]))});
 function gutTvBotoes(){const b=(n,t,s,on)=>`<button type="button" class="tv-launch-btn" ${on?`onclick="gutTvAbrir(${n})"`:'disabled'}><span class="tv-n">${n}</span><b>${t}</b><small>${s}</small>${on?'<em>● AO VIVO</em>':'<em style="color:#9ea9aa">EM BREVE</em>'}</button>`;
   gutTvCarregar().catch(()=>{});
-  return '<div class="tv-launch">'+b(1,'Peças prontas','Prontas por dia, meta automática, eficiência coletiva e gargalo por produto.',1)+b(2,'Produção','Meta, realizado, saldo e eficiência por lançamento, com ranking dos funcionários.',1)+b(3,'Produção em tela cheia','O dia de hoje para a TV: lançamentos chegando e acumulado por funcionário.',1)+b(4,'Gargalos','Balanceamento das operações e sugestões de movimentação.',0)+b(5,'Facção','Separado, enviado, atrasos e retornos por facção.',0)+'</div>'}
+  return '<div class="tv-launch">'+b(1,'Peças prontas','Prontas por dia, meta automática, eficiência coletiva e gargalo por produto.',1)+b(2,'Produção','Meta, realizado, saldo e eficiência por lançamento, com ranking dos funcionários.',1)+b(3,'Produção em tela cheia','O dia de hoje para a TV: lançamentos chegando e acumulado por funcionário.',1)+b(4,'Kanban de produtos','Quanto de cada produto está no corte, volumado, na facção, na produção interna e pronto para embalar.',1)+b(5,'Gargalos','Balanceamento das operações e sugestões de movimentação.',0)+'</div>'}
 function dashboardRangePayload(){let ini=$('dashDateStart')?.value||$('dashDate')?.value||localDateKey(),fim=$('dashDate')?.value||ini;if(ini>fim){const t=ini;ini=fim;fim=t;if($('dashDateStart'))$('dashDateStart').value=ini;if($('dashDate'))$('dashDate').value=fim}return {DATA_INICIAL:ini,DATA_FINAL:fim}}
 async function refreshDashboard(){busy(true);try{STATE.dashboard=await callServer('getDashboard',dashboardRangePayload());renderDashboard()}catch(e){toast(e.message,true)}finally{busy(false)}}
 
