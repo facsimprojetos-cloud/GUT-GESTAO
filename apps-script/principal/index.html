@@ -1101,6 +1101,12 @@ html.ui[data-theme="dark"] .lay-optx{fill:#ffd0a8}
 .lay-cel{fill:rgba(225,29,42,.035);stroke:rgba(225,29,42,.45);stroke-width:1.2;stroke-dasharray:6 4;vector-effect:non-scaling-stroke;pointer-events:none}.lay-celtx{fill:#c8101c;font-weight:800;pointer-events:none}
 .lay-it.ponta .lay-body-r{stroke:#16171b;stroke-width:2.2}html.ui[data-theme="dark"] .lay-it.ponta .lay-body-r{stroke:#d4d6db}
 .lay-it.maq.posto .lay-body-r{stroke-width:2}
+.lay-oee{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:#eceef2;font-size:12px}.lay-oee .t{display:flex;justify-content:space-between;align-items:baseline}.lay-oee .t strong{font-size:22px;font-family:Manrope,'DM Sans',sans-serif}
+.lay-oee .f{display:flex;flex-wrap:wrap;gap:4px 10px}.lay-oee small{color:var(--muted)}.lay-oee.ok{background:#d8f5e5}.lay-oee.high{background:#fff1c7}.lay-oee.over{background:#ffd9db}.lay-oee.vazio span{color:var(--muted)}
+html.ui[data-theme="dark"] .lay-oee{background:#202127}html.ui[data-theme="dark"] .lay-oee.ok{background:#123824}html.ui[data-theme="dark"] .lay-oee.high{background:#3a2f0a}html.ui[data-theme="dark"] .lay-oee.over{background:#3a1418}
+.lay-it.maq.parada .lay-body-r{stroke:#e11d2a;stroke-width:3;stroke-dasharray:4 3}
+table.lay-oeet{width:100%;border-collapse:collapse;font-size:13px}.lay-oeet th{font-size:11.5px;color:var(--muted);text-align:left;padding:6px 8px}.lay-oeet td{padding:6px 8px;border-top:1px solid var(--line)}
+.oee-ok{color:#12a565}.oee-high{color:#b7791f}.oee-over{color:#c8101c}.badge-par{font-size:10.5px;font-weight:800;color:#fff;background:#e11d2a;border-radius:6px;padding:1px 6px}
 .lay-float{display:none}
 #view-layout.lay-so .lay-bar,#view-layout.lay-so .lay-side,#view-layout.lay-so .lay-hint{display:none!important}
 #view-layout.lay-so{padding:0}
@@ -1200,7 +1206,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.36.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.37.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -5123,6 +5129,6 @@ function pageRows(rows,id,render,size=100){
 </script>
 <script src="menu-principal.js?v=4.31.1"></script>
 <script src="crachas.js?v=4.33.0"></script>
-<script src="layout.js?v=4.36.0"></script>
+<script src="layout.js?v=4.37.0"></script>
 </body>
 </html>

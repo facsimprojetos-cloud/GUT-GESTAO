@@ -137,6 +137,10 @@
   .busy{position:fixed;inset:0;background:rgba(244,246,251,.55);backdrop-filter:blur(2px);display:grid;place-items:center;z-index:40}
   .spin{width:42px;height:42px;border-radius:50%;border:3.5px solid rgba(79,70,229,.15);border-top-color:var(--pri);border-right-color:var(--pri2);animation:sp .75s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
+  .card.maq{border-left:5px solid #16171b}.card.maq.none{border-left-color:#f59e0b;background:#fffbeb}.card.maq.parada{border-left-color:#e11d2a;background:#fef2f2}
+  .maqico{font-size:26px;width:40px;text-align:center}.card.maq b{font-size:17px}.lnk{border:0;background:none;color:#64748b;text-decoration:underline;font:inherit;font-size:13px;cursor:pointer}
+  .btn.big{width:100%;padding:16px;font-size:17px}.opts{display:grid;gap:8px;margin:12px 0}.opt{width:100%;padding:16px;font-size:16px;text-align:left}
+  .qtdbox{display:flex;gap:8px;align-items:center;justify-content:center;margin:12px 0}.qtdbox input{width:90px;height:52px;text-align:center;font-size:24px;font-weight:800;border:1px solid #d7dce6;border-radius:14px}.qtdbox .btn{width:56px;height:52px;font-size:24px}
   .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:grid;place-items:end center;z-index:45;padding:14px;animation:fin .18s ease-out}
   .modal .card{width:100%;max-width:520px;margin:0 0 env(safe-area-inset-bottom);border-radius:24px;padding:22px 18px 18px;box-shadow:var(--sh2);animation:up .22s ease-out}
   .modal .card::before{content:"";display:block;width:40px;height:4px;border-radius:4px;background:#d7dce6;margin:-8px auto 14px}
@@ -184,7 +188,9 @@ var RPC={login:function(p){return ['campo_login',{p_empresa:EMPRESA,p_tipo:p.tip
   opPausarTodos:function(){return ['campo_op_pausar_todos',{p_token:S.token}]},opRetomarTodos:function(){return ['campo_op_retomar_todos',{p_token:S.token}]},
   faccaoRemessas:function(){return ['campo_faccao_remessas',{p_token:S.token}]},
   faccaoAviso:function(p){return ['campo_faccao_aviso',{p_token:S.token,p_id_remessa:p.ID_REMESSA,p_id_volume:p.ID_VOLUME||'',p_tipo:p.TIPO,p_obs:p.OBS||''}]},
-  faccaoFicha:function(p){return ['campo_faccao_ficha',{p_token:S.token,p_id_produto:p.ID_PRODUTO}]}};
+  faccaoFicha:function(p){return ['campo_faccao_ficha',{p_token:S.token,p_id_produto:p.ID_PRODUTO}]},
+  posto:function(){return ['campo_posto',{p_token:S.token}]},postoDefinir:function(p){return ['campo_posto_definir',{p_token:S.token,p_codigo:p.CODIGO||''}]},
+  parada:function(p){return ['campo_parada',{p_token:S.token,p_motivo:p.MOTIVO||''}]},defeito:function(p){return ['campo_defeito',{p_token:S.token,p_qtd:p.QTD,p_motivo:p.MOTIVO||''}]}};
 function call(action,payload){var m=RPC[action];if(!m)return Promise.reject(new Error('Ação não permitida.'));if(!EMPRESA)return Promise.reject(new Error('Link sem a empresa. Peça o link certo ao responsável.'));
   var x=m(payload||{});
   return sb.rpc(x[0],x[1]).then(function(res){
@@ -222,6 +228,7 @@ function cached(){try{var c=JSON.parse(ls('gutCampoCache')||'null');return c&&c.
 function load(showBusy){var action=S.perfil&&S.perfil.tipo==='FACCAO'?'faccaoRemessas':'opCupons';
   if(!showBusy&&S.fresh&&Date.now()-S.fresh<3000){S.fresh=0;render();return Promise.resolve()}
   if(showBusy)busy(true);
+  if(action==='opCupons')carregarPosto();
   return call(action,{}).then(function(r){gotData(r);render()}).catch(function(e){if(S.token)toast(e.message,true)}).then(function(){busy(false)})}
 function render(){if(!S.perfil)return renderLogin();if(S.perfil.tipo==='FACCAO')renderFaccao();else renderOperador()}
 
@@ -284,6 +291,7 @@ function renderOperador(){var d=S.data||{},cs=d.cupons||[],p=S.perfil||{},modo=m
   html+='<div class="prog"><div class="row"><div style="flex:1"><div class="sub">Produção de hoje</div><div class="big">'+num(h.minutos)+' <span class="sub">de '+num(h.meta)+' min</span></div></div><div style="text-align:right"><div class="big" style="color:'+(pct>=100?'#0f766e':pct>=60?'#16a34a':'#d97706')+'">'+num(pct)+'%</div><div class="sub">da meta do dia</div></div></div>'+
     '<div class="bar"><i class="'+(pct>=100?'over':pct<60?'low':'')+'" style="width:'+Math.min(100,pct)+'%"></i></div>'+
     '<div class="sub">'+num(h.operacoes)+' operações • '+num(h.pecas)+' peças'+(h.eficMarcacao!=null?' • eficiência nas marcações <b>'+num(h.eficMarcacao)+'%</b>':'')+'</div></div>';
+  html+=postoHtml();
   if(p.lider)html+='<div class="card lider"><div class="row"><b style="flex:1">👑 Líder — todo o setor</b></div><div class="acts"><button class="btn ghost" onclick="pausarTodos()">⏸ Pausar todos</button><button class="btn go" onclick="retomarTodos()">▶ Retomar todos</button></div><div class="sub" style="margin-top:6px">Fim do expediente: pause todos. No dia seguinte: retome todos.</div></div>';
   if(run)html+='<div class="card running"><div class="row"><span class="chip info">⏱ Em andamento</span><span class="sp" style="flex:1"></span><span class="timer" id="tmr">'+clock(run)+'</span></div>'+opInfo(run)+'<div class="acts"><button class="btn ghost" onclick="pausar(\''+run.ID_CUPOM+'\')">⏸ Pausar</button><button class="btn stop" onclick="finalizar(\''+run.ID_CUPOM+'\')">■ Finalizar</button></div></div>';
   paused.forEach(function(c){html+='<div class="card paused"><div class="row"><span class="chip warn">⏸ Pausado'+(c.PAUSA_TIPO==='COLETIVA'?' (todos)':'')+'</span><span class="sp" style="flex:1"></span><span class="timer small">'+clock(c)+'</span></div>'+opInfo(c)+'<div class="acts"><button class="btn go" onclick="retomar(\''+c.ID_CUPOM+'\')">▶ Retomar</button><button class="btn stop" onclick="finalizar(\''+c.ID_CUPOM+'\')">■ Finalizar</button></div></div>'});
@@ -301,21 +309,44 @@ function renderOperador(){var d=S.data||{},cs=d.cupons||[],p=S.perfil||{},modo=m
 function opInfo(c){return '<div class="row"><p class="ttl" style="flex:1">'+(c.ORDEM?'<span class="ord">'+String(c.ORDEM).padStart(2,'0')+'</span>':'')+esc(c.PROCESSO)+'</p>'+(c.ALOCADO?'<span class="chip warn">para você</span>':'')+(c.SEM_PADRAO?'<span class="chip bad">cronometrar</span>':'')+'</div>'+
   '<div class="sub">'+esc(c.PRODUTO)+' • '+esc([c.COR,c.TAMANHO].filter(Boolean).join(' / '))+' • <b>'+num(c.QTD)+' pç</b>'+(c.SEM_PADRAO?'':' • '+num(c.MIN_PADRAO)+' min')+'<br>Caixa <b>'+esc(c.CAIXA)+'</b>'+(c.MAQUINA?' • ⚙ '+esc(c.MAQUINA):'')+'</div>'}
 
+// ---------- minha máquina: posto, parada e peça com defeito (v4.37) ----------
+var MOTIVOS_PARADA=['Quebrou / manutenção','Falta de material','Ajuste / troca de linha','Sem serviço','Outro'],MOTIVOS_DEFEITO=['Costura','Tecido','Medida','Outro'];
+function carregarPosto(){return call('posto',{}).then(function(r){S.posto=r;if(S.perfil&&S.perfil.tipo!=='FACCAO'&&!document.querySelector('.modal'))renderOperador()}).catch(function(){})}
+function definirPosto(cod){busy(true);return call('postoDefinir',{CODIGO:cod}).then(function(r){S.posto=r;renderOperador();toast(r.posto?'Você está na máquina '+r.posto.codigo+'.':'Você saiu da máquina.')}).catch(function(e){renderOperador();toast(e.message,true)}).then(function(){busy(false)})}
+function minutosDesde(t){var ms=Date.now()-new Date(t).getTime();return Math.max(0,Math.round(ms/60000))}
+function hora(t){try{return new Date(t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}catch(e){return ''}}
+function postoHtml(){var ps=S.posto;if(ps===undefined)return '';var p=ps&&ps.posto,pa=ps&&ps.parada;
+  if(!p)return '<div class="card maq none"><div class="row"><span class="maqico">⚙</span><div style="flex:1"><b>Qual máquina você está usando?</b><div class="sub">Bipe a etiqueta com QR colada na máquina.</div></div></div><div class="acts"><button class="btn dark" onclick="openScanner()">📷 Bipar a máquina</button></div></div>';
+  if(pa)return '<div class="card maq parada"><div class="row"><span class="maqico">⛔</span><div style="flex:1"><b>'+esc(p.codigo)+' parada</b><div class="sub">'+esc(pa.motivo||'')+' • desde '+hora(pa.desde)+' ('+minutosDesde(pa.desde)+' min)</div></div></div><div class="acts"><button class="btn go big" onclick="voltouMaquina()">▶ Voltou a funcionar</button></div></div>';
+  return '<div class="card maq"><div class="row"><span class="maqico">⚙</span><div style="flex:1"><b>'+esc(p.codigo)+'</b><div class="sub">'+esc(p.maquina||'')+(ps.defeitosHoje?' • '+num(ps.defeitosHoje)+' peça(s) com defeito hoje':'')+'</div></div><button class="lnk" onclick="trocarMaquina()">trocar</button></div><div class="acts"><button class="btn ghost" onclick="pararMaquina()">⏸ Máquina parou</button><button class="btn ghost" onclick="pecaDefeito()">⚠ Peça com defeito</button></div></div>'}
+function escolha(titulo,sub,opcoes,extra){return new Promise(function(res){var m=document.createElement('div');m.className='modal';
+  m.innerHTML='<div class="card"><p class="ttl">'+esc(titulo)+'</p>'+(sub?'<p class="sub">'+esc(sub)+'</p>':'')+(extra||'')+'<div class="opts">'+opcoes.map(function(o,i){return '<button class="btn ghost opt" data-i="'+i+'">'+esc(o)+'</button>'}).join('')+'</div><div class="acts"><button class="btn ghost" data-x="1">Cancelar</button></div></div>';
+  m.onclick=function(e){var b=e.target.closest('[data-i]');if(b){var q=m.querySelector('#dfQtd');res({motivo:opcoes[+b.dataset.i],qtd:q?Number(q.value):1});m.remove();return}if(e.target.closest('[data-x]')||e.target===m){res(null);m.remove()}};
+  var mais=m.querySelector('[data-mais]'),menos=m.querySelector('[data-menos]'),q=m.querySelector('#dfQtd');if(mais)mais.onclick=function(){q.value=Math.min(999,Number(q.value||0)+1)};if(menos)menos.onclick=function(){q.value=Math.max(1,Number(q.value||0)-1)};
+  document.body.appendChild(m)})}
+function pararMaquina(){escolha('Por que a máquina parou?','Toque no motivo. Quando ela voltar, toque em "Voltou a funcionar".',MOTIVOS_PARADA).then(function(r){if(!r)return;busy(true);call('parada',{MOTIVO:r.motivo}).then(function(x){S.posto=x;renderOperador();toast('Parada registrada: '+r.motivo+'.')}).catch(function(e){toast(e.message,true)}).then(function(){busy(false)})})}
+function voltouMaquina(){busy(true);call('parada',{MOTIVO:''}).then(function(x){S.posto=x;renderOperador();toast('Máquina de volta. Bom trabalho!')}).catch(function(e){toast(e.message,true)}).then(function(){busy(false)})}
+function pecaDefeito(){escolha('Peça com defeito','Quantas peças e qual o defeito?',MOTIVOS_DEFEITO,'<div class="qtdbox"><button class="btn ghost" data-menos>−</button><input id="dfQtd" type="number" inputmode="numeric" min="1" value="1"><button class="btn ghost" data-mais>+</button></div>').then(function(r){if(!r)return;if(!(r.qtd>0)){toast('Informe quantas peças.',true);return}busy(true);call('defeito',{QTD:r.qtd,MOTIVO:r.motivo}).then(function(x){S.posto=x;renderOperador();toast(r.qtd+' peça(s) com defeito registrada(s).')}).catch(function(e){toast(e.message,true)}).then(function(){busy(false)})})}
+function trocarMaquina(){escolha('Trocar de máquina','',['📷 Bipar outra máquina','Sair da máquina']).then(function(r){if(!r)return;if(r.motivo==='Sair da máquina')definirPosto('');else openScanner()})}
+
 // ---------- leitor de QR (câmera) ----------
 // Tenta a câmera ao vivo; se o navegador não deixar, abre a câmera do celular para tirar uma foto do QR.
 var SCN={stream:null,raf:null,det:null,busy:false};
 function useCode(raw){var v=String(raw||'').trim(),V=v.toUpperCase(),d=S.data||{},cs=d.cupons||[],modo=modoAtual(),run=cs.find(function(c){return c.EM_ANDAMENTO});if(!v)return;
+  if(V.indexOf('GUT-MAQ:')===0){S.q='';definirPosto(v);return}
+  if(V.indexOf('GUT-OP:')===0){S.q='';renderOperador();toast('Esse é um crachá. Para a máquina, bipe a etiqueta colada nela.',true);return}
   var hit=cs.find(function(c){return (c.CODIGO||'').toUpperCase()===V||(c.TOKEN&&c.TOKEN.toUpperCase()===V)});
   if(hit){S.q='';renderOperador();if(hit.EM_ANDAMENTO){finalizar(hit.ID_CUPOM);return}if(hit.PAUSADO){retomar(hit.ID_CUPOM);return}if(modo==='APONTADOR')apontar(hit.ID_CUPOM);else iniciar(hit.ID_CUPOM);return}
   var naCaixa=cs.filter(function(c){return (c.CAIXA||'').toUpperCase()===V||(c.CODIGO||'').toUpperCase().indexOf(V)===0});
   S.q=v;renderOperador();
-  if(naCaixa.length)toast('Caixa '+v+': '+naCaixa.length+' operação(ões) para você.');else toast('Código '+v+': nenhuma operação sua com este código.',true)}
+  if(naCaixa.length){toast('Caixa '+v+': '+naCaixa.length+' operação(ões) para você.');return}
+  call('postoDefinir',{CODIGO:v}).then(function(r){S.q='';S.posto=r;renderOperador();toast('Você está na máquina '+r.posto.codigo+'.')}).catch(function(){toast('Código '+v+': nenhuma operação sua com este código.',true)})}
 function loadJsQR(){return window.jsQR?Promise.resolve(window.jsQR):new Promise(function(res,rej){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';s.onload=function(){window.jsQR?res(window.jsQR):rej(new Error('leitor indisponível'))};s.onerror=function(){rej(new Error('Sem internet para carregar o leitor de QR.'))};document.head.appendChild(s)})}
 function getDetector(){if(SCN.det!==null)return Promise.resolve(SCN.det);if(!('BarcodeDetector' in window)){SCN.det=false;return Promise.resolve(false)}
   return Promise.resolve(BarcodeDetector.getSupportedFormats?BarcodeDetector.getSupportedFormats():['qr_code']).then(function(f){SCN.det=f.indexOf('qr_code')>=0?new BarcodeDetector({formats:['qr_code']}):false;return SCN.det}).catch(function(){SCN.det=false;return false})}
 function decodeFrom(src,w,h){return getDetector().then(function(det){if(det)return det.detect(src).then(function(r){return r&&r[0]?r[0].rawValue:''}).catch(function(){return ''});
   return loadJsQR().then(function(jsQR){var c=decodeFrom.c||(decodeFrom.c=document.createElement('canvas')),k=Math.min(1,800/Math.max(w,h));c.width=Math.round(w*k);c.height=Math.round(h*k);var x=c.getContext('2d',{willReadFrequently:true});x.drawImage(src,0,0,c.width,c.height);var im=x.getImageData(0,0,c.width,c.height),r=jsQR(im.data,im.width,im.height,{inversionAttempts:'attemptBoth'});return r?r.data:''})})}
-function scanUI(inner){closeScanner(true);var m=document.createElement('div');m.className='scan';m.id='scanBox';m.innerHTML=inner+'<div class="bar"><div class="msg" id="scanMsg">Aponte para o QR Code do cupom ou da caixa</div><button class="btn ghost" onclick="scanPhoto()">📸 Tirar foto</button><button class="btn stop" onclick="closeScanner()">Fechar</button></div>';document.body.appendChild(m);return m}
+function scanUI(inner){closeScanner(true);var m=document.createElement('div');m.className='scan';m.id='scanBox';m.innerHTML=inner+'<div class="bar"><div class="msg" id="scanMsg">Aponte para o QR Code do cupom, da caixa ou da máquina</div><button class="btn ghost" onclick="scanPhoto()">📸 Tirar foto</button><button class="btn stop" onclick="closeScanner()">Fechar</button></div>';document.body.appendChild(m);return m}
 function openScanner(){
   if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){scanPhoto();return}
   var m=scanUI('<video id="scanVid" playsinline muted autoplay></video><div class="frame"><i></i></div>');

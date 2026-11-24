@@ -136,6 +136,16 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       op.ID_OPERADOR_ALOCADO = opId; op.ID_MAQUINA = m.maq; gutLayout.estado().sel = m.id; gutLayout.prop('w', String(m.w).replace('.', ','));
       const t = document.getElementById('layProp').innerText; return { t: (t.match(/carga do posto hoje[^\n]*/) || [''])[0], min: Math.round(Number(op.MINUTOS_PADRAO_TOTAL)) }; }, cr.id);
     ok(!posto.sem && posto.t.includes(posto.min + ' de'), 'máquina com costureira no posto mostra a carga dos processos alocados a ela: ' + JSON.stringify(posto));
+    // OEE de hoje: eventos da máquina (como se viessem do app de campo) e a cor "OEE"
+    const uniOee = await page.evaluate(() => { const m = gutLayout.estado().atual.dados.itens.find(i => i.tipo === 'MAQ' && i.uni); return m ? m.uni : ''; });
+    pg.psql(`insert into private.posto_eventos (empresa_id, tipo, id_unidade, id_operador, motivo, qtd, minutos_padrao, inicio, fim) values
+      ('${pg.EMP}', 'PARADA', '${uniOee}', 'x', 'Quebrou / manutenção', null, null, now() - interval '20 minutes', now() - interval '5 minutes'),
+      ('${pg.EMP}', 'USO', '${uniOee}', 'x', null, 40, 60, now() - interval '90 minutes', now() - interval '1 minute'),
+      ('${pg.EMP}', 'REFUGO', '${uniOee}', 'x', 'Costura', 4, null, now(), now());`);
+    const oeeV = await page.evaluate(async (u) => { gutLayout.cor('OEE'); await new Promise(r => setTimeout(r, 1200)); const L = gutLayout.estado(), m = L.atual.dados.itens.find(i => i.uni === u); L.sel = m.id; gutLayout.prop('w', String(m.w).replace('.', ','));
+      return { leg: /OEE de hoje/.test(document.getElementById('layPal').innerText), box: (document.querySelector('.lay-oee')?.innerText || '').replace(/\n/g, ' '), tab: !!document.querySelector('.lay-oeet'), pct: [...document.querySelectorAll('.lay-pct')].some(t => /^OEE \d+%$/.test(t.textContent)) }; }, uniOee);
+    ok(uniOee && oeeV.leg && /Qualidade 90%/.test(oeeV.box) && /Quebrou \/ manutenção 15 min/.test(oeeV.box) && oeeV.tab && oeeV.pct, 'cor "OEE de hoje": máquina mostra OEE, disponibilidade, desempenho, qualidade (36/40 = 90%) e paradas; tabela no quadro: ' + JSON.stringify(oeeV));
+    await page.evaluate(() => gutLayout.cor('OCUPACAO'));
     ok(/não é uma máquina numerada nem uma caixa/.test(bip.msg), 'código desconhecido avisa');
     // análise de fluxo: matriz De-Para × distâncias
     const an = await page.evaluate(() => {
