@@ -37,6 +37,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       if (u.startsWith('http://app.local/sistema/paineis-tv.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/paineis-tv.js'), 'utf8') });
       if (u.startsWith('http://app.local/sistema/crachas.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/crachas.js'), 'utf8') });
       if (u.startsWith('http://app.local/sistema/layout.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/layout.js'), 'utf8') });
+      if (u.startsWith('http://app.local/sistema/jornada.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/jornada.js'), 'utf8') });
       if (u.startsWith('http://app.local/sistema/menu-principal.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/menu-principal.js'), 'utf8') });
       if (u.startsWith('http://app.local/')) return r.fulfill({ contentType: 'text/html', body: html });
       if (u.startsWith('http://sb.local/rpc/')) {
@@ -142,6 +143,8 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       ('${pg.EMP}', 'PARADA', '${uniOee}', 'x', 'Quebrou / manutenção', null, null, now() - interval '20 minutes', now() - interval '5 minutes'),
       ('${pg.EMP}', 'USO', '${uniOee}', 'x', null, 40, 60, now() - interval '90 minutes', now() - interval '1 minute'),
       ('${pg.EMP}', 'REFUGO', '${uniOee}', 'x', 'Costura', 4, null, now(), now());`);
+    pg.psql(`insert into private.empresa_jornada (empresa_id, entrada, saida, dias) values ('${pg.EMP}', '00:00', '23:59', '{1,2,3,4,5,6,7}') on conflict (empresa_id) do update set entrada = '00:00', saida = '23:59', intervalo_ini = null, intervalo_fim = null, dias = '{1,2,3,4,5,6,7}';`);
+    await page.evaluate(() => gutJornada.ler(true));
     const oeeV = await page.evaluate(async (u) => { gutLayout.cor('OEE'); await new Promise(r => setTimeout(r, 1200)); const L = gutLayout.estado(), m = L.atual.dados.itens.find(i => i.uni === u); L.sel = m.id; gutLayout.prop('w', String(m.w).replace('.', ','));
       return { leg: /OEE de hoje/.test(document.getElementById('layPal').innerText), box: (document.querySelector('.lay-oee')?.innerText || '').replace(/\n/g, ' '), tab: !!document.querySelector('.lay-oeet'), pct: [...document.querySelectorAll('.lay-pct')].some(t => /^OEE \d+%$/.test(t.textContent)) }; }, uniOee);
     ok(uniOee && oeeV.leg && /Qualidade 90%/.test(oeeV.box) && /Quebrou \/ manutenção 15 min/.test(oeeV.box) && oeeV.tab && oeeV.pct, 'cor "OEE de hoje": máquina mostra OEE, disponibilidade, desempenho, qualidade (36/40 = 90%) e paradas; tabela no quadro: ' + JSON.stringify(oeeV));
@@ -199,6 +202,23 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.reload(); await page.waitForTimeout(3500); await page.evaluate(() => showView('layout')); await page.waitForTimeout(2500);
     const vol = await page.evaluate(() => { gutLayout.trocarNome('Salão de costura'); const d = gutLayout.estado().atual.dados; return { n: d.itens.length, c: d.cotas.length, w: d.largura, id: gutLayout.estado().atual.id }; });
     ok(vol.n >= 6 && vol.c === 1 && vol.w === 15 && /^LAY-/.test(vol.id), 'ao reabrir, a planta volta como foi salva: ' + JSON.stringify(vol));
+    // Cadastros → Jornada de trabalho
+    pg.psql(`delete from private.empresa_jornada;`);
+    await page.evaluate(() => openCadTab('jornada')); await page.waitForTimeout(1200);
+    const jr0 = await page.evaluate(() => ({ aviso: !!document.querySelector('.jr-aviso'), resumo: document.getElementById('jrResumo')?.innerText || '', dias: document.querySelectorAll('.jr-dia.on').length }));
+    ok(jr0.aviso && /9h por dia/.test(jr0.resumo) && /45h por semana/.test(jr0.resumo) && jr0.dias === 5, 'aba Jornada de trabalho abre com o padrão (07–17, 1h de almoço, seg a sex) e o aviso de não salva: ' + JSON.stringify(jr0));
+    await page.fill('#jrEntrada', '07:30'); await page.fill('#jrSaida', '17:18'); await page.click('.jr-dia:has-text("Sáb")'); await page.click('.jr-dia:has-text("Sáb")'); await page.click('.jr-dia:has-text("Sex")');
+    const jr1 = await page.evaluate(() => document.getElementById('jrResumo').innerText);
+    ok(/8h48 por dia/.test(jr1) && /4 dias/.test(jr1) && /35h12 por semana/.test(jr1), 'o resumo acompanha o que se digita: ' + jr1);
+    await page.click('.jr-dia:has-text("Sex")'); await page.click('#jrSalvar'); await page.waitForTimeout(2000);
+    const jrDb = JSON.parse(pg.psql(`select row_to_json(x) from (select to_char(entrada, 'HH24:MI') e, to_char(saida, 'HH24:MI') s, dias from private.empresa_jornada) x;`));
+    const cap = await page.evaluate(() => (STATE.cad.maquinas || []).map(m => Number(m.MINUTOS_DISP_DIA)));
+    ok(jrDb.e === '07:30' && jrDb.s === '17:18' && jrDb.dias.join() === '1,2,3,4,5' && cap.length && cap.every(v => v === 528) && !(await page.$('.jr-aviso')), 'salvar grava a jornada no banco e a capacidade das máquinas vira 528 min/dia: ' + JSON.stringify({ jrDb, cap }));
+    const plan = await page.evaluate(() => [gutJornada.planejadoAte(new Date(2026, 10, 24, 10, 0)), gutJornada.planejadoAte(new Date(2026, 10, 24, 12, 30)), gutJornada.planejadoAte(new Date(2026, 10, 24, 20, 0)), gutJornada.planejadoAte(new Date(2026, 10, 28, 10, 0))]);
+    ok(plan.join() === '150,270,528,0', 'jornada até a hora: 10h = 150 min, 12h30 (almoço) = 270, depois da saída = 528, sábado = 0: ' + plan);
+    await page.fill('#jrEntrada', '18:00'); await page.click('#jrSalvar'); await page.waitForTimeout(800);
+    ok(/Confira os horários/.test(await page.evaluate(() => document.getElementById('jrResumo').innerText)) && JSON.parse(pg.psql(`select row_to_json(x) from (select to_char(entrada, 'HH24:MI') e from private.empresa_jornada) x;`)).e === '07:30', 'entrada depois da saída avisa e não grava');
+    if (process.env.SHOT) { await page.evaluate(() => gutJornada.abrir()); await page.waitForTimeout(800); await page.screenshot({ path: path.join(process.env.SHOT, 'cadastro-jornada.png') }); }
     console.log('erros', errors.slice(0, 5)); console.log(`${pass}/${pass + fail}`); if (fail) process.exitCode = 1;
   } finally { if (browser) await browser.close(); pg.descer(true); }
 })().catch(e => { console.error(e); pg.descer(true); process.exit(2); });

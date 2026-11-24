@@ -75,7 +75,7 @@
     if (r.vazio) return `<div class="lay-oee vazio"><b>OEE de hoje</b><span>Sem registros ainda. Quando a costureira bipar esta máquina no app de campo, as operações, paradas e defeitos entram aqui.</span></div>`;
     return `<div class="lay-oee ${classeOee(r.oee)}"><div class="t"><b>OEE de hoje</b><strong>${pctTxt(r.oee)}</strong></div>
       <div class="f"><span>Disponibilidade <b>${pctTxt(r.D)}</b></span><span>Desempenho <b>${pctTxt(r.P)}</b></span><span>Qualidade <b>${pctTxt(r.Q)}</b></span></div>
-      <small>${Math.round(r.plan)} min de turno até agora • ${Math.round(r.parada)} min parada${o.parada_aberta ? ' (parada agora)' : ''} • ${Math.round(Number(o.minutos_padrao))} min padrão produzidos • ${Number(o.pecas) || 0} peças • ${Number(o.defeitos) || 0} com defeito</small>
+      <small>${Math.round(r.plan)} min de jornada até agora • ${Math.round(r.parada)} min parada${o.parada_aberta ? ' (parada agora)' : ''} • ${Math.round(Number(o.minutos_padrao))} min padrão produzidos • ${Number(o.pecas) || 0} peças • ${Number(o.defeitos) || 0} com defeito</small>
       ${mot.length ? `<small>Paradas: ${mot.map(([m, v]) => `${esc(m)} ${Math.round(v)} min`).join(' • ')}</small>` : ''}</div>`;
   }
   function postoCarga(it) {
@@ -104,6 +104,7 @@
   const P = { postos: new Map(), oee: new Map(), quando: 0, cor: 'OCUPACAO' };
   async function carregarPostos(forcar) {
     if (!web() || (!forcar && Date.now() - P.quando < 20000)) return; P.quando = Date.now();
+    if (window.gutJornada) gutJornada.ler().catch(() => {});
     try {
       const [a, b] = await Promise.all([GUT_SB.rpc('web_postos_ler', { p_slug: GUT_EMPRESA_SLUG }), GUT_SB.rpc('web_oee', { p_slug: GUT_EMPRESA_SLUG, p_dia: (d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)(new Date()) })]);
       if (!a.error) P.postos = new Map((a.data || []).map(x => [x.id_unidade, x]));
@@ -112,11 +113,11 @@
   }
   /* costureira do posto: a do banco (bipada no app de campo ou aqui) vale mais que a guardada no desenho */
   const opDoItem = it => (it.uni && P.postos.get(it.uni) && P.postos.get(it.uni).id_operador) || it.op || '';
-  const INICIO_TURNO_MIN = 7 * 60;
+  /* turno planejado até agora: vem da jornada da empresa (Cadastros → Jornada de trabalho) */
+  const turnoAteAgora = () => window.gutJornada ? gutJornada.planejadoAte(new Date()) : Math.max(0, Math.min(540, new Date().getHours() * 60 + new Date().getMinutes() - 420));
   function oeeDe(it) {
     const o = it.uni && P.oee.get(it.uni); if (!o) return null;
-    const occ = ocupacao().get(it.maq || '') || {}, dia = Number(occ.day) || 420, agora = new Date(), passou = agora.getHours() * 60 + agora.getMinutes() - INICIO_TURNO_MIN;
-    const plan = Math.max(0, Math.min(dia, passou)), parada = Math.min(plan, Number(o.parada_min) || 0), operando = plan - parada;
+    const plan = turnoAteAgora(), parada = Math.min(plan, Number(o.parada_min) || 0), operando = plan - parada;
     const temDado = Number(o.minutos_padrao) > 0 || Number(o.parada_min) > 0 || Number(o.defeitos) > 0; if (!temDado || plan < 15) return { vazio: true, o };
     const D1 = plan ? operando / plan : 0, P1 = operando > 0 ? Math.min(1.5, Number(o.minutos_padrao) / operando) : 0, pc = Number(o.pecas) || 0, Q1 = pc ? Math.max(0, (pc - (Number(o.defeitos) || 0)) / pc) : (Number(o.defeitos) ? 0 : 1);
     return { o, plan, parada, D: D1, P: P1, Q: Q1, oee: D1 * Math.min(1, P1) * Q1 };
@@ -205,7 +206,7 @@
       ${fora ? `<button type="button" class="btn btn-secondary btn-sm" onclick="gutLayout.limparLotes()">Tirar da planta ${fora} lote(s) que já saíram da produção</button>` : ''}
       <div class="lay-h">Outros itens</div>
       ${BLOCOS.map(b => `<button type="button" class="lay-pal" draggable="true" data-add="${b.tipo}" onclick="gutLayout.adicionar('${b.tipo}')"><i class="lay-dot blk t-${b.tipo.toLowerCase()}"></i><span><b>${esc(b.nome)}</b><small>${fm(b.w)} × ${fm(b.h)} m</small></span></button>`).join('')}
-      ${P.cor === 'OEE' ? `<div class="lay-legend"><div class="lay-h">OEE de hoje</div><span><i class="lay-dot idle"></i>sem registros</span><span><i class="lay-dot ok"></i>85% ou mais (classe mundial)</span><span><i class="lay-dot high"></i>60 a 85%</span><span><i class="lay-dot over"></i>abaixo de 60%</span><p class="hint">OEE = disponibilidade (turno menos paradas) × desempenho (minutos padrão produzidos ÷ tempo operando) × qualidade (peças boas ÷ peças). Vem do que a costureira registra no app de campo na máquina dela.</p></div>` : ''}
+      ${P.cor === 'OEE' ? `<div class="lay-legend"><div class="lay-h">OEE de hoje</div><span><i class="lay-dot idle"></i>sem registros</span><span><i class="lay-dot ok"></i>85% ou mais (classe mundial)</span><span><i class="lay-dot high"></i>60 a 85%</span><span><i class="lay-dot over"></i>abaixo de 60%</span><p class="hint">OEE = disponibilidade (jornada de trabalho até agora menos paradas) × desempenho (minutos padrão produzidos ÷ tempo operando) × qualidade (peças boas ÷ peças). Vem do que a costureira registra no app de campo na máquina dela.</p></div>` : ''}
       <div class="lay-legend" ${P.cor === 'OEE' ? 'hidden' : ''}><div class="lay-h">Ocupação de hoje</div><span><i class="lay-dot idle"></i>sem carga</span><span><i class="lay-dot ok"></i>até 80%</span><span><i class="lay-dot high"></i>80 a 100%</span><span><i class="lay-dot over"></i>acima de 100%</span>
       <p class="hint">Carga = minutos padrão ainda não concluídos na produção interna ÷ capacidade do dia do tipo de máquina (igual ao painel Capacidade). Máquinas do mesmo tipo mostram a mesma ocupação, a não ser que tenham costureira no posto (bipe o crachá na máquina): aí a cor é a carga dos processos alocados a ela.</p></div>`;
     el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('dragstart', e => { L.arr = { tipo: b.dataset.add, maq: b.dataset.maq || b.dataset.vol || '' }; try { e.dataTransfer.setData('text/plain', 'lay'); e.dataTransfer.effectAllowed = 'copy'; } catch (x) {} }));

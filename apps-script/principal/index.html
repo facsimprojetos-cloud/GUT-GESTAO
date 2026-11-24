@@ -606,6 +606,14 @@
     .custos-grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.4fr);gap:14px;margin-top:12px}.custos-card{border:1px solid var(--line);border-radius:14px;padding:14px;background:#f8fafc}.custos-card.main input{font-size:22px;font-weight:800;width:170px}.custos-card label{font-weight:700}
     [data-theme="dark"] .custos-card{background:#111215}.custos-table td,.custos-table th{padding:8px 10px}.custos-table .r{text-align:right;font-variant-numeric:tabular-nums}.custos-table tbody tr:hover td{background:#f1f5f9}.custos-table{min-width:640px}
     @media(max-width:900px){.custos-grid{grid-template-columns:1fr}}
+    .jr-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:14px}.jr-card{border:1px solid var(--line);border-radius:14px;padding:14px;background:#f8fafc}[data-theme="dark"] .jr-card{background:#111215}
+    .jr-h{font-weight:800;margin-bottom:8px}.jr-linha{display:flex;gap:10px;flex-wrap:wrap}.jr-linha label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--muted,#64748b)}.jr-linha input{font-size:19px;font-weight:800;width:160px;height:44px}
+    .jr-dias{display:flex;gap:6px;flex-wrap:wrap}.jr-dia{min-width:48px;height:44px;border-radius:10px;border:1px solid var(--line);background:transparent;font-weight:800;cursor:pointer;color:inherit}.jr-dia.on{background:var(--br,#e11d2a);border-color:var(--br,#e11d2a);color:#fff}
+    .jr-dia:focus-visible,.jr-link:focus-visible{outline:2px solid var(--br,#e11d2a);outline-offset:2px}.jr-link{margin-top:8px;background:none;border:0;padding:0;color:var(--br,#e11d2a);font-weight:700;cursor:pointer;font-size:12.5px}
+    .jr-resumo{margin-top:14px;font-size:16px}.jr-resumo span{color:var(--muted,#94a3b8);margin:0 4px}.jr-resumo .jr-erro{color:#dc2626;margin:0}.jr-chk{display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:600}.jr-chk input{width:auto;height:auto;min-height:0}
+    .jr-aviso{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:13px}[data-theme="dark"] .jr-aviso{background:#2a1a0e;border-color:#7c2d12;color:#fdba74}
+    @media(max-width:900px){.jr-grid{grid-template-columns:1fr}}
+
     .cost-warn{margin-top:8px;font-size:12px;color:#b45309}.cost-fac{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px}
     @media(max-width:900px){.ficha-costnode .cost-grid{grid-template-columns:repeat(2,1fr)}}
     .ft-internal{background:#fef2f2;border:1.5px solid #dc2626;color:#b91c1c;font-weight:800;text-align:center;padding:1.5mm;border-radius:2mm;margin-bottom:3mm;font-size:10px;letter-spacing:.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -1206,7 +1214,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.37.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.38.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -1606,7 +1614,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
         <div class="page-head"><div><h3>Cadastros</h3><p>Cadastro manual ou importação rápida por CSV usando modelos prontos.</p></div></div>
         <div class="card">
           <div class="tabbar" id="cadTabs">
-            <button class="active ficha-tab" data-cad="ficha"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>Ficha do produto</button><button class="ficha-tab" data-cad="custos"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>Custo operacional</button><button data-cad="produto">Produto</button><button data-cad="material">Material</button><button data-cad="fornecedor">Fornecedor</button><button data-cad="localestoque">Local estoque</button><button data-cad="estrutura">Estrutura materiais</button><button data-cad="cor">Cor</button><button data-cad="tamanho">Tamanho</button><button data-cad="setor">Setor</button><button data-cad="maquina">Máquinas</button><button data-cad="processo">Processo</button><button data-cad="operador">Operador</button><button data-cad="destino">Facção/Destino</button><button data-cad="roteiro">Roteiro</button>
+            <button class="active ficha-tab" data-cad="ficha"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>Ficha do produto</button><button class="ficha-tab" data-cad="custos"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>Custo operacional</button><button class="ficha-tab" data-cad="jornada"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Jornada de trabalho</button><button data-cad="produto">Produto</button><button data-cad="material">Material</button><button data-cad="fornecedor">Fornecedor</button><button data-cad="localestoque">Local estoque</button><button data-cad="estrutura">Estrutura materiais</button><button data-cad="cor">Cor</button><button data-cad="tamanho">Tamanho</button><button data-cad="setor">Setor</button><button data-cad="maquina">Máquinas</button><button data-cad="processo">Processo</button><button data-cad="operador">Operador</button><button data-cad="destino">Facção/Destino</button><button data-cad="roteiro">Roteiro</button>
           </div>
           <div class="import-bar">
             <button class="btn btn-secondary btn-sm" onclick="downloadCsvTemplate()">⬇ Modelo CSV</button>
@@ -4795,7 +4803,8 @@ async function fichaSave(){
 }
 
 function renderCadForm(type){
-  document.querySelector('#view-cadastros .import-bar')?.classList.toggle('hidden',type==='ficha'||type==='custos');
+  document.querySelector('#view-cadastros .import-bar')?.classList.toggle('hidden',type==='ficha'||type==='custos'||type==='jornada');
+  if(type==='jornada'){STATE.cadType='jornada';return window.gutJornada?gutJornada.abrir():null}
   if(type==='ficha'){STATE.cadType='ficha';return fichaRender()}
   if(type==='custos'){STATE.cadType='custos';return custosRender()}
   const html={
@@ -5129,6 +5138,7 @@ function pageRows(rows,id,render,size=100){
 </script>
 <script src="menu-principal.js?v=4.31.1"></script>
 <script src="crachas.js?v=4.33.0"></script>
-<script src="layout.js?v=4.37.0"></script>
+<script src="jornada.js?v=4.38.0"></script>
+<script src="layout.js?v=4.38.0"></script>
 </body>
 </html>
