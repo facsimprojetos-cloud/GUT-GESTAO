@@ -90,10 +90,10 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     const A = comPend[0];
     await page.evaluate(async ({ a, o1, o2 }) => { const half = Math.ceil(a.pend.length / 2); await callServer('alocarOperadorCupons', { ids: a.pend.slice(0, half), ID_OPERADOR: o1 }); if (a.pend.length > half) await callServer('alocarOperadorCupons', { ids: a.pend.slice(half), ID_OPERADOR: o2 }); STATE.internalBoard = await callServer('getInternalProductionBoard'); renderInternalDashboard(); }, { a: A, o1: opId, o2: opId2 });
     const btnA = await page.evaluate(id => { const r = [...document.querySelectorAll('.bx-row')].find(x => x.innerHTML.includes(`gutBaixa.abrir('${id}')`)); return r ? r.querySelector('.bx-btn').textContent : ''; }, A.id);
-    ok(/Baixa completa/.test(btnA) && !/🔒/.test(btnA), 'linha da caixa toda alocada mostra "Baixa completa" sem cadeado: ' + btnA);
+    ok(/Baixa completa/.test(btnA) && !/⚠/.test(btnA), 'linha da caixa toda alocada mostra "Baixa completa" sem aviso: ' + btnA);
     await page.evaluate(id => gutBaixa.abrir(id), A.id); await page.waitForTimeout(400);
     const mA = await page.evaluate(() => ({ open: document.getElementById('baixaModal').classList.contains('open'), t: document.getElementById('bxCorpo').innerText.replace(/\n/g, ' | '), senha: !!document.getElementById('bxSenha') }));
-    ok(mA.open && /Todas as operações têm funcionário/.test(mA.t) && !mA.senha, 'janela: resumo por funcionário, sem pedir senha: ' + mA.t.slice(0, 220));
+    ok(mA.open && /Todas as operações têm funcionário/.test(mA.t) && /Confirma a baixa/.test(mA.t) && !mA.senha, 'tela de confirmação: resumo por funcionário, sem senha: ' + mA.t.slice(0, 260));
     if (SHOT) await page.screenshot({ path: path.join(SHOT, 'baixa-alocados.png') });
     await page.click('#bxOk'); await page.waitForTimeout(2500);
     const rA = await page.evaluate(() => document.getElementById('bxCorpo').innerText.replace(/\n/g, ' | '));
@@ -104,26 +104,23 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     const pA = await page.evaluate(id => { const v = STATE.internalBoard.rows.find(x => String(x.ID_VOLUME) === String(id)); return v ? Math.round(Number(v.PROGRESSO_PCT)) : -1; }, A.id);
     ok(pA === 100, 'o quadro atualiza e a caixa aparece 100%: ' + pA);
 
-    // 3) caixa sem ninguém → senha do supervisor
+    // 3) caixa sem ninguém → aviso e confirmação (sem senha)
     const B = comPend[1];
     pg.psql(`update public.cupons_producao set id_operador_alocado = null where id_cupom in (${B.pend.map(x => `'${x}'`).join(',')});`);
     await page.evaluate(async () => { STATE.internalBoard = await callServer('getInternalProductionBoard'); renderInternalDashboard(); });
     const btnB = await page.evaluate(id => { const r = [...document.querySelectorAll('.bx-row')].find(x => x.innerHTML.includes(`gutBaixa.abrir('${id}')`)); return r ? r.innerText.replace(/\n/g, ' | ') : ''; }, B.id);
-    ok(/sem funcionário/.test(btnB) && /🔒/.test(btnB), 'linha da caixa sem funcionário mostra o aviso e o cadeado: ' + btnB);
-    await page.evaluate(id => gutBaixa.abrir(id), B.id); await page.waitForTimeout(800);
-    const mB = await page.evaluate(() => ({ t: document.getElementById('bxCorpo').innerText.replace(/\n/g, ' | '), nova: !!document.getElementById('bxNova'), dis: document.getElementById('bxOk').disabled }));
-    ok(/produção da empresa/.test(mB.t) && mB.nova && mB.dis, 'sem funcionário e sem senha cadastrada: pede para criar a senha do supervisor e trava o botão: ' + mB.t.slice(0, 200));
-    if (SHOT) await page.screenshot({ path: path.join(SHOT, 'baixa-criar-senha.png') });
-    await page.fill('#bxNova', '2468'); await page.fill('#bxNova2', '2468'); await page.click('.bx-senha .btn'); await page.waitForTimeout(800);
-    ok(await page.$('#bxSenha') !== null, 'senha criada: agora pede a senha do supervisor');
-    await page.fill('#bxSenha', '1111'); await page.click('#bxOk'); await page.waitForTimeout(1200);
-    const errB = await page.evaluate(() => document.getElementById('bxErro')?.textContent || '');
-    ok(/incorreta/.test(errB) && Number(pg.psql(`select count(*) from public.apontamentos_producao where id_volume = '${B.id}' and id_operador = 'EMPRESA';`)) === 0, 'senha errada avisa e não grava: ' + errB);
-    if (SHOT) await page.screenshot({ path: path.join(SHOT, 'baixa-senha-errada.png') });
-    await page.fill('#bxSenha', '2468'); await page.click('#bxOk'); await page.waitForTimeout(2500);
+    ok(/sem funcionário/.test(btnB) && /⚠/.test(btnB) && !/🔒/.test(btnB), 'linha da caixa sem funcionário mostra o aviso ⚠ (sem cadeado): ' + btnB);
+    await page.evaluate(id => gutBaixa.abrir(id), B.id); await page.waitForTimeout(500);
+    const mB = await page.evaluate(() => ({ t: document.getElementById('bxCorpo').innerText.replace(/\n/g, ' | '), senha: !!document.querySelector('#bxCorpo input[type=password]'), dis: document.getElementById('bxOk').disabled }));
+    ok(/⚠ Atenção/.test(mB.t) && /produção da empresa/.test(mB.t) && /Confirma a baixa/.test(mB.t) && !mB.senha && !mB.dis, 'sem funcionário: confirmação com aviso ⚠, sem pedir senha: ' + mB.t.slice(0, 260));
+    if (SHOT) await page.screenshot({ path: path.join(SHOT, 'baixa-atencao.png') });
+    await page.click('.bx-acoes .btn-secondary'); await page.waitForTimeout(300);
+    ok(Number(pg.psql(`select count(*) from public.apontamentos_producao where id_volume = '${B.id}' and origem_bipagem = 'BAIXA_COMPLETA';`)) === 0 && !(await page.evaluate(() => document.getElementById('baixaModal').classList.contains('open'))), 'Cancelar fecha sem gravar nada');
+    await page.evaluate(id => gutBaixa.abrir(id), B.id); await page.waitForTimeout(400);
+    await page.click('#bxOk'); await page.waitForTimeout(2500);
     const rB = await page.evaluate(() => document.getElementById('bxCorpo').innerText.replace(/\n/g, ' | '));
     const nEmp = Number(pg.psql(`select count(*) from public.apontamentos_producao where id_volume = '${B.id}' and id_operador = 'EMPRESA';`));
-    ok(/Produção da empresa/.test(rB) && nEmp === B.pend.length, 'com a senha: operações sem funcionário vão para a produção da empresa: ' + nEmp + ' ' + rB.slice(0, 160));
+    ok(/Produção da empresa/.test(rB) && nEmp === B.pend.length, 'confirmando: operações sem funcionário vão para a produção da empresa: ' + nEmp + ' ' + rB.slice(0, 160));
     await page.evaluate(() => gutBaixa.fechar());
     const whoB = await page.evaluate(id => { openProdOps(id); return document.getElementById('internalDashboardLots').innerText; }, B.id);
     ok(/Empresa \(sem funcionário\)/.test(whoB), 'no detalhe da caixa a operação aparece como "Empresa (sem funcionário)"');
@@ -141,7 +138,6 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.evaluate(() => gutBaixa.abrirSelecionadas()); await page.waitForTimeout(800);
     const tit = await page.evaluate(() => document.getElementById('bxTitulo').textContent);
     ok(resto.length === 1 ? /caixa/.test(tit) : new RegExp(resto.length + ' caixas').test(tit), 'a janela junta as caixas selecionadas: ' + tit);
-    if (await page.$('#bxSenha')) await page.fill('#bxSenha', '2468');
     await page.click('#bxOk'); await page.waitForTimeout(2500);
     const left = Number(pg.psql(`select count(*) from public.cupons_producao where id_volume in (${resto.map(x => `'${x}'`).join(',') || "''"}) and upper(coalesce(status_cupom,'')) not in ('CONCLUIDO','CANCELADO','ESTORNADO');`));
     ok(left === 0, 'baixa em todas as selecionadas de uma vez: ' + left + ' pendente(s)');

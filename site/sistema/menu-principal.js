@@ -41,7 +41,7 @@
   const escH = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   function logo() {
-    return `<div class="hm-logo"><svg class="hm-mark" viewBox="0 0 64 56" aria-hidden="true"><defs><linearGradient id="hmPrata" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f5"/><stop offset="1" stop-color="#8d9099"/></linearGradient></defs><path d="M30 6H8a5 5 0 0 0-5 5v36a5 5 0 0 0 5 5h44a5 5 0 0 0 5-5V22" fill="none" stroke="url(#hmPrata)" stroke-width="3.2" stroke-linecap="round"/><rect x="11" y="34" width="8" height="13" rx="1" fill="#e11d2a"/><rect x="23" y="24" width="8" height="23" rx="1" fill="#e11d2a"/><rect x="35" y="2" width="9" height="45" rx="1" fill="#ff2a36"/></svg><div class="hm-word"><b>GUT</b><small>Consultoria e treinamentos</small></div></div>`;
+    return `<div class="hm-logo"><svg class="hm-mark" viewBox="0 0 64 56" aria-hidden="true"><defs><linearGradient id="hmPrata" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f5"/><stop offset="1" stop-color="#8d9099"/></linearGradient></defs><path d="M32 6H8a5 5 0 0 0-5 5v36a5 5 0 0 0 5 5h44a5 5 0 0 0 5-5V11a5 5 0 0 0-5-5h-5" fill="none" stroke="url(#hmPrata)" stroke-width="3.2" stroke-linecap="round"/><rect x="11" y="34" width="8" height="13" rx="1" fill="#e11d2a"/><rect x="23" y="24" width="8" height="23" rx="1" fill="#e11d2a"/><rect x="35" y="2" width="9" height="45" rx="1" fill="#ff2a36"/></svg><div class="hm-word"><b>GUT</b><small>Consultoria e treinamentos</small></div></div>`;
   }
 
   function montar() {

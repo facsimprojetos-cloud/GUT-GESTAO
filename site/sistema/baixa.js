@@ -1,7 +1,7 @@
 /* GUT PPCP — Produção interna: baixa completa da caixa e visualização em linha — v4.39
-   Banco: gut_030 (web_baixa_caixas, web_supervisor_status, web_supervisor_definir).
+   Banco: gut_030 / gut_034 (web_baixa_caixas). Desde a v4.43 não pede senha: só confirma.
    • Todos alocados → baixa direta; os minutos vão para cada funcionário alocado (marcação em andamento é finalizada para quem marca).
-   • Operação sem funcionário → só com a senha do supervisor; os minutos ficam na "produção da empresa" (sem funcionário). */
+   • Operação sem funcionário → aviso ⚠ na confirmação; os minutos ficam na "produção da empresa" (sem funcionário). */
 (function () {
   const $ = id => document.getElementById(id);
   const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -52,12 +52,7 @@
     if (!web()) return aviso('A baixa completa funciona no sistema on-line.', true);
     B.ids = ids; B.plano = plano(ids); B.resultado = null; B.sup = null;
     if (!B.plano.ops) return aviso('Estas caixas não têm operação pendente.', true);
-    garantirModal(); render(); openModal('baixaModal');
-    if (B.plano.sem.length) {
-      try { const { data, error } = await GUT_SB.rpc('web_supervisor_status', { p_slug: GUT_EMPRESA_SLUG }); if (error) throw error; B.sup = data; }
-      catch (e) { B.sup = { tem_senha: true, pode_definir: false }; }
-      render(); setTimeout(() => $('bxSenha')?.focus(), 60);
-    }
+    garantirModal(); render(); openModal('baixaModal'); setTimeout(() => $('bxOk')?.focus(), 60);
   }
   function fechar() { closeModal('baixaModal'); B.resultado = null; }
   function render() {
@@ -65,26 +60,14 @@
     $('bxTitulo').textContent = p.caixas.length === 1 ? `Baixa completa • caixa ${codigo(p.caixas[0])}` : `Baixa completa • ${p.caixas.length} caixas`;
     $('bxSub').textContent = p.caixas.length === 1 ? `${p.caixas[0].PRODUTO || ''} • ${num(p.caixas[0].QTD_VOLUME)} pç` : p.caixas.map(codigo).slice(0, 6).join(', ') + (p.caixas.length > 6 ? '…' : '');
     if (B.resultado) return (el.innerHTML = resultadoHtml());
-    const sem = p.sem.length, s = B.sup;
-    let senha = '';
-    if (sem) {
-      if (!s) senha = '<p class="hint">Conferindo a senha do supervisor…</p>';
-      else if (!s.tem_senha && s.pode_definir) senha = `<div class="bx-senha"><b>Crie a senha do supervisor</b><p class="hint">Ela será pedida sempre que alguém der baixa em operação sem funcionário. Guarde com o responsável pela produção.</p>
-        <div class="bx-campos"><label>Nova senha<input type="password" id="bxNova" autocomplete="new-password" minlength="4"></label><label>Repita a senha<input type="password" id="bxNova2" autocomplete="new-password" onkeydown="if(event.key==='Enter')gutBaixa.criarSenha()"></label></div>
-        <button class="btn btn-secondary" type="button" onclick="gutBaixa.criarSenha()">Criar senha</button></div>`;
-      else if (!s.tem_senha) senha = '<div class="bx-senha bx-alerta"><b>Falta a senha do supervisor</b><p class="hint">Peça ao dono da empresa (ou a quem edita os Cadastros) para criar a senha aqui mesmo. Ou aloque um funcionário nas operações sem ninguém.</p></div>';
-      else senha = `<div class="bx-senha"><label for="bxSenha"><b>Senha do supervisor</b></label><p class="hint">Necessária porque ${sem === 1 ? 'uma operação está' : sem + ' operações estão'} sem funcionário.</p>
-        <input type="password" id="bxSenha" autocomplete="off" onkeydown="if(event.key==='Enter')gutBaixa.confirmar()"><div class="bx-erro" id="bxErro" role="alert"></div>
-        ${s.pode_definir ? '<button type="button" class="bx-link" onclick="gutBaixa.trocarSenha()">Trocar a senha do supervisor</button>' : ''}</div>`;
-    }
+    const sem = p.sem.length;
     const linhas = p.por.map(g => `<div class="bx-linha"><span class="bx-quem">${esc(g.nome)}</span><span>${g.ops} operaç${g.ops === 1 ? 'ão' : 'ões'}</span><b>${fmin(g.min)} min</b></div>`).join('');
-    const bloqueado = sem && !(s && s.tem_senha);
     el.innerHTML = `<div class="bx-resumo"><div><b>${p.ops}</b><span>operaç${p.ops === 1 ? 'ão pendente' : 'ões pendentes'}</span></div><div><b>${fmin(p.min)}</b><span>minutos padrão</span></div><div><b>${p.ops - sem}</b><span>com funcionário</span></div></div>
       ${linhas ? `<div class="bx-grupo"><div class="bx-h">Os minutos vão para</div>${linhas}</div>` : ''}
       ${p.marcando ? `<p class="hint">⏱ ${p.marcando} em marcação agora: a marcação é finalizada para quem está marcando.</p>` : ''}
-      ${sem ? `<div class="bx-grupo bx-sem"><div class="bx-h">Sem funcionário → produção da empresa</div><div class="bx-linha"><span class="bx-quem">${p.sem.slice(0, 4).map(x => esc(x.o.PROCESSO || 'Operação')).join(', ')}${sem > 4 ? ` e mais ${sem - 4}` : ''}</span><span>${sem} operaç${sem === 1 ? 'ão' : 'ões'}</span><b>${fmin(p.semMin)} min</b></div><p class="hint">Esses minutos não entram para nenhum funcionário. Use quando a caixa já foi feita e não se sabe quem fez, ou para limpar o quadro.</p></div>` : '<p class="bx-ok">Todas as operações têm funcionário. Pode dar a baixa direto.</p>'}
-      ${senha}
-      <div class="bx-acoes"><button class="btn btn-secondary" type="button" onclick="gutBaixa.fechar()">Cancelar</button><button class="btn btn-primary btn-lg" type="button" id="bxOk" onclick="gutBaixa.confirmar()" ${bloqueado || B.enviando ? 'disabled' : ''}>${B.enviando ? 'Dando baixa…' : `✓ Dar baixa em ${p.ops} operaç${p.ops === 1 ? 'ão' : 'ões'}`}</button></div>`;
+      ${sem ? `<div class="bx-grupo bx-sem" role="alert"><div class="bx-h bx-atencao">⚠ Atenção: ${sem} operaç${sem === 1 ? 'ão' : 'ões'} sem funcionário alocado</div><div class="bx-linha"><span class="bx-quem">${p.sem.slice(0, 4).map(x => esc(x.o.PROCESSO || 'Operação')).join(', ')}${sem > 4 ? ` e mais ${sem - 4}` : ''}</span><span>${sem} operaç${sem === 1 ? 'ão' : 'ões'}</span><b>${fmin(p.semMin)} min</b></div><p class="hint">Esses minutos vão para a <b>produção da empresa</b>, sem funcionário. Se alguém fez, cancele e aloque antes.</p></div>` : '<p class="bx-ok">✓ Todas as operações têm funcionário alocado.</p>'}
+      <p class="bx-pergunta">Confirma a baixa de <b>${p.ops} operaç${p.ops === 1 ? 'ão' : 'ões'}</b> ${p.caixas.length === 1 ? 'desta caixa' : `de ${p.caixas.length} caixas`}? Não dá para desfazer por aqui.</p>
+      <div class="bx-acoes"><button class="btn btn-secondary" type="button" onclick="gutBaixa.fechar()">Cancelar</button><button class="btn btn-primary btn-lg" type="button" id="bxOk" onclick="gutBaixa.confirmar()" ${B.enviando ? 'disabled' : ''}>${B.enviando ? 'Dando baixa…' : '✓ Confirmar baixa'}</button></div>`;
   }
   function resultadoHtml() {
     const r = B.resultado, nomes = (r.por_funcionario || []).map(g => `<div class="bx-linha"><span class="bx-quem">${esc(g.nome)}</span><span>${g.ops} operaç${g.ops === 1 ? 'ão' : 'ões'}</span><b>+${fmin(g.min)} min</b></div>`).join('');
@@ -94,38 +77,14 @@
       <p class="hint">${(r.volumes || []).length === 1 ? 'A caixa está pronta. Use "Liberar estoque" quando ela for para o estoque.' : 'As caixas estão prontas. Use "Liberar estoque" em cada uma quando forem para o estoque.'}</p>
       <div class="bx-acoes"><button class="btn btn-primary" type="button" onclick="gutBaixa.fechar()">Fechar</button></div>`;
   }
-  async function criarSenha(trocar) {
-    const nova = $('bxNova')?.value || '', nova2 = $('bxNova2')?.value || '', atual = trocar ? ($('bxAtual')?.value || '') : '';
-    if (nova.length < 4) return aviso('A senha precisa ter pelo menos 4 caracteres.', true);
-    if (nova !== nova2) return aviso('As duas senhas não são iguais.', true);
-    try {
-      const { data, error } = await GUT_SB.rpc('web_supervisor_definir', { p_slug: GUT_EMPRESA_SLUG, p_atual: atual, p_nova: nova });
-      if (error) throw new Error(error.message); if (!data || !data.ok) throw new Error((data && data.erro) || 'Não foi possível salvar.');
-      B.sup = { ...(B.sup || {}), tem_senha: true }; render(); aviso('Senha do supervisor salva.'); setTimeout(() => $('bxSenha')?.focus(), 50);
-    } catch (e) { aviso(e.message, true); }
-  }
-  function trocarSenha() {
-    const box = document.querySelector('#bxCorpo .bx-senha'); if (!box) return;
-    box.innerHTML = `<b>Trocar a senha do supervisor</b><div class="bx-campos"><label>Senha atual<input type="password" id="bxAtual" autocomplete="current-password"></label><label>Nova senha<input type="password" id="bxNova" autocomplete="new-password"></label><label>Repita a nova<input type="password" id="bxNova2" autocomplete="new-password"></label></div>
-      <button class="btn btn-secondary" type="button" onclick="gutBaixa.criarSenha(true)">Salvar nova senha</button> <button type="button" class="bx-link" onclick="gutBaixa.render()">voltar</button>`;
-    $('bxAtual')?.focus();
-  }
   async function confirmar() {
     const p = B.plano; if (!p || B.enviando) return;
-    const senha = $('bxSenha')?.value || '';
-    if (p.sem.length && !senha) { const e = $('bxErro'); if (e) e.textContent = 'Informe a senha do supervisor.'; $('bxSenha')?.focus(); return; }
-    B.enviando = true; render(); if ($('bxSenha')) $('bxSenha').value = senha;
+    B.enviando = true; render();
     try {
       if (typeof DIRECTQ !== 'undefined' && (DIRECTQ.queue || []).some(q => !q.error) && typeof flushDirectProductionQueue === 'function') await flushDirectProductionQueue(true);
-      const { data, error } = await GUT_SB.rpc('web_baixa_caixas', { p_slug: GUT_EMPRESA_SLUG, p_cupons: p.cupons, p_senha: senha });
+      const { data, error } = await GUT_SB.rpc('web_baixa_caixas', { p_slug: GUT_EMPRESA_SLUG, p_cupons: p.cupons });
       if (error) throw new Error(error.message);
-      if (!data.ok) {
-        B.enviando = false;
-        if (data.sem_senha_cadastrada) B.sup = { ...(B.sup || {}), tem_senha: false };
-        render(); const e = $('bxErro'); if (e) e.textContent = data.erro || 'Não foi possível dar baixa.'; else aviso(data.erro, true);
-        if ($('bxSenha')) { $('bxSenha').value = ''; $('bxSenha').focus(); }
-        return;
-      }
+      if (!data.ok) { B.enviando = false; render(); aviso(data.erro || 'Não foi possível dar baixa.', true); return; }
       B.resultado = data; B.enviando = false; B.sel.clear(); render();
       try { STATE.internalBoard = await callServer('getInternalProductionBoard'); STATE.internalPerformance = null; } catch (e) { console.warn('Atualizar o quadro depois da baixa:', e); }
       if (typeof renderInternalDashboard === 'function') renderInternalDashboard();
@@ -136,7 +95,7 @@
   function botao(v, classe) {
     const pend = pendentes(v).length; if (!pend || num(v._progress ?? v.PROGRESSO_PCT) >= 100) return '';
     const sem = semFuncionario(v);
-    return `<button type="button" class="btn ${classe || 'btn-secondary btn-sm'} bx-btn" onclick="event.stopPropagation();gutBaixa.abrir('${esc(v.ID_VOLUME)}')" title="${sem ? `${sem} operação(ões) sem funcionário: pede a senha do supervisor` : 'Todos alocados: dá baixa em todas as operações, cada uma para o seu funcionário'}">✓ Baixa completa${sem ? ' 🔒' : ''}</button>`;
+    return `<button type="button" class="btn ${classe || 'btn-secondary btn-sm'} bx-btn" onclick="event.stopPropagation();gutBaixa.abrir('${esc(v.ID_VOLUME)}')" title="${sem ? `Atenção: ${sem} operação(ões) sem funcionário; os minutos delas vão para a produção da empresa` : 'Todos alocados: dá baixa em todas as operações, cada uma para o seu funcionário'}">✓ Baixa completa${sem ? ' ⚠' : ''}</button>`;
   }
 
   /* ---------- visualização em linha ---------- */
@@ -162,14 +121,14 @@
       </div>`;
     }).join('');
     return `<div class="board-detail-head bx-head"><label class="bx-chk"><input type="checkbox" ${todas ? 'checked' : ''} ${comPend.length ? '' : 'disabled'} onchange="gutBaixa.marcarTodas(this.checked)" aria-label="Selecionar todas as caixas com operação pendente"></label>
-        <div class="board-detail-title"><strong>${sorted.length} caixa(s)</strong><div class="hint">${selV.length ? `${selV.length} selecionada(s) • ${selOps} operação(ões) pendente(s)${selSem ? ` • ${selSem} sem funcionário (pede a senha)` : ''}` : 'Marque as caixas para dar baixa em várias de uma vez'}</div></div>
-        ${selV.length ? `<button class="btn btn-primary" type="button" onclick="gutBaixa.abrirSelecionadas()">✓ Baixa completa (${selV.length})${selSem ? ' 🔒' : ''}</button><button class="btn btn-secondary btn-sm" type="button" onclick="gutBaixa.marcarTodas(false)">Limpar seleção</button>` : ''}</div>
+        <div class="board-detail-title"><strong>${sorted.length} caixa(s)</strong><div class="hint">${selV.length ? `${selV.length} selecionada(s) • ${selOps} operação(ões) pendente(s)${selSem ? ` • ⚠ ${selSem} sem funcionário` : ''}` : 'Marque as caixas para dar baixa em várias de uma vez'}</div></div>
+        ${selV.length ? `<button class="btn btn-primary" type="button" onclick="gutBaixa.abrirSelecionadas()">✓ Baixa completa (${selV.length})${selSem ? ' ⚠' : ''}</button><button class="btn btn-secondary btn-sm" type="button" onclick="gutBaixa.marcarTodas(false)">Limpar seleção</button>` : ''}</div>
       <div class="bx-lista" role="list">${linhas}</div>`;
   }
   function rerender() { if (typeof renderInternalDashboard === 'function') renderInternalDashboard(); }
 
   window.gutBaixa = {
-    abrir, fechar, confirmar, criarSenha, trocarSenha, render, botao, linhasHtml, plano,
+    abrir, fechar, confirmar, render, botao, linhasHtml, plano,
     marcar(id, on) { on ? B.sel.add(String(id)) : B.sel.delete(String(id)); rerender(); },
     marcarTodas(on) { if (!on) B.sel.clear(); else (typeof internalBoardRows === 'function' ? internalBoardRows() : rows()).forEach(v => { if (pendentes(v).length && num(v._progress) < 100) B.sel.add(String(v.ID_VOLUME)); }); rerender(); },
     abrirSelecionadas() { abrir([...B.sel]); },

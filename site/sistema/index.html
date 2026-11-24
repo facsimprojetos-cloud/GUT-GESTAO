@@ -632,7 +632,7 @@
     .bx-senha{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}.bx-senha input{font-size:18px;height:44px;max-width:260px}.bx-alerta{background:#fef2f2;border-color:#fecaca}[data-theme="dark"] .bx-alerta{background:#2a1010;border-color:#7f1d1d}
     .bx-campos{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}.bx-campos label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700}.bx-campos input{width:180px}
     .bx-erro{color:#dc2626;font-weight:700;font-size:13px;min-height:18px;margin-top:4px}.bx-link{background:none;border:0;padding:0;color:var(--br,#e11d2a);font-weight:700;cursor:pointer;font-size:12.5px}
-    .bx-acoes{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.bx-feito{display:flex;align-items:center;gap:10px;margin:4px 0 12px;font-size:16px}.bx-check{width:34px;height:34px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;font-weight:900}
+    .bx-acoes{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.bx-atencao{color:#b45309;font-size:13px}[data-theme="dark"] .bx-atencao{color:#fcd34d}.bx-pergunta{margin:12px 0 4px;font-size:15px}.bx-feito{display:flex;align-items:center;gap:10px;margin:4px 0 12px;font-size:16px}.bx-check{width:34px;height:34px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;font-weight:900}
     .bx-row:focus-within,.bx-btn:focus-visible{outline:2px solid var(--br,#e11d2a);outline-offset:2px}
     @media(max-width:1100px){.bx-row{grid-template-columns:28px 1fr 1fr auto}.bx-lote,.bx-qtd{display:none}.bx-prog{grid-column:2/4}.bx-estado{grid-column:2/3}.bx-acao{grid-column:3/5;grid-row:1}}
     @media(max-width:620px){.bx-row{grid-template-columns:28px 1fr}.bx-prog,.bx-estado,.bx-acao{grid-column:2/3;grid-row:auto}.bx-acao{justify-content:flex-start}.bx-resumo b{font-size:18px}}
@@ -1237,7 +1237,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.42.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.43.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -2361,7 +2361,7 @@ function renderDashboard(){const d=STATE.dashboard||{cards:{},operadores:[],tren
 }
 // v4.16.0 — Painéis de TV (modo escuro): dados direto do Supabase (web_paineis_tv), ao vivo pelo canal da empresa
 let GUT_TV_P=null;
-function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.42.0';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
+function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.43.0';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
 function gutTvAbrir(n){if(!GUT_WEB){toast('Os painéis de TV abrem no sistema web (/sistema).',true);return}gutTvCarregar().then(tv=>tv.abrir(n)).catch(e=>toast(e.message,true))}
 window.addEventListener('hashchange',()=>{const m=/^#tv([1-4])$/.exec(location.hash||'');if(m&&GUT_WEB&&GUT_STARTED&&!document.getElementById('tvWorkspace'))gutTvAbrir(Number(m[1]))});
 function gutTvBotoes(){const b=(n,t,s,on)=>`<button type="button" class="tv-launch-btn" ${on?`onclick="gutTvAbrir(${n})"`:'disabled'}><span class="tv-n">${n}</span><b>${t}</b><small>${s}</small>${on?'<em>● AO VIVO</em>':'<em style="color:#9ea9aa">EM BREVE</em>'}</button>`;
@@ -5161,10 +5161,10 @@ function pageRows(rows,id,render,size=100){
 }
 
 </script>
-<script src="menu-principal.js?v=4.31.1"></script>
+<script src="menu-principal.js?v=4.43.0"></script>
 <script src="crachas.js?v=4.33.0"></script>
 <script src="jornada.js?v=4.40.0"></script>
-<script src="baixa.js?v=4.39.0"></script>
+<script src="baixa.js?v=4.43.0"></script>
 <script src="layout.js?v=4.38.0"></script>
 </body>
 </html>

@@ -355,7 +355,7 @@ function panel4() {
     return `<section class="fx-col ${cl}"><div class="fx-col-h"><div><b>${nome}</b><small>${sb}</small></div><span>${fmt(c.q)}<small> pç</small></span></div>
       <div class="fx-cards">${c.html || `<div class="fx-vazio">${e === 'PREVISAO' ? 'Nada previsto para o período' : '—'}</div>`}</div></section>`;
   }).join('');
-  return `<div class="fx-resumo"><span><b>${fmt(total)}</b> peças em andamento</span><span><b>${produtos}</b> produto(s)</span>${cfg.fxPrev ? `<span><b>${fmt(pr.q)}</b> peças previstas para entrar de ${fxDataBr(fx.de)} a ${fxDataBr(fx.ate)}</span>` : ''}<span class="fx-dica">Sem lotes: cada card junta todas as caixas daquele produto na etapa</span></div><div class="fx-board" style="grid-template-columns:repeat(${etapas.length},minmax(180px,1fr))">${cols}</div>`;
+  return `<div class="fx-resumo"><span><b>${fmt(total)}</b> peças em andamento</span><span><b>${produtos}</b> produto(s)</span>${cfg.fxPrev ? `<span><b>${fmt(pr.q)}</b> peças previstas para entrar de ${fxDataBr(fx.de)} a ${fxDataBr(fx.ate)}</span>` : ''}<span class="fx-dica">Sem lotes: cada card junta todas as caixas daquele produto na etapa</span></div><div class="fx-board" style="grid-template-columns:repeat(${etapas.length},minmax(250px,1fr))">${cols}</div>`;
 }
 /* previsão de retorno: peças na facção (e já destinadas à facção) com data prevista dentro do período */
 function fxPrevItens(F) {
@@ -375,7 +375,7 @@ function fxBar() {
 }
 
 /* ---------- moldura ---------- */
-const GUT_MARK = '<svg viewBox="0 0 64 56" aria-hidden="true"><defs><linearGradient id="tvPrata" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f5"/><stop offset="1" stop-color="#8d9099"/></linearGradient></defs><path d="M30 6H8a5 5 0 0 0-5 5v36a5 5 0 0 0 5 5h44a5 5 0 0 0 5-5V22" fill="none" stroke="url(#tvPrata)" stroke-width="3.2" stroke-linecap="round"/><rect x="11" y="34" width="8" height="13" rx="1" fill="#e11d2a"/><rect x="23" y="24" width="8" height="23" rx="1" fill="#e11d2a"/><rect x="35" y="2" width="9" height="45" rx="1" fill="#ff2a36"/></svg>';
+const GUT_MARK = '<svg viewBox="0 0 64 56" aria-hidden="true"><defs><linearGradient id="tvPrata" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f5"/><stop offset="1" stop-color="#8d9099"/></linearGradient></defs><path d="M32 6H8a5 5 0 0 0-5 5v36a5 5 0 0 0 5 5h44a5 5 0 0 0 5-5V11a5 5 0 0 0-5-5h-5" fill="none" stroke="url(#tvPrata)" stroke-width="3.2" stroke-linecap="round"/><rect x="11" y="34" width="8" height="13" rx="1" fill="#e11d2a"/><rect x="23" y="24" width="8" height="23" rx="1" fill="#e11d2a"/><rect x="35" y="2" width="9" height="45" rx="1" fill="#ff2a36"/></svg>';
 function options(arr, sel, all) {
   return `<option value="">${esc(all)}</option>` + (arr || []).filter(x => x.ativo !== false || String(x.id) === String(sel))
     .map(v => `<option value="${esc(v.id)}"${String(v.id) === String(sel) ? ' selected' : ''}>${esc(v.nome)}</option>`).join('');
@@ -842,7 +842,8 @@ body.gut-tv-open{overflow:hidden}
 
 /* ===== painel 4: Kanban de produtos (v4.41) ===== */
 .fx-resumo{display:flex;gap:22px;align-items:baseline;flex-wrap:wrap;color:#c9ccd3;font-size:13px}.fx-resumo b{color:#fff;font-size:22px;font-weight:900;margin-right:4px}.fx-dica{color:#8b8f99;font-size:11.5px;margin-left:auto}
-.fx-board{display:grid;grid-template-columns:repeat(7,minmax(190px,1fr));gap:10px;flex:1;min-height:0;overflow-x:auto}
+.fx-board{display:grid;grid-template-columns:repeat(7,minmax(250px,1fr));gap:12px;flex:1;min-height:0;overflow-x:auto;padding-bottom:4px}
+.tv-workspace.tv-full[data-panel="4"] .tv-filterbar{display:grid!important}
 .fx-col{--fx:#9aa0aa;display:flex;flex-direction:column;min-height:0;border:1px solid #2a2c33;border-top:3px solid var(--fx);border-radius:11px;background:#0b0c10}
 .fx-c0{--fx:#9aa0aa}.fx-c1{--fx:#f5d33f}.fx-c2{--fx:#c084fc}.fx-c3{--fx:#29d8f4}.fx-c4{--fx:#fb923c}.fx-c5{--fx:#60a5fa}.fx-c6{--fx:#2ee883}
 .fx-col-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:10px 12px;border-bottom:1px solid #22242a}
