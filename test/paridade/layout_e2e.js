@@ -77,6 +77,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(st.n === 3 && st.w === 15 && !st.sobre, 'itens entram em lugares livres, sem sobrepor');
     await page.evaluate(() => { const d = gutLayout.estado().atual.dados; d.itens[0].x = 1; d.itens[0].y = 1; d.itens[1].x = 4; d.itens[1].y = 5; gutLayout.modo('COTA'); });
     const ids = await page.evaluate(() => gutLayout.estado().atual.dados.itens.map(i => i.id));
+    await page.waitForTimeout(600);
     for (const id of ids.slice(0, 2)) { const b = await page.$(`[data-it="${id}"] rect`); const bb = await b.boundingBox(); await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.waitForTimeout(200); }
     const cota = await page.evaluate(() => { const L = gutLayout.estado(); return { n: L.atual.dados.cotas.length, txt: document.querySelector('.lay-cota b')?.textContent, tot: document.querySelector('.lay-tot b')?.textContent }; });
     ok(cota.n === 1 && cota.txt === '5,00 m' && cota.tot === '5,00 m', 'cota entre duas máquinas mede a distância entre os centros (3 × 4 → 5,00 m): ' + JSON.stringify(cota));
@@ -131,6 +132,27 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(bip.maq && bip.perto && bip.dist < 2.2 && !bip.sobre, 'bipar a máquina e depois a caixa põe a caixa encostada nela, sem sobrepor: ' + JSON.stringify(bip));
     ok(bip.op && bip.label, 'bipar o crachá põe o funcionário no posto da máquina');
     ok(/não é uma máquina numerada nem uma caixa/.test(bip.msg), 'código desconhecido avisa');
+    // análise de fluxo: matriz De-Para × distâncias
+    const an = await page.evaluate(() => {
+      const L = gutLayout.estado(), d = L.atual.dados;
+      const prod = (STATE.cad.produtos || []).find(p => (STATE.cad.roteiro || []).filter(r => String(r.ID_PRODUTO) === String(p.ID_PRODUTO)).length >= 2);
+      if (!prod) return { sem: 'produto' };
+      const procs = new Map((STATE.cad.processos || []).map(x => [String(x.ID_PROCESSO), x]));
+      if (STATE.cad.maquinas.length < 2) STATE.cad.maquinas.push({ ID_MAQUINA: 'MQ-TESTE-2', MAQUINA: 'OVERLOQUE', QTD_TOTAL: 2, ATIVO: true });
+      const ms = STATE.cad.maquinas.map(m => String(m.ID_MAQUINA)); (STATE.cad.roteiro || []).filter(r => String(r.ID_PRODUTO) === String(prod.ID_PRODUTO)).sort((a, b) => Number(a.ORDEM_PROCESSO) - Number(b.ORDEM_PROCESSO)).forEach((r, k) => { if (!r.ID_MAQUINA) r.ID_MAQUINA = ms[k % ms.length]; });
+      const seq = (STATE.cad.roteiro || []).filter(r => String(r.ID_PRODUTO) === String(prod.ID_PRODUTO)).sort((a, b) => Number(a.ORDEM_PROCESSO) - Number(b.ORDEM_PROCESSO)).map(r => String(r.ID_MAQUINA || (procs.get(String(r.ID_PROCESSO)) || {}).ID_MAQUINA_PADRAO || ''));
+      // garante cada tipo do roteiro na planta
+      [...new Set(seq.filter(Boolean))].forEach(m => { if (!d.itens.some(i => i.tipo === 'MAQ' && i.maq === m)) gutLayout.adicionar('MAQ', m); });
+      gutLayout.an('base', 'PRODUTO'); gutLayout.an('prod', String(prod.ID_PRODUTO)); gutLayout.an('qtd', '50'); gutLayout.an('dist', 'L');
+      const r = gutLayout.analise();
+      // conferência independente: soma das menores distâncias em L entre tipos consecutivos diferentes
+      const c = i => [i.x + i.w / 2, i.y + i.h / 2]; let esp = 0;
+      for (let k = 1; k < seq.length; k++) { const a = seq[k - 1], b = seq[k]; if (!a || !b || a === b) continue; let best = Infinity;
+        d.itens.filter(i => i.maq === a && i.tipo === 'MAQ').forEach(x => d.itens.filter(i => i.maq === b && i.tipo === 'MAQ').forEach(y => { const p = c(x), q = c(y); best = Math.min(best, Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1])); })); esp += best; }
+      return { seq: seq.length, porPeca: Math.round(r.porPeca * 100) / 100, esp: Math.round(esp * 100) / 100, metros: Math.round(r.metros), pecas: r.pecas, kpi: document.querySelector('.lay-kpis .k b')?.textContent, mx: document.querySelectorAll('.lay-mx td b').length, sp: document.querySelectorAll('.lay-sp').length };
+    });
+    ok(!an.sem && an.seq >= 2 && an.porPeca === an.esp && an.metros === Math.round(an.esp * 50) && an.pecas === 50 && an.mx >= 1 && an.sp >= 1, 'metros por peça = soma das distâncias entre as máquinas do roteiro; matriz e fluxo desenhados: ' + JSON.stringify(an));
+    if (process.env.SHOT) { await page.evaluate(() => { document.getElementById('layAn').scrollIntoView(); }); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-analise.png'), fullPage: false }); await page.evaluate(() => window.scrollTo(0, 0)); }
     if (process.env.SHOT) { await page.evaluate(() => gutLayout.zoom(0)); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-bipagem.png') }); }
     await page.reload(); await page.waitForTimeout(3500); await page.evaluate(() => showView('layout')); await page.waitForTimeout(2500);
     const vol = await page.evaluate(() => { const d = gutLayout.estado().atual.dados; return { n: d.itens.length, c: d.cotas.length, w: d.largura, id: gutLayout.estado().atual.id }; });

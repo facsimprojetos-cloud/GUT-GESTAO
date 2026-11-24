@@ -35,7 +35,7 @@
     L.atual = keep || L.lista[0]; L.carregado = true;
   }
   function mudou(redesenhar = true) {
-    L.sujo = true; status(); if (redesenhar) desenhar();
+    L.sujo = true; status(); clearTimeout(L.tAn); L.tAn = setTimeout(() => { analisar(); desenhar(); }, 250); if (redesenhar) desenhar();
     clearTimeout(L.timer); L.timer = setTimeout(salvar, 1200);
   }
   function snapshot() { L.hist.push(JSON.stringify(D())); if (L.hist.length > 40) L.hist.shift(); }
@@ -126,8 +126,9 @@
       <aside class="card lay-side" id="layPal"></aside>
       <div class="card lay-canvas" id="layWrap"><svg id="laySvg" xmlns="http://www.w3.org/2000/svg"></svg><div class="lay-hint" id="layHint"></div><div class="lay-float"><button type="button" onclick="gutLayout.zoom(-1)" title="Diminuir">−</button><button type="button" onclick="gutLayout.zoom(0)" title="Caber na tela">Ajustar</button><button type="button" onclick="gutLayout.zoom(1)" title="Aumentar">+</button><button type="button" class="sai" onclick="gutLayout.soPlanta(false)" title="Mostrar os controles (Esc)">✕ Mostrar controles</button></div></div>
       <aside class="card lay-side" id="layProp"></aside>
-    </div>`;
-    preencherAmbientes(); campos(); paleta(); desenhar(); props(); modo(L.modo, true); bindSvg();
+    </div>
+    <section class="card lay-an" id="layAn"></section>`;
+    preencherAmbientes(); campos(); paleta(); desenhar(); props(); modo(L.modo, true); bindSvg(); analisar();
   }
   function preencherAmbientes() {
     const s = $('layAmb'); if (!s) return;
@@ -197,6 +198,71 @@
     return { a, b, ax, ay, bx, by, reta: Math.hypot(bx - ax, by - ay), l: Math.abs(bx - ax) + Math.abs(by - ay) };
   }
 
+  /* ---------- análise de fluxo: matriz De-Para × distâncias → metros por peça ---------- */
+  const A = { base: 'QUADRO', prod: '', qtd: 100, dist: 'L', ver: true, res: null };
+  function produtos() { return ((typeof STATE !== 'undefined' && STATE.cad && STATE.cad.produtos) || []).filter(p => !['FALSE', '0', 'INATIVO'].includes(String(p.ATIVO ?? '').toUpperCase())); }
+  const nomeProd = id => { const p = produtos().find(x => String(x.ID_PRODUTO) === String(id)); return p ? [p.CODIGO_PRODUTO, p.PRODUTO].filter(Boolean).join(' - ') : 'Produto'; };
+  /* sequência de tipos de máquina do roteiro ativo do produto */
+  function seqMaquinas(pid) {
+    const procs = new Map(((STATE.cad && STATE.cad.processos) || []).map(p => [String(p.ID_PROCESSO), p]));
+    return ((STATE.cad && STATE.cad.roteiro) || []).filter(r => String(r.ID_PRODUTO) === String(pid) && !['FALSE', '0', 'INATIVO'].includes(String(r.ATIVO ?? '').toUpperCase()))
+      .sort((a, b) => num(a.ORDEM_PROCESSO) - num(b.ORDEM_PROCESSO))
+      .map(r => { const pr = procs.get(String(r.ID_PROCESSO)) || {}; return { maq: String(r.ID_MAQUINA || pr.ID_MAQUINA_PADRAO || ''), op: pr.PROCESSO || 'Operação' }; });
+  }
+  /* volume por produto: quadro interno (peças ainda em produção) ou um produto com quantidade informada */
+  function demanda() {
+    if (A.base === 'PRODUTO') return A.prod ? [{ pid: A.prod, qtd: Math.max(1, num(A.qtd) || 1) }] : [];
+    const m = new Map(); ((STATE.internalBoard && STATE.internalBoard.rows) || []).forEach(v => { const pid = String(v.ID_PRODUTO || ''); if (pid) m.set(pid, (m.get(pid) || 0) + (Number(v.QTD_VOLUME) || 0)); });
+    return [...m].map(([pid, qtd]) => ({ pid, qtd })).filter(x => x.qtd > 0);
+  }
+  function analisar() {
+    const d = D(); if (!d) return; const mq = new Map(maquinas().map(m => [m.id, m.nome]));
+    const unid = new Map(); d.itens.filter(i => i.tipo === 'MAQ').forEach(i => { if (!unid.has(i.maq)) unid.set(i.maq, []); unid.get(i.maq).push(i); });
+    const ctr = i => [i.x + i.w / 2, i.y + i.h / 2];
+    const dd = (a, b) => A.dist === 'L' ? Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) : Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const par = new Map(); // menor distância entre uma unidade do tipo A e uma do tipo B
+    const distTipos = (a, b) => { const k = a + '>' + b; if (par.has(k)) return par.get(k); const ua = unid.get(a), ub = unid.get(b); if (!ua || !ub) { par.set(k, null); return null; }
+      let best = null; ua.forEach(x => ub.forEach(y => { const v = dd(ctr(x), ctr(y)); if (!best || v < best.d) best = { d: v, a: x, b: y }; })); par.set(k, best); return best; };
+    const fluxo = new Map(), faltam = new Set(), semMaq = new Set(), porProd = [];
+    let pecas = 0, metros = 0;
+    demanda().forEach(({ pid, qtd }) => {
+      const seq = seqMaquinas(pid).filter(x => x.maq); if (!seq.length) { semMaq.add(pid); return; }
+      let m1 = 0, ok = true;
+      for (let k = 1; k < seq.length; k++) {
+        const a = seq[k - 1].maq, b = seq[k].maq; if (a === b) continue;
+        const key = a + '>' + b, f = fluxo.get(key) || { a, b, qtd: 0, ops: new Set() }; f.qtd += qtd; f.ops.add(seq[k - 1].op + ' → ' + seq[k].op); fluxo.set(key, f);
+        const bd = distTipos(a, b); if (!bd) { ok = false; if (!unid.has(a)) faltam.add(a); if (!unid.has(b)) faltam.add(b); continue; } m1 += bd.d;
+      }
+      pecas += qtd; metros += m1 * qtd; porProd.push({ pid, qtd, m: m1, ok, passos: seq.length });
+    });
+    const lista = [...fluxo.values()].map(f => { const bd = distTipos(f.a, f.b); return Object.assign(f, { d: bd ? bd.d : null, ua: bd && bd.a, ub: bd && bd.b, custo: bd ? bd.d * f.qtd : null }); });
+    const tipos = []; lista.forEach(f => { [f.a, f.b].forEach(t => { if (!tipos.includes(t)) tipos.push(t); }); });
+    A.res = { pecas, metros, porPeca: pecas ? metros / pecas : 0, lista, tipos, mq, faltam: [...faltam], semMaq: [...semMaq], porProd };
+    painelAnalise();
+  }
+  function painelAnalise() {
+    const el = $('layAn'); if (!el) return; const r = A.res || { lista: [], tipos: [], porProd: [], faltam: [], semMaq: [], mq: new Map() };
+    const nm = id => r.mq.get(id) || 'Máquina sem cadastro', abrev = id => { const t = String(nm(id)); return t.length > 14 ? t.slice(0, 13) + '…' : t; };
+    const maxF = Math.max(1, ...r.lista.map(f => f.qtd)), cell = new Map(r.lista.map(f => [f.a + '>' + f.b, f]));
+    const top = r.lista.filter(f => f.custo != null).sort((a, b) => b.custo - a.custo).slice(0, 8), totC = r.lista.reduce((s, f) => s + (f.custo || 0), 0) || 1;
+    const prods = produtos().filter(p => seqMaquinas(p.ID_PRODUTO).length);
+    el.innerHTML = `<div class="lay-an-head"><div><h4>Fluxo e metros por peça</h4><p>Matriz De-Para (peças que vão de uma máquina para outra, pelo roteiro) × distância na planta. Quanto menor o total, melhor o layout.</p></div>
+      <div class="lay-an-ctl"><label class="lay-f"><span>Base</span><select onchange="gutLayout.an('base',this.value)"><option value="QUADRO" ${A.base === 'QUADRO' ? 'selected' : ''}>Produção interna agora</option><option value="PRODUTO" ${A.base === 'PRODUTO' ? 'selected' : ''}>Um produto</option></select></label>
+      ${A.base === 'PRODUTO' ? `<label class="lay-f"><span>Produto</span><select onchange="gutLayout.an('prod',this.value)"><option value="">Escolha…</option>${prods.map(p => `<option value="${esc(p.ID_PRODUTO)}" ${String(p.ID_PRODUTO) === A.prod ? 'selected' : ''}>${esc(nomeProd(p.ID_PRODUTO))}</option>`).join('')}</select></label><label class="lay-f lay-n"><span>Peças</span><input inputmode="numeric" value="${esc(A.qtd)}" onchange="gutLayout.an('qtd',this.value)"></label>` : ''}
+      <label class="lay-f"><span>Distância</span><select onchange="gutLayout.an('dist',this.value)"><option value="L" ${A.dist === 'L' ? 'selected' : ''}>Em L (corredores)</option><option value="R" ${A.dist === 'R' ? 'selected' : ''}>Em linha reta</option></select></label>
+      <label class="lay-chk"><input type="checkbox" ${A.ver ? 'checked' : ''} onchange="gutLayout.an('ver',this.checked)"> Desenhar o fluxo na planta</label></div></div>
+      ${!r.pecas && !r.lista.length ? `<p class="hint">${A.base === 'PRODUTO' ? 'Escolha um produto com roteiro.' : 'Não há caixas na produção interna agora. Use a base "Um produto".'}${r.semMaq.length ? ' Alguns produtos não têm máquina nas operações do roteiro.' : ''}</p>` : `
+      <div class="lay-kpis"><div class="k"><small>Metros por peça</small><b>${fm(r.porPeca)} m</b><span>caminho médio de uma peça entre as máquinas do roteiro</span></div>
+        <div class="k"><small>Movimentação total</small><b>${Math.round(r.metros).toLocaleString('pt-BR')} m</b><span>para ${r.pecas.toLocaleString('pt-BR')} peça(s)${r.pecas ? ` • ≈ ${Math.round(r.metros / 60).toLocaleString('pt-BR')} min a pé (1 m/s)` : ''}</span></div>
+        <div class="k"><small>Trocas de máquina</small><b>${r.lista.length}</b><span>pares diferentes no roteiro</span></div>
+        ${top[0] ? `<div class="k warn"><small>Maior custo</small><b>${esc(abrev(top[0].a))} → ${esc(abrev(top[0].b))}</b><span>${Math.round(top[0].custo / totC * 100)}% de toda a movimentação</span></div>` : ''}</div>
+      ${r.faltam.length ? `<p class="lay-an-warn">Fora da planta: ${r.faltam.map(id => esc(nm(id))).join(', ')}. Coloque essas máquinas para o cálculo ficar completo.</p>` : ''}
+      <div class="lay-an-grid"><div class="lay-mx-wrap"><div class="lay-h">Matriz De-Para (peças)</div><table class="lay-mx"><thead><tr><th>De \\ Para</th>${r.tipos.map(t => `<th title="${esc(nm(t))}">${esc(abrev(t))}</th>`).join('')}</tr></thead><tbody>
+        ${r.tipos.map(a => `<tr><th title="${esc(nm(a))}">${esc(abrev(a))}</th>${r.tipos.map(b => { const f = cell.get(a + '>' + b); if (!f) return `<td class="${a === b ? 'diag' : ''}"></td>`; const al = 0.12 + 0.75 * f.qtd / maxF; return `<td class="${al > 0.5 ? 'forte' : ''}" style="--a:${al.toFixed(2)}" title="${esc(nm(a))} → ${esc(nm(b))}: ${f.qtd} pç${f.d != null ? ' • ' + fm(f.d) + ' m' : ' • fora da planta'}\n${esc([...f.ops].join('\n'))}"><b>${f.qtd.toLocaleString('pt-BR')}</b>${f.d != null ? `<small>${fm(f.d)} m</small>` : '<small>—</small>'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+      <div><div class="lay-h">Onde a peça mais anda (peças × metros)</div><div class="lay-rank">${top.map(f => `<div class="lay-rk"><span>${esc(nm(f.a))} → ${esc(nm(f.b))}</span><b>${Math.round(f.custo).toLocaleString('pt-BR')} m</b><i style="width:${Math.max(3, f.custo / top[0].custo * 100)}%"></i><small>${f.qtd} pç × ${fm(f.d)} m${f.ua ? ` • ${esc(f.ua.nome)} → ${esc(f.ub.nome)}` : ''}</small></div>`).join('') || '<p class="hint">Sem trocas de máquina na planta.</p>'}</div>
+      ${r.porProd.length > 1 ? `<div class="lay-h">Por produto</div><div class="lay-rank">${r.porProd.sort((a, b) => b.m * b.qtd - a.m * a.qtd).slice(0, 8).map(x => `<div class="lay-rk sm"><span>${esc(nomeProd(x.pid))}</span><b>${fm(x.m)} m/pç</b><small>${x.qtd} pç • ${x.passos} operações${x.ok ? '' : ' • falta máquina na planta'}</small></div>`).join('')}</div>` : ''}</div></div>`}`;
+  }
+
   /* ---------- desenho (SVG em metros) ---------- */
   const PAD = 0.9;
   function escala() {
@@ -213,7 +279,7 @@
     const fs = Math.max(0.16, Math.min(0.3, 14 / s));
     let g = `<defs><pattern id="layG" width="${c}" height="${c}" patternUnits="userSpaceOnUse"><path d="M ${c} 0 L 0 0 0 ${c}" class="lay-grid"/></pattern><pattern id="layG1" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M 1 0 L 0 0 0 1" class="lay-grid1"/></pattern>
       <pattern id="layHatch" width="0.25" height="0.25" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0V0.25" class="lay-hatch"/></pattern>
-      <marker id="layArr" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="${fs * 1.3}" markerHeight="${fs * 1.3}" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="lay-arrm"/></marker><marker id="layTick" viewBox="-5 -5 10 10" markerUnits="userSpaceOnUse" markerWidth="${fs * 1.4}" markerHeight="${fs * 1.4}" orient="auto"><path d="M0 -4V4" class="lay-tickm"/></marker></defs>`;
+      <marker id="laySpA" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="${fs * 1.1}" markerHeight="${fs * 1.1}" orient="auto"><path d="M0 0L10 5L0 10z" class="lay-spm"/></marker><marker id="layArr" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="${fs * 1.3}" markerHeight="${fs * 1.3}" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="lay-arrm"/></marker><marker id="layTick" viewBox="-5 -5 10 10" markerUnits="userSpaceOnUse" markerWidth="${fs * 1.4}" markerHeight="${fs * 1.4}" orient="auto"><path d="M0 -4V4" class="lay-tickm"/></marker></defs>`;
     g += `<rect x="0" y="0" width="${W}" height="${H}" class="lay-floor"/><rect x="0" y="0" width="${W}" height="${H}" fill="url(#layG)"/><rect x="0" y="0" width="${W}" height="${H}" fill="url(#layG1)"/><rect x="0" y="0" width="${W}" height="${H}" class="lay-wall"/>`;
     const passo = W > 60 || H > 60 ? 10 : W > 25 || H > 25 ? 5 : 1;
     for (let x = 0; x <= W + 1e-6; x += passo) g += `<text x="${x}" y="${-0.25}" class="lay-rul" font-size="${fs}" text-anchor="middle">${Math.round(x)}</text>`;
@@ -238,6 +304,10 @@
     const cx = mapaCaixas();
     if (L.fluxo) fluxos().forEach(f => { if (!f.alvo) return; const bx = f.alvo.x + f.alvo.w / 2, by = f.alvo.y + f.alvo.h / 2, mx = (f.lx + bx) / 2, my = (f.ly + by) / 2;
       g += `<g class="lay-flx${f.c.ativa ? ' ativa' : ''}"><line x1="${f.lx}" y1="${f.ly}" x2="${bx}" y2="${by}" class="lay-fl" marker-end="url(#layArr)"/><text x="${mx}" y="${my - fs * 0.35}" font-size="${fs * 0.75}" text-anchor="middle" class="lay-ftx" stroke-width="${fs * 0.18}">${esc(curto(f.c.op, 18))} • ${fm(f.dist)} m</text></g>`; });
+    if (A.ver && A.res) { const mx = Math.max(1, ...A.res.lista.map(f => f.qtd));
+      A.res.lista.filter(f => f.ua && f.ub).forEach(f => { const a = [f.ua.x + f.ua.w / 2, f.ua.y + f.ua.h / 2], b = [f.ub.x + f.ub.w / 2, f.ub.y + f.ub.h / 2], w = 1.5 + 7 * f.qtd / mx;
+        const path = A.dist === 'L' ? `M${a[0]} ${a[1]} L${b[0]} ${a[1]} L${b[0]} ${b[1]}` : `M${a[0]} ${a[1]} L${b[0]} ${b[1]}`;
+        g += `<path d="${path}" class="lay-sp" style="stroke-width:${w.toFixed(1)}px" marker-end="url(#laySpA)"><title>${esc(f.qtd + ' pç • ' + fm(f.d) + ' m')}</title></path>`; }); }
     d.itens.filter(it => it.tipo === 'LOTE').forEach(it => {
       const c = cx.get(it.vol), sel = it.id === L.sel ? ' sel' : '', ca = L.cotaA === it.id ? ' cota-a' : '', st = !c ? ' fora' : c.feito ? ' feito' : c.ativa ? ' ativa' : '';
       const f = Math.max(0.12, Math.min(fs * 0.85, it.w * 0.16)), pct = c ? Math.min(100, c.pct) : 0;
@@ -427,7 +497,8 @@
   }
 
   window.gutLayout = {
-    bipar, camera, alvo: () => L.alvo,
+    bipar, camera, alvo: () => L.alvo, analise: () => A.res,
+    an(k, v) { if (k === 'ver') A.ver = !!v; else if (k === 'qtd') A.qtd = Math.max(1, Math.round(num(v)) || 1); else A[k] = v; analisar(); desenhar(); },
     cheia: () => { if (L.so) soPlanta(false); cheia(); }, soPlanta: on => soPlanta(on), lado(q) { if (q === 'pal') L.semPal = !L.semPal; else L.semProp = !L.semProp; lados(); setTimeout(desenhar, 30); },
     fluxo(on) { L.fluxo = !!on; desenhar(); },
     limparLotes() { const cx = mapaCaixas(); snapshot(); D().itens = D().itens.filter(i => i.tipo !== 'LOTE' || cx.has(i.vol)); const ids = new Set(D().itens.map(i => i.id)); D().cotas = D().cotas.filter(c => ids.has(c.a) && ids.has(c.b)); mudou(); paleta(); props(); },
@@ -469,8 +540,8 @@
     if (!L.carregado) { root.innerHTML = '<div class="card internal-loading">Carregando o layout…</div>'; try { await carregar(); } catch (e) { root.innerHTML = /web_layout_ler|does not exist|schema cache/i.test(e.message) ? '<div class="card">O Layout da fábrica ainda está sendo instalado no banco. Tente de novo daqui a pouco.</div>' : `<div class="card">Não foi possível abrir o layout: ${esc(e.message)}</div>`; return; } montar(); }
     else if (!$('laySvg')) montar(); else { paleta(); desenhar(); props(); }
     // ocupação: precisa do quadro da produção interna
-    try { if (typeof STATE !== 'undefined' && !STATE.internalBoard && typeof loadInternalProductionBoard === 'function') { await loadInternalProductionBoard(); paleta(); desenhar(); props(); } } catch (e) {}
+    try { if (typeof STATE !== 'undefined' && !STATE.internalBoard && typeof loadInternalProductionBoard === 'function') { await loadInternalProductionBoard(); analisar(); paleta(); desenhar(); props(); } } catch (e) {}
   };
-  setInterval(() => { if (visivel() && !L.drag && !document.querySelector('#view-layout input:focus,#view-layout select:focus')) { paleta(); desenhar(); if (L.sel) { const it = D().itens.find(i => i.id === L.sel); if (it && it.tipo === 'LOTE') props(); } } }, 10000);
+  setInterval(() => { if (visivel() && !L.drag && !document.querySelector('#view-layout input:focus,#view-layout select:focus')) { if (A.base === 'QUADRO') analisar(); paleta(); desenhar(); if (L.sel) { const it = D().itens.find(i => i.id === L.sel); if (it && it.tipo === 'LOTE') props(); } } }, 10000);
   window.addEventListener('beforeunload', e => { if (L.sujo) { salvar(); e.preventDefault(); e.returnValue = ''; } });
 })();
