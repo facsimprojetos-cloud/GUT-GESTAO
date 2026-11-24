@@ -24,9 +24,9 @@ const cls = e => e == null || !isFinite(e) ? 'tv-neutral' : e > 100 ? 'tv-good' 
 
 const PANELS = [[1, 'PEÇAS PRONTAS'], [2, 'PRODUÇÃO'], [3, 'PRODUÇÃO · TELA CHEIA'], [4, 'KANBAN DE PRODUTOS']];
 const CFG_KEY = 'gut-tv-cfg';
-const cfg = { panel: 2, rotate: false, secs: 30, fxNivel: 'P' };
+const cfg = { panel: 2, rotate: false, secs: 30, fxNivel: 'P', fxPrev: false, fxDias: 7 };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); } catch (_) { /* sem armazenamento */ }
-const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify({ panel: cfg.panel, rotate: cfg.rotate, secs: cfg.secs, fxNivel: cfg.fxNivel })); } catch (_) {} };
+const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify({ panel: cfg.panel, rotate: cfg.rotate, secs: cfg.secs, fxNivel: cfg.fxNivel, fxPrev: cfg.fxPrev })); } catch (_) {} };
 
 const filtrosPadrao = () => { const h = hojeSP(); return { inicio: h, fim: h, funcionario: '', produto: '', processo: '', setor: '' }; };
 const filters = filtrosPadrao();
@@ -35,7 +35,7 @@ let DADOS = null;      // período dos filtros
 let DADOS_HOJE = null; // só hoje (painel 3)
 let FLUXO = null;      // Kanban de produtos (painel 4)
 let FX_ERRO = '';
-const fx = { busca: '', hist: false, exp: {} }; // exp: produto → 'T' (por tamanho) | 'TC' (tamanho e cor) | 'P'
+const fx = { busca: '', hist: false, exp: {}, de: '', ate: '' }; // exp: 'coluna|produto' → 'T' | 'P'; 'coluna|produto|tamanho' → 'TC' | 'T' (só aquele card)
 let active = false, busy = false, lastUpdated = null, lastError = '', pendingLive = false;
 let timer = null, clockTimer = null, scrollTimer = null, rotTimer = null, liveTimer = null, rotElapsed = 0;
 let vistosP3 = new Set();
@@ -282,49 +282,95 @@ function panel3() {
 const FX_ETAPAS = [
   ['CORTE', 'ESTOQUE DE CORTE', 'cortado, falta volumar', 'fx-c0'], ['VOLUMADO', 'VOLUMADO', 'aguardando destino', 'fx-c1'],
   ['DESTINO', 'DESTINO DEFINIDO', 'aguardando envio', 'fx-c2'], ['FACCAO', 'NA FACÇÃO', 'enviado', 'fx-c3'],
+  ['PREVISAO', 'PREVISÃO DE RETORNO', '', 'fx-c7'],
   ['INSPECAO', 'RETORNO / INSPEÇÃO', 'voltou da facção', 'fx-c4'], ['INTERNA', 'PRODUÇÃO INTERNA', 'em produção', 'fx-c5'],
   ['EMBALAR', 'PRONTO P/ EMBALAR', 'falta embalar e enviar', 'fx-c6']];
 const FX_NIVEIS = [['P', 'PRODUTO'], ['T', '+ TAMANHO'], ['TC', '+ COR']];
-const fxNivelDe = p => fx.exp[p] || cfg.fxNivel || 'P';
-function fxGrupos(itens) {
-  const m = new Map(), q = fx.busca.trim().toLowerCase();
+const fxDataBr = d => d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) : '';
+/* nível de cada item: o do topo, ou o que foi aberto/juntado só naquele card (coluna + produto [+ tamanho]) */
+function fxNivel(col, i) {
+  const base = cfg.fxNivel || 'P', np = fx.exp[col + '|' + i.p] || base;
+  if (np === 'P') return 'P';
+  return fx.exp[col + '|' + i.p + '|' + i.t] || np;
+}
+function fxGrupos(itens, col) {
+  const m = new Map(), q = fx.busca.trim().toLowerCase(), hoje = hojeSP();
   itens.forEach(i => {
     if (q && !(`${i.pc} ${i.pn}`.toLowerCase().includes(q))) return;
-    const n = fxNivelDe(i.p), k = [i.e, i.p, n === 'P' ? '' : i.t, n === 'TC' ? i.c : ''].join('|');
-    let g = m.get(k); if (!g) { g = { e: i.e, p: i.p, pn: i.pn, pc: i.pc, t: n === 'P' ? '' : i.tn, to: i.to, c: n === 'TC' ? i.cn : '', n, q: 0, v: 0, partes: new Map() }; m.set(k, g); }
-    g.q += Number(i.q) || 0; g.v += Number(i.v) || 0;
-    if (n !== 'TC') { const sk = n === 'P' ? i.tn : i.cn; g.partes.set(sk, (g.partes.get(sk) || 0) + (Number(i.q) || 0)); }
+    const n = fxNivel(col, i), k = [i.p, n === 'P' ? '' : i.t, n === 'TC' ? i.c : ''].join('|');
+    let g = m.get(k);
+    if (!g) { g = { col, p: i.p, pn: i.pn, pc: i.pc, t: n === 'P' ? '' : i.t, tn: n === 'P' ? '' : i.tn, to: i.to, cn: n === 'TC' ? i.cn : '', n, q: 0, v: 0, partes: new Map(), atras: 0, prox: '' }; m.set(k, g); }
+    const qq = Number(i.q) || 0; g.q += qq; g.v += Number(i.v) || 0;
+    if (i.d) { if (i.d < hoje) g.atras += qq; else if (!g.prox || i.d < g.prox) g.prox = i.d; }
+    if (n !== 'TC') { const sk = n === 'P' ? i.tn : i.cn; g.partes.set(sk, (g.partes.get(sk) || 0) + qq); }
   });
   return [...m.values()];
 }
-function fxCard(g) {
-  const prox = g.n === 'P' ? 'T' : g.n === 'T' ? 'TC' : null;
-  const partes = [...g.partes.entries()].filter(([k]) => k).slice(0, 8).map(([k, v]) => `<span>${esc(k)} <b>${fmt(v)}</b></span>`).join('');
-  return `<div class="fx-card"><div class="fx-top"><div class="fx-nome"><b>${esc(g.pc ? g.pc + ' · ' : '')}${esc(g.pn)}</b>${g.t || g.c ? `<small>${[g.t, g.c].filter(Boolean).map(esc).join(' · ')}</small>` : ''}</div><div class="fx-q">${fmt(g.q)}<small>pç</small></div></div>
-    ${partes ? `<div class="fx-partes">${partes}</div>` : ''}
-    <div class="fx-acoes">${g.e !== 'CORTE' && g.v ? `<span class="fx-vol">${fmt(g.v)} vol.</span>` : '<span></span>'}<span>${prox ? `<button type="button" data-tv-action="fx-abrir" data-p="${esc(g.p)}" data-n="${prox}" title="Separar este produto por ${prox === 'T' ? 'tamanho' : 'cor'} em todas as colunas">⤢ ${prox === 'T' ? 'por tamanho' : 'por cor'}</button>` : ''}${g.n !== (cfg.fxNivel || 'P') ? `<button type="button" data-tv-action="fx-juntar" data-p="${esc(g.p)}" title="Voltar este produto para um card só">juntar</button>` : ''}</span></div></div>`;
+const fxOrdem = (a, b) => b.q - a.q || String(a.pn).localeCompare(String(b.pn), 'pt-BR');
+const fxOrdemFilho = (a, b) => (a.to - b.to) || String(a.tn).localeCompare(String(b.tn), 'pt-BR') || String(a.cn).localeCompare(String(b.cn), 'pt-BR');
+function fxPartes(g) { return [...g.partes.entries()].filter(([k]) => k).slice(0, 8).map(([k, v]) => `<span>${esc(k)} <b>${fmt(v)}</b></span>`).join(''); }
+function fxInfo(g) {
+  if (g.col === 'PREVISAO') return [g.prox ? `próx. ${fxDataBr(g.prox)}` : '', g.atras ? `<em>${fmt(g.atras)} atrasada(s)</em>` : ''].filter(Boolean).join(' · ');
+  return g.col !== 'CORTE' && g.v ? `${fmt(g.v)} vol.` : '';
 }
-const fxOrdem = (a, b) => b.q - a.q || String(a.pn).localeCompare(String(b.pn), 'pt-BR') || (a.to - b.to) || String(a.c).localeCompare(String(b.c), 'pt-BR');
+/* card de um produto inteiro */
+function fxCard(g) {
+  const partes = fxPartes(g);
+  return `<div class="fx-card"><div class="fx-top"><div class="fx-nome"><b>${esc(g.pc ? g.pc + ' · ' : '')}${esc(g.pn)}</b></div><div class="fx-q">${fmt(g.q)}<small>pç</small></div></div>
+    ${partes ? `<div class="fx-partes">${partes}</div>` : ''}
+    <div class="fx-acoes"><span class="fx-vol">${fxInfo(g)}</span><span>${g.partes.size > 0 && [...g.partes.keys()].some(Boolean) ? `<button type="button" data-tv-action="fx-abrir" data-k="${esc(g.col + '|' + g.p)}" data-n="T" title="Abrir este card por tamanho">⤢ por tamanho</button>` : ''}</span></div></div>`;
+}
+/* produto aberto: um bloco expandido com uma linha por tamanho (ou tamanho e cor) */
+function fxBloco(gs) {
+  const g0 = gs[0], tot = gs.reduce((t, g) => t + g.q, 0), kP = g0.col + '|' + g0.p;
+  const filhos = gs.slice().sort(fxOrdemFilho).map(g => {
+    const kT = kP + '|' + g.t, partes = g.n === 'T' ? fxPartes(g) : '', info = fxInfo(g);
+    return `<div class="fx-filho"><div class="fx-top"><div class="fx-nome"><small>${esc([g.tn, g.cn].filter(Boolean).join(' · ') || '—')}</small></div><div class="fx-q fx-q-s">${fmt(g.q)}</div></div>
+      ${partes ? `<div class="fx-partes">${partes}</div>` : ''}
+      ${info || g.n === 'T' || (g.n === 'TC' && fx.exp[kT]) ? `<div class="fx-acoes"><span class="fx-vol">${info}</span><span>${g.n === 'T' ? `<button type="button" data-tv-action="fx-abrir" data-k="${esc(kT)}" data-n="TC" title="Abrir este tamanho por cor">⤢ por cor</button>` : ''}${g.n === 'TC' && fx.exp[kT] ? `<button type="button" data-tv-action="fx-juntar" data-k="${esc(kT)}">juntar cores</button>` : ''}</span></div>` : ''}</div>`;
+  }).join('');
+  return `<div class="fx-card fx-aberto"><div class="fx-top"><div class="fx-nome"><b>${esc(g0.pc ? g0.pc + ' · ' : '')}${esc(g0.pn)}</b></div><div class="fx-q">${fmt(tot)}<small>pç</small></div></div>
+    <div class="fx-filhos">${filhos}</div>
+    <div class="fx-acoes"><span></span><span><button type="button" data-tv-action="fx-juntar" data-k="${esc(kP)}" title="Fechar este card">⤡ juntar</button></span></div></div>`;
+}
+function fxColuna(col, itens) {
+  const gs = fxGrupos(itens, col), porProd = new Map();
+  gs.forEach(g => { if (!porProd.has(g.p)) porProd.set(g.p, []); porProd.get(g.p).push(g); });
+  const blocos = [...porProd.values()].map(l => ({ l, q: l.reduce((t, g) => t + g.q, 0), pn: l[0].pn })).sort((a, b) => b.q - a.q || String(a.pn).localeCompare(String(b.pn), 'pt-BR'));
+  return { q: gs.reduce((t, g) => t + g.q, 0), html: blocos.map(b => b.l.length === 1 && b.l[0].n === 'P' ? fxCard(b.l[0]) : fxBloco(b.l)).join(''), n: blocos.length };
+}
 function panel4() {
   const F = FLUXO; if (!F) return `<div class="tvg-empty tvg-empty-big">${FX_ERRO ? esc(FX_ERRO) : 'Carregando o Kanban de produtos…'}</div>`;
-  const itens = (F.itens || []);
+  const itens = F.itens || [];
   if (fx.hist) {
-    const gs = fxGrupos(itens.filter(i => i.e === 'HIST')).sort(fxOrdem), tot = gs.reduce((t, g) => t + g.q, 0);
-    return `<section class="tvg-box fx-hist"><div class="tv-panel-header"><div><b>HISTÓRICO · ENVIADO PARA O ESTOQUE</b><small>Últimos ${F.dias_hist || 30} dias · saiu do Kanban</small></div><span>${fmt(tot)} pç</span></div>
-      <div class="fx-hist-grid tv-autoscroll">${gs.length ? gs.map(fxCard).join('') : '<div class="tvg-empty">Nada foi para o estoque nos últimos dias.</div>'}</div></section>`;
+    const c = fxColuna('HIST', itens.filter(i => i.e === 'HIST'));
+    return `<section class="tvg-box fx-hist"><div class="tv-panel-header"><div><b>HISTÓRICO · ENVIADO PARA O ESTOQUE</b><small>Últimos ${F.dias_hist || 30} dias · saiu do Kanban</small></div><span>${fmt(c.q)} pç</span></div>
+      <div class="fx-hist-grid tv-autoscroll">${c.html || '<div class="tvg-empty">Nada foi para o estoque nos últimos dias.</div>'}</div></section>`;
   }
-  const ativos = itens.filter(i => i.e !== 'HIST'), gs = fxGrupos(ativos);
-  const total = gs.reduce((t, g) => t + g.q, 0);
-  const cols = FX_ETAPAS.map(([e, nome, sub, c]) => {
-    const cards = gs.filter(g => g.e === e).sort(fxOrdem), q = cards.reduce((t, g) => t + g.q, 0);
-    return `<section class="fx-col ${c}"><div class="fx-col-h"><div><b>${nome}</b><small>${sub}</small></div><span>${fmt(q)}<small> pç</small></span></div>
-      <div class="fx-cards">${cards.length ? cards.map(fxCard).join('') : '<div class="fx-vazio">—</div>'}</div></section>`;
+  const ativos = itens.filter(i => i.e !== 'HIST'), etapas = FX_ETAPAS.filter(([e]) => e !== 'PREVISAO' || cfg.fxPrev);
+  const pr = fxPrevItens(F), total = fxGrupos(ativos, '*').reduce((t, g) => t + g.q, 0), produtos = new Set(ativos.map(i => i.p)).size;
+  const cols = etapas.map(([e, nome, sub, cl]) => {
+    const c = e === 'PREVISAO' ? fxColuna(e, pr.dentro) : fxColuna(e, ativos.filter(i => i.e === e));
+    const sb = e === 'PREVISAO' ? `${fxDataBr(fx.de)} a ${fxDataBr(fx.ate)} · facção${pr.atras ? ` · <em>${fmt(pr.atras)} pç atrasadas</em>` : ''}${pr.sem ? ` · ${fmt(pr.sem)} sem previsão` : ''}` : sub;
+    return `<section class="fx-col ${cl}"><div class="fx-col-h"><div><b>${nome}</b><small>${sb}</small></div><span>${fmt(c.q)}<small> pç</small></span></div>
+      <div class="fx-cards">${c.html || `<div class="fx-vazio">${e === 'PREVISAO' ? 'Nada previsto para o período' : '—'}</div>`}</div></section>`;
   }).join('');
-  return `<div class="fx-resumo"><span><b>${fmt(total)}</b> peças em andamento</span><span><b>${new Set(gs.map(g => g.p)).size}</b> produto(s)</span><span class="fx-dica">Sem lotes: cada card junta todas as caixas daquele produto na etapa</span></div><div class="fx-board">${cols}</div>`;
+  return `<div class="fx-resumo"><span><b>${fmt(total)}</b> peças em andamento</span><span><b>${produtos}</b> produto(s)</span>${cfg.fxPrev ? `<span><b>${fmt(pr.q)}</b> peças previstas para entrar de ${fxDataBr(fx.de)} a ${fxDataBr(fx.ate)}</span>` : ''}<span class="fx-dica">Sem lotes: cada card junta todas as caixas daquele produto na etapa</span></div><div class="fx-board" style="grid-template-columns:repeat(${etapas.length},minmax(180px,1fr))">${cols}</div>`;
+}
+/* previsão de retorno: peças na facção (e já destinadas à facção) com data prevista dentro do período */
+function fxPrevItens(F) {
+  const l = (F.previsao || []), hoje = hojeSP(), de = fx.de || hoje, ate = fx.ate || de, q = fx.busca.trim().toLowerCase();
+  const ok = i => !q || `${i.pc} ${i.pn}`.toLowerCase().includes(q);
+  const dentro = l.filter(i => ok(i) && i.d && i.d >= de && i.d <= ate);
+  return { dentro, q: dentro.reduce((t, i) => t + Number(i.q || 0), 0),
+    atras: l.filter(i => ok(i) && i.d && i.d < hoje && i.d < de).reduce((t, i) => t + Number(i.q || 0), 0),
+    sem: l.filter(i => ok(i) && !i.d).reduce((t, i) => t + Number(i.q || 0), 0) };
 }
 function fxBar() {
-  return `<div class="fx-seg" role="group" aria-label="Mostrar cards por">${FX_NIVEIS.map(([k, l]) => `<button type="button" class="${(cfg.fxNivel || 'P') === k ? 'on' : ''}" data-tv-action="fx-nivel" data-n="${k}">${l}</button>`).join('')}</div>
+  return `<div class="fx-seg" role="group" aria-label="Mostrar todos os cards por">${FX_NIVEIS.map(([k, l]) => `<button type="button" class="${(cfg.fxNivel || 'P') === k ? 'on' : ''}" data-tv-action="fx-nivel" data-n="${k}">${l}</button>`).join('')}</div>
   <label><span>PRODUTO</span><input type="search" id="tvFxBusca" placeholder="Buscar código ou nome" value="${esc(fx.busca)}"></label>
+  <button type="button" class="tv-reset fx-prev-btn${cfg.fxPrev ? ' fx-on' : ''}" data-tv-action="fx-prev" aria-pressed="${!!cfg.fxPrev}" title="Mostra ou tira a coluna de previsão de retorno da facção">📅 Previsão de retorno ${cfg.fxPrev ? '✓' : ''}</button>
+  ${cfg.fxPrev ? `<label><span>RETORNO DE</span><input type="date" id="tvFxDe" value="${esc(fx.de)}"></label><label><span>ATÉ</span><input type="date" id="tvFxAte" value="${esc(fx.ate)}"></label>` : ''}
   <button type="button" class="tv-reset${fx.hist ? ' fx-on' : ''}" data-tv-action="fx-hist">${fx.hist ? '← Voltar ao Kanban' : '🕘 Histórico (30 dias)'}</button>`;
 }
 
@@ -502,8 +548,9 @@ document.addEventListener('click', ev => {
   if (a === 'back') { fechar(); return; }
   if (a === 'refresh') { refresh(); return; }
   if (a === 'fx-nivel') { cfg.fxNivel = b.dataset.n; fx.exp = {}; saveCfg(); const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); updateUi(); return; }
-  if (a === 'fx-abrir') { fx.exp[b.dataset.p] = b.dataset.n; updateUi(); return; }
-  if (a === 'fx-juntar') { delete fx.exp[b.dataset.p]; updateUi(); return; }
+  if (a === 'fx-abrir') { fx.exp[b.dataset.k] = b.dataset.n; updateUi(); return; }
+  if (a === 'fx-juntar') { const k = b.dataset.k, nivel = k.split('|').length === 2 ? 'P' : 'T'; Object.keys(fx.exp).forEach(x => { if (x.startsWith(k + '|')) delete fx.exp[x]; }); fx.exp[k] = nivel; updateUi(); return; }
+  if (a === 'fx-prev') { cfg.fxPrev = !cfg.fxPrev; saveCfg(); fxPeriodo(); const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); updateUi(); return; }
   if (a === 'fx-hist') { fx.hist = !fx.hist; const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); updateUi(); return; }
   if (a === 'reset') { Object.assign(filters, filtrosPadrao()); const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); refresh(); return; }
   if (a === 'fullscreen') {
@@ -515,6 +562,14 @@ document.addEventListener('click', ev => {
   }
 });
 document.addEventListener('fullscreenchange', () => { if (active && !document.fullscreenElement && cfg.panel !== 3) setFull(false); });
+function fxPeriodo() { if (!fx.de) { fx.de = hojeSP(); fx.ate = somaDias(fx.de, 7); } }
+fxPeriodo();
+document.addEventListener('change', ev => {
+  if (!active || !['tvFxDe', 'tvFxAte'].includes(ev.target.id)) return;
+  if (ev.target.id === 'tvFxDe') fx.de = ev.target.value || hojeSP(); else fx.ate = ev.target.value || fx.de;
+  if (fx.de > fx.ate) { const t = fx.de; fx.de = fx.ate; fx.ate = t; const a = $id('tvFxDe'), b = $id('tvFxAte'); if (a) a.value = fx.de; if (b) b.value = fx.ate; }
+  updateUi();
+});
 document.addEventListener('input', ev => { if (active && ev.target.id === 'tvFxBusca') { fx.busca = ev.target.value; clearTimeout(fx.t); fx.t = setTimeout(updateUi, 200); } });
 document.addEventListener('pointerover', ev => { if (ev.target.closest?.('#gutTv .tv-autoscroll')) scrollHold = true; });
 document.addEventListener('pointerout', ev => { if (ev.target.closest?.('#gutTv .tv-autoscroll') && !ev.relatedTarget?.closest?.('#gutTv .tv-autoscroll')) scrollHold = false; });
@@ -786,7 +841,6 @@ body.gut-tv-open{overflow:hidden}
 .tv-launch-btn[disabled] b{color:#cfc9a0}
 
 /* ===== painel 4: Kanban de produtos (v4.41) ===== */
-.tv-workspace[data-panel="4"] .tv-filterbar{grid-template-columns:auto minmax(220px,360px) auto;justify-content:start}
 .fx-resumo{display:flex;gap:22px;align-items:baseline;flex-wrap:wrap;color:#c9ccd3;font-size:13px}.fx-resumo b{color:#fff;font-size:22px;font-weight:900;margin-right:4px}.fx-dica{color:#8b8f99;font-size:11.5px;margin-left:auto}
 .fx-board{display:grid;grid-template-columns:repeat(7,minmax(190px,1fr));gap:10px;flex:1;min-height:0;overflow-x:auto}
 .fx-col{--fx:#9aa0aa;display:flex;flex-direction:column;min-height:0;border:1px solid #2a2c33;border-top:3px solid var(--fx);border-radius:11px;background:#0b0c10}
@@ -804,6 +858,12 @@ body.gut-tv-open{overflow:hidden}
 .fx-vazio{color:#4b4f59;text-align:center;padding:14px 0}
 .fx-seg{display:inline-flex;border:1px solid #3a3d46;border-radius:999px;overflow:hidden;align-self:flex-end}.fx-seg button{background:transparent;border:0;color:#c9ccd3;font-weight:900;font-size:11.5px;letter-spacing:.5px;padding:9px 14px;cursor:pointer}.fx-seg button.on{background:linear-gradient(180deg,#ff3b47,#c8101c);color:#fff}
 .tv-reset.fx-on{border-color:#ff3b47;color:#fff}
+.fx-c7{--fx:#a3e635}.fx-col-h small em,.fx-vol em{color:#ff8a8f;font-style:normal;font-weight:800}
+.fx-aberto{border-left-width:4px;background:#171a21;box-shadow:0 0 0 1px var(--fx) inset}.fx-filhos{display:flex;flex-direction:column;gap:5px}
+.fx-filho{background:#0f1116;border:1px solid #2a2d35;border-radius:7px;padding:6px 8px;display:flex;flex-direction:column;gap:4px}.fx-filho .fx-nome small{font-size:12.5px;margin:0}
+.fx-q-s{font-size:18px}.tv-full .fx-q-s{font-size:clamp(16px,1.2vw,24px)}
+.tv-workspace[data-panel="4"] .tv-filterbar{grid-template-columns:repeat(6,auto);justify-content:start}.tv-workspace[data-panel="4"] #tvFxBusca{min-width:240px}
+
 .fx-hist{flex:1;min-height:0}.fx-hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:12px;overflow-y:auto;--fx:#2ee883}
 .tv-full .fx-q{font-size:clamp(22px,1.7vw,34px)}.tv-full .fx-nome b{font-size:clamp(12px,.95vw,17px)}.tv-full .fx-col-h>span{font-size:clamp(18px,1.4vw,28px)}
 `;

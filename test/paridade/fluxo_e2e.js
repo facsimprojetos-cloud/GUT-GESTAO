@@ -95,19 +95,39 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(/KANBAN DE PRODUTOS/.test(titulo) && /#tv4/.test(titulo), 'título e link #tv4: ' + titulo);
     if (SHOT) await page.screenshot({ path: path.join(SHOT, 'kanban-produtos.png') });
 
-    // explodir por tamanho e por cor
+    // abrir só o card clicado: por tamanho e depois por cor
     const nTam = Number(pg.psql(`select count(distinct id_tamanho) from public.estoque_corte e where exists (select 1 from public.volumes v where v.id_estoque_corte = e.id_estoque_corte and v.status_volume = 'EM_PRODUCAO_INTERNA');`));
     await page.evaluate(() => document.querySelector('.fx-c5 .fx-card [data-tv-action="fx-abrir"]').click()); await page.waitForTimeout(300);
-    const t = await page.evaluate(() => ({ n: document.querySelectorAll('.fx-c5 .fx-card').length, sub: [...document.querySelectorAll('.fx-c5 .fx-nome small')].map(x => x.textContent), tot: document.querySelector('.fx-c5 .fx-col-h>span').textContent }));
-    ok(t.n === nTam && t.sub.every(Boolean), 'explodir o card por tamanho: um card por tamanho, mesmo total: ' + JSON.stringify(t));
-    await page.evaluate(() => document.querySelector('.fx-c5 .fx-card [data-tv-action="fx-abrir"]').click()); await page.waitForTimeout(300);
-    const c = await page.evaluate(() => ({ n: document.querySelectorAll('.fx-c5 .fx-card').length, sub: [...document.querySelectorAll('.fx-c5 .fx-nome small')].map(x => x.textContent) }));
-    ok(c.sub.every(x => / · /.test(x)), 'explodir de novo: tamanho e cor no card: ' + JSON.stringify(c));
+    const t = await page.evaluate(() => ({ filhos: document.querySelectorAll('.fx-c5 .fx-aberto .fx-filho').length, outros: document.querySelectorAll('.fx-col:not(.fx-c5) .fx-aberto').length, sub: [...document.querySelectorAll('.fx-c5 .fx-filho small')].map(x => x.textContent), tot: document.querySelector('.fx-c5 .fx-col-h>span').textContent }));
+    ok(t.filhos === nTam && t.outros === 0 && t.sub.every(Boolean), 'abrir por tamanho expande só aquele card (as outras colunas continuam fechadas): ' + JSON.stringify(t));
+    await page.evaluate(() => document.querySelector('.fx-c5 .fx-filho [data-tv-action="fx-abrir"]').click()); await page.waitForTimeout(300);
+    const c = await page.evaluate(() => [...document.querySelectorAll('.fx-c5 .fx-filho small')].map(x => x.textContent));
+    ok(c.some(x => / · /.test(x)), 'abrir o tamanho por cor: tamanho e cor dentro do card aberto: ' + JSON.stringify(c));
     if (SHOT) await page.screenshot({ path: path.join(SHOT, 'kanban-produtos-cor.png') });
-    await page.evaluate(() => document.querySelector('.fx-c5 [data-tv-action="fx-juntar"]').click()); await page.waitForTimeout(300);
-    ok(await page.evaluate(() => document.querySelectorAll('.fx-c5 .fx-card').length) <= 2, '"juntar" volta para um card por produto');
+    await page.evaluate(() => document.querySelector('.fx-c5 .fx-aberto > .fx-acoes [data-tv-action="fx-juntar"]').click()); await page.waitForTimeout(300);
+    ok(await page.evaluate(() => document.querySelectorAll('.fx-c5 .fx-aberto').length === 0 && document.querySelectorAll('.fx-c5 .fx-card').length >= 1), '"juntar" fecha o card de novo');
     await page.click('[data-tv-action="fx-nivel"][data-n="T"]'); await page.waitForTimeout(300);
-    ok(await page.evaluate(() => [...document.querySelectorAll('.fx-card .fx-nome small')].length === document.querySelectorAll('.fx-card').length), 'o seletor do topo "+ TAMANHO" separa todos os cards por tamanho');
+    ok(await page.evaluate(() => [...document.querySelectorAll('.fx-card')].every(x => x.classList.contains('fx-aberto'))), 'o seletor do topo "+ TAMANHO" abre todos os cards por tamanho');
+
+    // previsão de retorno da facção
+    const hoje = await page.evaluate(() => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }));
+    const mais = n => { const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+    pg.psql(`insert into public.remessas (empresa_id, id_remessa, num_remessa, tipo_destino, status_remessa, previsao_retorno) values ('${pg.EMP}', 'FXR-1', 'FXR-1', 'FACCAO', 'ENVIADO', '${mais(2)}'), ('${pg.EMP}', 'FXR-2', 'FXR-2', 'FACCAO', 'AGUARDANDO_ENVIO', '${mais(-3)}');
+      insert into public.remessa_itens (empresa_id, id_item_remessa, id_remessa, id_volume, qtd_enviada, data_vinculo) values ('${pg.EMP}', 'FXI-1', 'FXR-1', 'FX-2', 12, now() + interval '1 day'), ('${pg.EMP}', 'FXI-2', 'FXR-2', 'FX-1', 11, now() + interval '1 day');`);
+    const prevSql = (de, ate) => Number(pg.psql(`select coalesce(sum(v.qtd_volume),0) from public.volumes v cross join lateral (select r.previsao_retorno d from public.remessa_itens i join public.remessas r on r.empresa_id = i.empresa_id and r.id_remessa = i.id_remessa
+        where i.id_volume = v.id_volume and r.tipo_destino = 'FACCAO' and r.status_remessa not in ('RETORNADO','CANCELADA','CANCELADO') order by i.data_vinculo desc nulls last limit 1) x
+        where v.status_volume in ('EM_FACCAO','AGUARDANDO_ENVIO_FACCAO') and x.d between '${de}' and '${ate}';`));
+    await page.click('[data-tv-action="fx-nivel"][data-n="P"]'); await page.evaluate(() => GUT_TV.refresh()); await page.waitForTimeout(1500);
+    ok(await page.evaluate(() => document.querySelectorAll('.fx-col').length) === 7 && !(await page.$('.fx-c7')), 'previsão de retorno começa fora do Kanban');
+    await page.click('[data-tv-action="fx-prev"]'); await page.waitForTimeout(400);
+    const pv = await page.evaluate(() => ({ cols: document.querySelectorAll('.fx-col').length, q: Number(document.querySelector('.fx-c7 .fx-col-h>span').childNodes[0].textContent.replace(/\D/g, '')), sub: document.querySelector('.fx-c7 .fx-col-h small').innerText, de: document.getElementById('tvFxDe')?.value, ate: document.getElementById('tvFxAte')?.value, pos: [...document.querySelectorAll('.fx-col')].findIndex(c => c.classList.contains('fx-c7')) }));
+    ok(pv.cols === 8 && pv.pos === 4 && pv.de === hoje && pv.ate === mais(7) && pv.q === prevSql(hoje, mais(7)) && pv.q >= 12 && /atrasadas/.test(pv.sub), 'botão liga a coluna de previsão (depois de "na facção"), de hoje a +7 dias, com as atrasadas no topo: ' + JSON.stringify(pv));
+    if (SHOT) await page.screenshot({ path: path.join(SHOT, 'kanban-produtos-previsao.png') });
+    await page.fill('#tvFxAte', mais(1)); await page.dispatchEvent('#tvFxAte', 'change'); await page.waitForTimeout(300);
+    const pv2 = await page.evaluate(() => Number(document.querySelector('.fx-c7 .fx-col-h>span').childNodes[0].textContent.replace(/\D/g, '')));
+    ok(pv2 === prevSql(hoje, mais(1)) && pv2 <= pv.q - 12, 'mudar o período muda quantas peças entram: ' + pv2);
+    await page.click('[data-tv-action="fx-prev"]'); await page.waitForTimeout(300);
+    ok(await page.evaluate(() => document.querySelectorAll('.fx-col').length) === 7, 'clicar de novo tira a coluna do Kanban');
     await page.click('[data-tv-action="fx-nivel"][data-n="P"]'); await page.waitForTimeout(200);
     await page.fill('#tvFxBusca', 'zzz-nao-existe'); await page.waitForTimeout(500);
     ok(await page.evaluate(() => document.querySelectorAll('.fx-card').length === 0), 'busca por produto filtra os cards');
