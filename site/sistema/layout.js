@@ -111,12 +111,13 @@
       <button class="btn btn-secondary btn-sm lay-only-full" type="button" id="layPalBtn" onclick="gutLayout.lado('pal')" title="Mostrar ou esconder a lista de máquinas e lotes">◧ Lista</button>
       <button class="btn btn-secondary btn-sm lay-only-full" type="button" id="layPropBtn" onclick="gutLayout.lado('prop')" title="Mostrar ou esconder os detalhes e as cotas">◨ Detalhes</button>
       <label class="lay-chk" title="Liga cada lote à máquina da próxima operação dele"><input type="checkbox" id="layFluxo" onchange="gutLayout.fluxo(this.checked)" checked> Fluxo dos lotes</label>
+      <button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.soPlanta(true)" title="Tela cheia só com a planta, sem botões nem listas (tecla P)">▣ Só a planta</button>
       <button class="btn btn-dark btn-sm" type="button" id="layFullBtn" onclick="gutLayout.cheia()" title="Abrir a planta em tela cheia (Esc volta)">⛶ Tela cheia</button>
       <span id="layStatus" class="lay-status ok">Salvo</span>
     </div>
     <div class="lay-body">
       <aside class="card lay-side" id="layPal"></aside>
-      <div class="card lay-canvas" id="layWrap"><svg id="laySvg" xmlns="http://www.w3.org/2000/svg"></svg><div class="lay-hint" id="layHint"></div></div>
+      <div class="card lay-canvas" id="layWrap"><svg id="laySvg" xmlns="http://www.w3.org/2000/svg"></svg><div class="lay-hint" id="layHint"></div><div class="lay-float"><button type="button" onclick="gutLayout.zoom(-1)" title="Diminuir">−</button><button type="button" onclick="gutLayout.zoom(0)" title="Caber na tela">Ajustar</button><button type="button" onclick="gutLayout.zoom(1)" title="Aumentar">+</button><button type="button" class="sai" onclick="gutLayout.soPlanta(false)" title="Mostrar os controles (Esc)">✕ Mostrar controles</button></div></div>
       <aside class="card lay-side" id="layProp"></aside>
     </div>`;
     preencherAmbientes(); campos(); paleta(); desenhar(); props(); modo(L.modo, true); bindSvg();
@@ -292,6 +293,8 @@
       if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); desfazer(); return; }
       if ((e.ctrlKey || e.metaKey) && k === 'd' && it) { e.preventDefault(); duplicar(); return; }
       if (k === 'f' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); return cheia(); }
+      if (k === 'p' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); return soPlanta(!L.so); }
+      if (k === 'escape' && L.so) { soPlanta(false); return; }
       if (k === 'escape' && L.cheia && !document.fullscreenElement) { cheia(false); return; }
       if (k === 'v') return modo('MOVER'); if (k === 'c' && !e.ctrlKey && !e.metaKey) return modo('COTA');
       if (k === 'escape') { L.cotaA = null; L.sel = null; L.selCota = null; desenhar(); props(); return; }
@@ -330,20 +333,28 @@
   function cheia(forcar) {
     const v = $('view-layout'); if (!v) return;
     L.cheia = typeof forcar === 'boolean' ? forcar : !L.cheia;
+    if (!L.cheia && L.so) { L.so = false; v.classList.remove('lay-so'); }
     document.body.classList.toggle('lay-full', L.cheia); v.classList.toggle('lay-full-on', L.cheia);
     const b = $('layFullBtn'); if (b) b.textContent = L.cheia ? '✕ Sair da tela cheia' : '⛶ Tela cheia';
     try { if (L.cheia && !document.fullscreenElement && v.requestFullscreen) v.requestFullscreen().catch(() => {}); else if (!L.cheia && document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
     lados(); L.zoom = 1; setTimeout(desenhar, 60); setTimeout(desenhar, 350);
+  }
+  function soPlanta(on) {
+    L.so = !!on; const v = $('view-layout'); if (!v) return;
+    if (L.so && !L.cheia) cheia(true);
+    v.classList.toggle('lay-so', L.so);
+    if (!L.so && L.saiuSo) { L.saiuSo = false; }
+    L.zoom = 1; setTimeout(desenhar, 60); setTimeout(desenhar, 350);
   }
   function lados() {
     const b = document.querySelector('#view-layout .lay-body'); if (!b) return;
     b.classList.toggle('sem-pal', L.cheia && L.semPal); b.classList.toggle('sem-prop', L.cheia && L.semProp);
     $('layPalBtn')?.classList.toggle('active', !L.semPal); $('layPropBtn')?.classList.toggle('active', !L.semProp);
   }
-  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && L.cheia) cheia(false); });
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && L.cheia) { if (L.so) { L.so = false; $('view-layout')?.classList.remove('lay-so'); } cheia(false); } });
 
   window.gutLayout = {
-    cheia: () => cheia(), lado(q) { if (q === 'pal') L.semPal = !L.semPal; else L.semProp = !L.semProp; lados(); setTimeout(desenhar, 30); },
+    cheia: () => { if (L.so) soPlanta(false); cheia(); }, soPlanta: on => soPlanta(on), lado(q) { if (q === 'pal') L.semPal = !L.semPal; else L.semProp = !L.semProp; lados(); setTimeout(desenhar, 30); },
     fluxo(on) { L.fluxo = !!on; desenhar(); },
     limparLotes() { const cx = mapaCaixas(); snapshot(); D().itens = D().itens.filter(i => i.tipo !== 'LOTE' || cx.has(i.vol)); const ids = new Set(D().itens.map(i => i.id)); D().cotas = D().cotas.filter(c => ids.has(c.a) && ids.has(c.b)); mudou(); paleta(); props(); },
     abrirLote(id) { cheia(false); try { showView('dash-interna'); if (typeof setInternalDashboardMode === 'function') setInternalDashboardMode('KANBAN'); openProdOps(id); } catch (e) {} },
