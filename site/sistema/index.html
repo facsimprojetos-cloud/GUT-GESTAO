@@ -1237,7 +1237,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.43.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.44.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -2361,7 +2361,7 @@ function renderDashboard(){const d=STATE.dashboard||{cards:{},operadores:[],tren
 }
 // v4.16.0 — Painéis de TV (modo escuro): dados direto do Supabase (web_paineis_tv), ao vivo pelo canal da empresa
 let GUT_TV_P=null;
-function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.43.0';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
+function gutTvCarregar(){if(window.GUT_TV)return Promise.resolve(window.GUT_TV);if(!GUT_TV_P)GUT_TV_P=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='paineis-tv.js?v=4.44.0';sc.onload=()=>window.GUT_TV?res(window.GUT_TV):rej(new Error('painel vazio'));sc.onerror=()=>{GUT_TV_P=null;rej(new Error('Não foi possível carregar os painéis de TV.'))};document.head.appendChild(sc)});return GUT_TV_P}
 function gutTvAbrir(n){if(!GUT_WEB){toast('Os painéis de TV abrem no sistema web (/sistema).',true);return}gutTvCarregar().then(tv=>tv.abrir(n)).catch(e=>toast(e.message,true))}
 window.addEventListener('hashchange',()=>{const m=/^#tv([1-4])$/.exec(location.hash||'');if(m&&GUT_WEB&&GUT_STARTED&&!document.getElementById('tvWorkspace'))gutTvAbrir(Number(m[1]))});
 function gutTvBotoes(){const b=(n,t,s,on)=>`<button type="button" class="tv-launch-btn" ${on?`onclick="gutTvAbrir(${n})"`:'disabled'}><span class="tv-n">${n}</span><b>${t}</b><small>${s}</small>${on?'<em>● AO VIVO</em>':'<em style="color:#9ea9aa">EM BREVE</em>'}</button>`;

@@ -129,9 +129,34 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     await page.click('[data-tv-action="fx-prev"]'); await page.waitForTimeout(300);
     ok(await page.evaluate(() => document.querySelectorAll('.fx-col').length) === 7, 'clicar de novo tira a coluna do Kanban');
     await page.click('[data-tv-action="fx-nivel"][data-n="P"]'); await page.waitForTimeout(200);
-    await page.fill('#tvFxBusca', 'zzz-nao-existe'); await page.waitForTimeout(500);
-    ok(await page.evaluate(() => document.querySelectorAll('.fx-card').length === 0), 'busca por produto filtra os cards');
-    await page.fill('#tvFxBusca', ''); await page.waitForTimeout(400);
+    // lista suspensa de produtos
+    await page.click('#fxDdProd summary'); await page.waitForTimeout(200);
+    const ops = await page.evaluate(() => [...document.querySelectorAll('#fxProdLista .fx-dd-op')].map(x => x.innerText.replace(/\n/g, ' ')));
+    ok(ops.length === 2 && ops.some(x => /BERMUDA/.test(x)) && ops.some(x => /CAMISA/.test(x)), 'clicar em "Produtos" abre a lista com os nomes, sem digitar: ' + JSON.stringify(ops));
+    if (SHOT) await page.screenshot({ path: path.join(SHOT, 'kanban-lista-produtos.png') });
+    await page.click('#fxProdLista .fx-dd-op:has-text("BERMUDA") input'); await page.waitForTimeout(300);
+    const fb = await page.evaluate(() => ({ rot: document.getElementById('fxProdRot').textContent, cards: [...document.querySelectorAll('.fx-card .fx-nome b')].map(x => x.textContent) }));
+    ok(/BERMUDA/.test(fb.rot) && fb.cards.length >= 1 && fb.cards.every(x => /BERMUDA/.test(x)), 'marcar um produto filtra o Kanban por ele: ' + JSON.stringify(fb));
+    await page.click('[data-tv-action="fx-prod-limpar"]'); await page.waitForTimeout(300);
+    ok(await page.evaluate(() => document.getElementById('fxProdRot').textContent === 'Todos os produtos' && [...document.querySelectorAll('.fx-card .fx-nome b')].some(x => /CAMISA/.test(x.textContent))), '"Limpar" volta para todos os produtos');
+    await page.click('body', { position: { x: 5, y: 880 } }); await page.waitForTimeout(150);
+    // lista de status
+    await page.click('#fxDdSt summary'); await page.waitForTimeout(200);
+    await page.click('[data-fx-st="CORTE"]'); await page.click('[data-fx-st="VOLUMADO"]'); await page.waitForTimeout(300);
+    const st = await page.evaluate(() => ({ cols: [...document.querySelectorAll('.fx-col-h b')].map(x => x.textContent), rot: document.getElementById('fxStRot').textContent }));
+    ok(st.cols.length === 5 && !st.cols.includes('VOLUMADO') && !st.cols.includes('ESTOQUE DE CORTE') && /5 de 7/.test(st.rot), 'lista de status: desmarcar tira as colunas: ' + JSON.stringify(st));
+    await page.click('[data-tv-action="fx-st-todos"]'); await page.waitForTimeout(300);
+    ok(await page.evaluate(() => document.querySelectorAll('.fx-col').length) === 7, '"Todos" volta os status');
+    await page.click('body', { position: { x: 5, y: 880 } }); await page.waitForTimeout(150);
+    // insights
+    const ins = await page.evaluate(() => [...document.querySelectorAll('.fx-i')].map(x => x.innerText.replace(/\n/g, ' | ')));
+    const totAnd = await page.evaluate(() => [...document.querySelectorAll('.fx-col-h>span')].reduce((t, x) => t + Number(x.childNodes[0].textContent.replace(/\D/g, '')), 0));
+    ok(ins.length >= 6 && /EM ANDAMENTO/.test(ins[0]) && new RegExp('\\| ' + totAnd + ' \\|').test(ins[0]) && ins.some(x => /MAIOR ACÚMULO/.test(x)) && ins.some(x => /SEM MOVIMENTO/.test(x)) && ins.some(x => /FACÇÃO/.test(x) && /atrasadas/.test(x)), 'faixa de insights: ' + JSON.stringify(ins));
+    pg.psql(`update public.volumes set atualizado_em = now() - interval '12 days' where id_volume = 'FX-0';`);
+    await page.evaluate(() => GUT_TV.refresh()); await page.waitForTimeout(1500);
+    const sm = await page.evaluate(() => [...document.querySelectorAll('.fx-i')].find(x => /SEM MOVIMENTO/.test(x.innerText)).innerText.replace(/\n/g, ' | '));
+    ok(/\| 10 \|/.test(sm) && /volumado/.test(sm) && /12 dias/.test(sm), 'caixa parada há 12 dias aparece no insight "sem movimento há +7 dias": ' + sm);
+    if (SHOT) await page.screenshot({ path: path.join(SHOT, 'kanban-insights.png') });
     // histórico
     await page.click('[data-tv-action="fx-hist"]'); await page.waitForTimeout(300);
     const h = await page.evaluate(() => ({ t: document.querySelector('.fx-hist .tv-panel-header>span')?.textContent, cards: document.querySelectorAll('.fx-hist .fx-card').length }));

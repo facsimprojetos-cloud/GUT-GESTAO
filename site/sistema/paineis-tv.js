@@ -24,9 +24,9 @@ const cls = e => e == null || !isFinite(e) ? 'tv-neutral' : e > 100 ? 'tv-good' 
 
 const PANELS = [[1, 'PEÇAS PRONTAS'], [2, 'PRODUÇÃO'], [3, 'PRODUÇÃO · TELA CHEIA'], [4, 'KANBAN DE PRODUTOS']];
 const CFG_KEY = 'gut-tv-cfg';
-const cfg = { panel: 2, rotate: false, secs: 30, fxNivel: 'P', fxPrev: false, fxDias: 7 };
+const cfg = { panel: 2, rotate: false, secs: 30, fxNivel: 'P', fxPrev: false, fxDias: 7, fxOff: [] };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); } catch (_) { /* sem armazenamento */ }
-const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify({ panel: cfg.panel, rotate: cfg.rotate, secs: cfg.secs, fxNivel: cfg.fxNivel, fxPrev: cfg.fxPrev })); } catch (_) {} };
+const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify({ panel: cfg.panel, rotate: cfg.rotate, secs: cfg.secs, fxNivel: cfg.fxNivel, fxPrev: cfg.fxPrev, fxOff: cfg.fxOff })); } catch (_) {} };
 
 const filtrosPadrao = () => { const h = hojeSP(); return { inicio: h, fim: h, funcionario: '', produto: '', processo: '', setor: '' }; };
 const filters = filtrosPadrao();
@@ -35,7 +35,7 @@ let DADOS = null;      // período dos filtros
 let DADOS_HOJE = null; // só hoje (painel 3)
 let FLUXO = null;      // Kanban de produtos (painel 4)
 let FX_ERRO = '';
-const fx = { busca: '', hist: false, exp: {}, de: '', ate: '' }; // exp: 'coluna|produto' → 'T' | 'P'; 'coluna|produto|tamanho' → 'TC' | 'T' (só aquele card)
+const fx = { prods: new Set(), hist: false, exp: {}, de: '', ate: '', ddBusca: '' }; // exp: 'coluna|produto' → 'T' | 'P'; 'coluna|produto|tamanho' → 'TC' | 'T' (só aquele card)
 let active = false, busy = false, lastUpdated = null, lastError = '', pendingLive = false;
 let timer = null, clockTimer = null, scrollTimer = null, rotTimer = null, liveTimer = null, rotElapsed = 0;
 let vistosP3 = new Set();
@@ -293,10 +293,12 @@ function fxNivel(col, i) {
   if (np === 'P') return 'P';
   return fx.exp[col + '|' + i.p + '|' + i.t] || np;
 }
+/* filtro de produtos (lista suspensa): vazio = todos */
+const fxOk = i => !fx.prods.size || fx.prods.has(i.p);
 function fxGrupos(itens, col) {
-  const m = new Map(), q = fx.busca.trim().toLowerCase(), hoje = hojeSP();
+  const m = new Map(), hoje = hojeSP();
   itens.forEach(i => {
-    if (q && !(`${i.pc} ${i.pn}`.toLowerCase().includes(q))) return;
+    if (!fxOk(i)) return;
     const n = fxNivel(col, i), k = [i.p, n === 'P' ? '' : i.t, n === 'TC' ? i.c : ''].join('|');
     let g = m.get(k);
     if (!g) { g = { col, p: i.p, pn: i.pn, pc: i.pc, t: n === 'P' ? '' : i.t, tn: n === 'P' ? '' : i.tn, to: i.to, cn: n === 'TC' ? i.cn : '', n, q: 0, v: 0, partes: new Map(), atras: 0, prox: '' }; m.set(k, g); }
@@ -347,28 +349,78 @@ function panel4() {
     return `<section class="tvg-box fx-hist"><div class="tv-panel-header"><div><b>HISTÓRICO · ENVIADO PARA O ESTOQUE</b><small>Últimos ${F.dias_hist || 30} dias · saiu do Kanban</small></div><span>${fmt(c.q)} pç</span></div>
       <div class="fx-hist-grid tv-autoscroll">${c.html || '<div class="tvg-empty">Nada foi para o estoque nos últimos dias.</div>'}</div></section>`;
   }
-  const ativos = itens.filter(i => i.e !== 'HIST'), etapas = FX_ETAPAS.filter(([e]) => e !== 'PREVISAO' || cfg.fxPrev);
-  const pr = fxPrevItens(F), total = fxGrupos(ativos, '*').reduce((t, g) => t + g.q, 0), produtos = new Set(ativos.map(i => i.p)).size;
+  const off = new Set(cfg.fxOff || []);
+  const ativos = itens.filter(i => i.e !== 'HIST'), etapas = FX_ETAPAS.filter(([e]) => (e !== 'PREVISAO' || cfg.fxPrev) && !off.has(e));
+  const pr = fxPrevItens(F);
   const cols = etapas.map(([e, nome, sub, cl]) => {
     const c = e === 'PREVISAO' ? fxColuna(e, pr.dentro) : fxColuna(e, ativos.filter(i => i.e === e));
     const sb = e === 'PREVISAO' ? `${fxDataBr(fx.de)} a ${fxDataBr(fx.ate)} · facção${pr.atras ? ` · <em>${fmt(pr.atras)} pç atrasadas</em>` : ''}${pr.sem ? ` · ${fmt(pr.sem)} sem previsão` : ''}` : sub;
     return `<section class="fx-col ${cl}"><div class="fx-col-h"><div><b>${nome}</b><small>${sb}</small></div><span>${fmt(c.q)}<small> pç</small></span></div>
       <div class="fx-cards">${c.html || `<div class="fx-vazio">${e === 'PREVISAO' ? 'Nada previsto para o período' : '—'}</div>`}</div></section>`;
   }).join('');
-  return `<div class="fx-resumo"><span><b>${fmt(total)}</b> peças em andamento</span><span><b>${produtos}</b> produto(s)</span>${cfg.fxPrev ? `<span><b>${fmt(pr.q)}</b> peças previstas para entrar de ${fxDataBr(fx.de)} a ${fxDataBr(fx.ate)}</span>` : ''}<span class="fx-dica">Sem lotes: cada card junta todas as caixas daquele produto na etapa</span></div><div class="fx-board" style="grid-template-columns:repeat(${etapas.length},minmax(250px,1fr))">${cols}</div>`;
+  if (!etapas.length) return `${fxInsights(ativos, pr, off)}<div class="tvg-empty tvg-empty-big">Nenhum status marcado. Escolha os status na lista "Status".</div>`;
+  return `${fxInsights(ativos, pr, off)}<div class="fx-board" style="grid-template-columns:repeat(${etapas.length},minmax(250px,1fr))">${cols}</div>`;
 }
 /* previsão de retorno: peças na facção (e já destinadas à facção) com data prevista dentro do período */
 function fxPrevItens(F) {
-  const l = (F.previsao || []), hoje = hojeSP(), de = fx.de || hoje, ate = fx.ate || de, q = fx.busca.trim().toLowerCase();
-  const ok = i => !q || `${i.pc} ${i.pn}`.toLowerCase().includes(q);
+  const l = (F.previsao || []), hoje = hojeSP(), de = fx.de || hoje, ate = fx.ate || de, ok = fxOk;
   const dentro = l.filter(i => ok(i) && i.d && i.d >= de && i.d <= ate);
+  const sete = somaDias(hoje, 7);
   return { dentro, q: dentro.reduce((t, i) => t + Number(i.q || 0), 0),
+    semana: l.filter(i => ok(i) && i.d && i.d >= hoje && i.d <= sete).reduce((t, i) => t + Number(i.q || 0), 0),
     atras: l.filter(i => ok(i) && i.d && i.d < hoje && i.d < de).reduce((t, i) => t + Number(i.q || 0), 0),
     sem: l.filter(i => ok(i) && !i.d).reduce((t, i) => t + Number(i.q || 0), 0) };
 }
+
+/* ---------- insights do topo (respeitam os filtros de produto e status) ---------- */
+function fxInsights(ativos, pr, off) {
+  const nomes = Object.fromEntries(FX_ETAPAS.map(([e, n]) => [e, n.toLowerCase()]));
+  const l = ativos.filter(i => fxOk(i) && !off.has(i.e)), soma = f => l.filter(f).reduce((t, i) => t + Number(i.q || 0), 0);
+  const total = soma(() => true);
+  if (!total) return '<div class="fx-ins"><div class="fx-i"><small>EM ANDAMENTO</small><b>0</b><span>nenhuma peça com os filtros escolhidos</span></div></div>';
+  const porEtapa = FX_ETAPAS.filter(([e]) => e !== 'PREVISAO' && !off.has(e)).map(([e]) => [e, soma(i => i.e === e)]).sort((a, b) => b[1] - a[1]);
+  const [eMax, qMax] = porEtapa[0] || ['', 0];
+  const parado = l.reduce((t, i) => t + Number(i.p7 || 0), 0), paradoEt = {};
+  l.forEach(i => { if (Number(i.p7) > 0) paradoEt[i.e] = (paradoEt[i.e] || 0) + Number(i.p7); });
+  const pEt = Object.entries(paradoEt).sort((a, b) => b[1] - a[1])[0], velho = l.reduce((m, i) => Math.max(m, Number(i.dias || 0)), 0);
+  const porProd = new Map(); l.forEach(i => { const g = porProd.get(i.p) || { n: (i.pc ? i.pc + ' · ' : '') + i.pn, q: 0 }; g.q += Number(i.q || 0); porProd.set(i.p, g); });
+  const top = [...porProd.values()].sort((a, b) => b.q - a.q)[0];
+  const pronto = soma(i => i.e === 'EMBALAR'), semDestino = soma(i => i.e === 'VOLUMADO');
+  const pct = v => total ? Math.round(v / total * 100) : 0;
+  const card = (cls, rot, val, txt) => `<div class="fx-i ${cls}"><small>${rot}</small><b>${val}</b><span>${txt}</span></div>`;
+  return `<div class="fx-ins">
+    ${card('', 'EM ANDAMENTO', fmt(total), `peças · ${porProd.size} produto(s)${fx.prods.size ? ' filtrados' : ''}`)}
+    ${card('fx-i-alerta', 'MAIOR ACÚMULO', `${pct(qMax)}%`, `${fmt(qMax)} pç em ${esc(nomes[eMax] || '—')}`)}
+    ${card(parado ? 'fx-i-ruim' : 'fx-i-bom', 'SEM MOVIMENTO HÁ +7 DIAS', fmt(parado), parado ? `pç · mais em ${esc(nomes[pEt[0]] || '')} · a mais antiga há ${velho} dias` : 'tudo se movimentou na última semana')}
+    ${card(pr.atras ? 'fx-i-ruim' : '', 'FACÇÃO', fmt(pr.atras), `pç atrasadas · ${fmt(pr.semana)} pç previstas nos próximos 7 dias${pr.sem ? ` · ${fmt(pr.sem)} sem previsão` : ''}`)}
+    ${card(semDestino > pronto ? 'fx-i-alerta' : '', 'AGUARDANDO DESTINO', `${pct(semDestino)}%`, `${fmt(semDestino)} pç volumadas sem destino`)}
+    ${card('fx-i-bom', 'PRONTO P/ EMBALAR', fmt(pronto), `pç · ${pct(pronto)}% do que está em andamento`)}
+    ${top ? card('', 'PRODUTO COM MAIS PEÇAS', `${pct(top.q)}%`, `${esc(top.n)} · ${fmt(top.q)} pç`) : ''}
+  </div>`;
+}
+/* ---------- listas suspensas: produtos e status ---------- */
+function fxProdutos() {
+  const m = new Map(); ((FLUXO && FLUXO.itens) || []).forEach(i => { if (i.e === 'HIST') return; const g = m.get(i.p) || { p: i.p, n: i.pn, c: i.pc, q: 0 }; g.q += Number(i.q || 0); m.set(i.p, g); });
+  return [...m.values()].sort((a, b) => String(a.c || a.n).localeCompare(String(b.c || b.n), 'pt-BR', { numeric: true }));
+}
+function fxProdLista() {
+  const q = fx.ddBusca.trim().toLowerCase(), ps = fxProdutos().filter(x => !q || `${x.c} ${x.n}`.toLowerCase().includes(q));
+  if (!FLUXO) return '<div class="fx-dd-vazio">Carregando…</div>';
+  return ps.length ? ps.map(x => `<label class="fx-dd-op"><input type="checkbox" data-fx-prod="${esc(x.p)}" ${fx.prods.has(x.p) ? 'checked' : ''}><span>${esc(x.c ? x.c + ' · ' : '')}${esc(x.n)}</span><em>${fmt(x.q)}</em></label>`).join('') : '<div class="fx-dd-vazio">Nenhum produto</div>';
+}
+const fxProdRotulo = () => !fx.prods.size ? 'Todos os produtos' : fx.prods.size === 1 ? (fxProdutos().find(x => fx.prods.has(x.p))?.n || '1 produto') : `${fx.prods.size} produtos`;
+const fxStRotulo = () => { const off = (cfg.fxOff || []).length, n = FX_ETAPAS.length - 1; return !off ? 'Todos os status' : `${n - off} de ${n} status`; };
+function fxSyncBar() {
+  const l = $id('fxProdLista'); if (l && !l.closest('details')?.open) l.innerHTML = fxProdLista();
+  const r = $id('fxProdRot'); if (r) r.textContent = fxProdRotulo();
+  const st = $id('fxStRot'); if (st) st.textContent = fxStRotulo();
+}
 function fxBar() {
   return `<div class="fx-seg" role="group" aria-label="Mostrar todos os cards por">${FX_NIVEIS.map(([k, l]) => `<button type="button" class="${(cfg.fxNivel || 'P') === k ? 'on' : ''}" data-tv-action="fx-nivel" data-n="${k}">${l}</button>`).join('')}</div>
-  <label><span>PRODUTO</span><input type="search" id="tvFxBusca" placeholder="Buscar código ou nome" value="${esc(fx.busca)}"></label>
+  <div class="fx-campo"><span>PRODUTOS</span><details class="fx-dd" id="fxDdProd"><summary><span id="fxProdRot">${esc(fxProdRotulo())}</span> ▾</summary>
+    <div class="fx-dd-pop"><input type="search" id="fxDdBusca" placeholder="Procurar na lista" value="${esc(fx.ddBusca)}" aria-label="Procurar produto na lista"><div class="fx-dd-top"><button type="button" data-tv-action="fx-prod-todos">Todos</button><button type="button" data-tv-action="fx-prod-limpar">Limpar</button></div><div class="fx-dd-lista" id="fxProdLista">${fxProdLista()}</div></div></details></div>
+  <div class="fx-campo"><span>STATUS</span><details class="fx-dd" id="fxDdSt"><summary><span id="fxStRot">${esc(fxStRotulo())}</span> ▾</summary>
+    <div class="fx-dd-pop"><div class="fx-dd-top"><button type="button" data-tv-action="fx-st-todos">Todos</button></div><div class="fx-dd-lista">${FX_ETAPAS.filter(([e]) => e !== 'PREVISAO').map(([e, n, sub, c]) => `<label class="fx-dd-op ${c}"><input type="checkbox" data-fx-st="${e}" ${(cfg.fxOff || []).includes(e) ? '' : 'checked'}><span><i class="fx-dot"></i>${esc(n.charAt(0) + n.slice(1).toLowerCase())}</span><em>${esc(sub)}</em></label>`).join('')}</div></div></details></div>
   <button type="button" class="tv-reset fx-prev-btn${cfg.fxPrev ? ' fx-on' : ''}" data-tv-action="fx-prev" aria-pressed="${!!cfg.fxPrev}" title="Mostra ou tira a coluna de previsão de retorno da facção">📅 Previsão de retorno ${cfg.fxPrev ? '✓' : ''}</button>
   ${cfg.fxPrev ? `<label><span>RETORNO DE</span><input type="date" id="tvFxDe" value="${esc(fx.de)}"></label><label><span>ATÉ</span><input type="date" id="tvFxAte" value="${esc(fx.ate)}"></label>` : ''}
   <button type="button" class="tv-reset${fx.hist ? ' fx-on' : ''}" data-tv-action="fx-hist">${fx.hist ? '← Voltar ao Kanban' : '🕘 Histórico (30 dias)'}</button>`;
@@ -439,6 +491,7 @@ function updateUi() {
   if (body && DADOS) {
     const sc = body.querySelector('.tv-autoscroll'), keep = sc ? sc.scrollTop : 0;
     body.innerHTML = cfg.panel === 1 ? panel1() : cfg.panel === 3 ? panel3() : cfg.panel === 4 ? panel4() : panel2();
+    if (cfg.panel === 4) fxSyncBar();
     const ns = body.querySelector('.tv-autoscroll'); if (ns) ns.scrollTop = keep;
   }
   const fs = $id('tvFilterSummary'); if (fs) fs.textContent = cfg.panel === 3 ? 'Hoje · ' + dateLabel(hojeSP()) : cfg.panel === 4 ? (fx.hist ? 'Histórico' : 'Agora') : filterSummary();
@@ -551,6 +604,9 @@ document.addEventListener('click', ev => {
   if (a === 'fx-abrir') { fx.exp[b.dataset.k] = b.dataset.n; updateUi(); return; }
   if (a === 'fx-juntar') { const k = b.dataset.k, nivel = k.split('|').length === 2 ? 'P' : 'T'; Object.keys(fx.exp).forEach(x => { if (x.startsWith(k + '|')) delete fx.exp[x]; }); fx.exp[k] = nivel; updateUi(); return; }
   if (a === 'fx-prev') { cfg.fxPrev = !cfg.fxPrev; saveCfg(); fxPeriodo(); const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); updateUi(); return; }
+  if (a === 'fx-prod-todos') { fxProdutos().forEach(x => fx.prods.add(x.p)); const l = $id('fxProdLista'); if (l) l.innerHTML = fxProdLista(); fxSyncBar(); updateUi(); return; }
+  if (a === 'fx-prod-limpar') { fx.prods.clear(); const l = $id('fxProdLista'); if (l) l.innerHTML = fxProdLista(); fxSyncBar(); updateUi(); return; }
+  if (a === 'fx-st-todos') { cfg.fxOff = []; saveCfg(); document.querySelectorAll('[data-fx-st]').forEach(x => { x.checked = true; }); fxSyncBar(); updateUi(); return; }
   if (a === 'fx-hist') { fx.hist = !fx.hist; const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); updateUi(); return; }
   if (a === 'reset') { Object.assign(filters, filtrosPadrao()); const fb = $id('tvFilterBar'); if (fb) fb.innerHTML = filterBar(); refresh(); return; }
   if (a === 'fullscreen') {
@@ -570,7 +626,14 @@ document.addEventListener('change', ev => {
   if (fx.de > fx.ate) { const t = fx.de; fx.de = fx.ate; fx.ate = t; const a = $id('tvFxDe'), b = $id('tvFxAte'); if (a) a.value = fx.de; if (b) b.value = fx.ate; }
   updateUi();
 });
-document.addEventListener('input', ev => { if (active && ev.target.id === 'tvFxBusca') { fx.busca = ev.target.value; clearTimeout(fx.t); fx.t = setTimeout(updateUi, 200); } });
+document.addEventListener('input', ev => { if (active && ev.target.id === 'fxDdBusca') { fx.ddBusca = ev.target.value; const l = $id('fxProdLista'); if (l) l.innerHTML = fxProdLista(); } });
+document.addEventListener('change', ev => {
+  if (!active) return;
+  const t = ev.target;
+  if (t.dataset && t.dataset.fxProd != null) { t.checked ? fx.prods.add(t.dataset.fxProd) : fx.prods.delete(t.dataset.fxProd); fxSyncBar(); updateUi(); }
+  if (t.dataset && t.dataset.fxSt != null) { const off = new Set(cfg.fxOff || []); t.checked ? off.delete(t.dataset.fxSt) : off.add(t.dataset.fxSt); cfg.fxOff = [...off]; saveCfg(); fxSyncBar(); updateUi(); }
+});
+document.addEventListener('click', ev => { if (!active) return; document.querySelectorAll('.fx-dd[open]').forEach(d => { if (!d.contains(ev.target)) d.open = false; }); });
 document.addEventListener('pointerover', ev => { if (ev.target.closest?.('#gutTv .tv-autoscroll')) scrollHold = true; });
 document.addEventListener('pointerout', ev => { if (ev.target.closest?.('#gutTv .tv-autoscroll') && !ev.relatedTarget?.closest?.('#gutTv .tv-autoscroll')) scrollHold = false; });
 document.addEventListener('keydown', ev => {
@@ -859,11 +922,28 @@ body.gut-tv-open{overflow:hidden}
 .fx-vazio{color:#4b4f59;text-align:center;padding:14px 0}
 .fx-seg{display:inline-flex;border:1px solid #3a3d46;border-radius:999px;overflow:hidden;align-self:flex-end}.fx-seg button{background:transparent;border:0;color:#c9ccd3;font-weight:900;font-size:11.5px;letter-spacing:.5px;padding:9px 14px;cursor:pointer}.fx-seg button.on{background:linear-gradient(180deg,#ff3b47,#c8101c);color:#fff}
 .tv-reset.fx-on{border-color:#ff3b47;color:#fff}
+
+.fx-ins{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.fx-i{border:1px solid #2a2c33;border-left:3px solid #6b7280;border-radius:10px;background:#0f1014;padding:9px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.fx-i small{color:#8b8f99;font-size:10px;font-weight:900;letter-spacing:.7px}.fx-i b{color:#fff;font-size:24px;font-weight:900;line-height:1.1}.fx-i span{color:#b9bdc6;font-size:11.5px;line-height:1.3}
+.fx-i-alerta{border-left-color:#f5d33f}.fx-i-alerta b{color:#f5d33f}.fx-i-ruim{border-left-color:#ff3b47}.fx-i-ruim b{color:#ff6b73}.fx-i-bom{border-left-color:#2ee883}.fx-i-bom b{color:#2ee883}
+.tv-full .fx-i b{font-size:clamp(20px,1.7vw,32px)}.tv-full .fx-i span{font-size:clamp(10px,.75vw,14px)}
+.fx-campo{display:flex;flex-direction:column;gap:6px}.fx-campo>span{color:#8b8f99;font-size:10px;font-weight:900;letter-spacing:1px}
+.fx-dd{position:relative}.fx-dd summary{list-style:none;cursor:pointer;min-width:230px;height:40px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 12px;border:1px solid #3a3d46;border-radius:9px;background:#0f1014;color:#eef0f4;font-weight:800;font-size:13px}
+.fx-dd summary::-webkit-details-marker{display:none}.fx-dd[open] summary,.fx-dd summary:focus-visible{border-color:#ff3b47;outline:none}
+.fx-dd-pop{position:absolute;z-index:40;top:calc(100% + 6px);left:0;min-width:320px;max-width:420px;background:#121318;border:1px solid #3a3d46;border-radius:11px;box-shadow:0 18px 40px rgba(0,0,0,.6);padding:10px;display:flex;flex-direction:column;gap:8px}
+.fx-dd-pop input[type=search]{height:36px;border-radius:8px;border:1px solid #3a3d46;background:#0b0c10;color:#fff;padding:0 10px}
+.fx-dd-top{display:flex;gap:6px}.fx-dd-top button{background:transparent;border:1px solid #3a3d46;color:#d8dbe2;border-radius:6px;font-size:11px;font-weight:800;padding:4px 10px;cursor:pointer}.fx-dd-top button:hover{border-color:#ff3b47}
+.fx-dd-lista{max-height:46vh;overflow-y:auto;display:flex;flex-direction:column}
+.fx-dd-op{display:grid;grid-template-columns:20px 1fr auto;align-items:center;gap:8px;padding:7px 6px;border-radius:7px;cursor:pointer;color:#eef0f4;font-size:13px}.fx-dd-op:hover{background:#1c1e25}
+.fx-dd-op input{width:16px;height:16px;accent-color:#ff3b47}.fx-dd-op em{font-style:normal;color:#8b8f99;font-size:11px;white-space:nowrap}.fx-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--fx);margin-right:7px}
+.fx-dd-vazio{color:#8b8f99;padding:8px}
+.tv-filterbar .fx-dd-op span,.tv-filterbar .fx-dd-op em{font-size:13px;letter-spacing:0;text-transform:none;font-weight:700;color:#eef0f4}.tv-filterbar .fx-dd-op em{font-size:11px;color:#8b8f99;font-weight:600}
 .fx-c7{--fx:#a3e635}.fx-col-h small em,.fx-vol em{color:#ff8a8f;font-style:normal;font-weight:800}
 .fx-aberto{border-left-width:4px;background:#171a21;box-shadow:0 0 0 1px var(--fx) inset}.fx-filhos{display:flex;flex-direction:column;gap:5px}
 .fx-filho{background:#0f1116;border:1px solid #2a2d35;border-radius:7px;padding:6px 8px;display:flex;flex-direction:column;gap:4px}.fx-filho .fx-nome small{font-size:12.5px;margin:0}
 .fx-q-s{font-size:18px}.tv-full .fx-q-s{font-size:clamp(16px,1.2vw,24px)}
-.tv-workspace[data-panel="4"] .tv-filterbar{grid-template-columns:repeat(6,auto);justify-content:start}.tv-workspace[data-panel="4"] #tvFxBusca{min-width:240px}
+.tv-workspace[data-panel="4"] .tv-filterbar{grid-template-columns:repeat(7,auto);justify-content:start;overflow:visible}
 
 .fx-hist{flex:1;min-height:0}.fx-hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:12px;overflow-y:auto;--fx:#2ee883}
 .tv-full .fx-q{font-size:clamp(22px,1.7vw,34px)}.tv-full .fx-nome b{font-size:clamp(12px,.95vw,17px)}.tv-full .fx-col-h>span{font-size:clamp(18px,1.4vw,28px)}
