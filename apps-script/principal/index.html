@@ -1077,6 +1077,12 @@ html.ui[data-theme="dark"] .lay-optx{fill:#ffd0a8}
 .lay-sp{fill:none;stroke:rgba(225,29,42,.55);vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}.lay-spm{fill:rgba(225,29,42,.8)}
 @media(max-width:1000px){.lay-an-grid{grid-template-columns:1fr}}
 #view-layout.lay-full-on .lay-an{display:none}
+.lay-sug{border:1.5px solid #e11d2a;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(180deg,rgba(225,29,42,.05),transparent)}
+.lay-sug-top{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}.lay-sug-top>div:first-child{display:flex;flex-direction:column;gap:2px}.lay-sug-top>div:first-child span{font-size:12.5px;color:var(--muted)}
+.lay-sug-cmp{display:flex;align-items:center;gap:14px}.lay-sug-cmp>div{display:flex;flex-direction:column}.lay-sug-cmp small{font-size:11.5px;color:var(--muted);font-weight:700}.lay-sug-cmp b{font-size:24px;font-family:Manrope,'DM Sans',sans-serif}.lay-sug-cmp span{font-size:11.5px;color:var(--muted)}
+.lay-sug-cmp i{font-style:normal;font-size:22px;color:var(--muted)}.lay-sug-cmp .novo b{color:#e11d2a}.lay-sug-cmp .ganho{padding:6px 12px;border-radius:10px;background:rgba(120,125,135,.1)}.lay-sug-cmp .ganho.bom{background:rgba(18,165,101,.12)}.lay-sug-cmp .ganho.bom b{color:#12a565}
+.lay-roc summary{cursor:pointer;font-weight:700;font-size:13px}.lay-mx.roc td{min-width:26px;width:26px;height:24px}.lay-mx.roc td.on{background:#16171b;color:#fff;font-weight:800}html.ui[data-theme="dark"] .lay-mx.roc td.on{background:#e11d2a}
+.lay-mx.roc tbody th{max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .lay-float{display:none}
 #view-layout.lay-so .lay-bar,#view-layout.lay-so .lay-side,#view-layout.lay-so .lay-hint{display:none!important}
 #view-layout.lay-so{padding:0}
@@ -1176,7 +1182,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.34.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.35.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -5099,6 +5105,6 @@ function pageRows(rows,id,render,size=100){
 </script>
 <script src="menu-principal.js?v=4.31.1"></script>
 <script src="crachas.js?v=4.33.0"></script>
-<script src="layout.js?v=4.34.0"></script>
+<script src="layout.js?v=4.35.0"></script>
 </body>
 </html>

@@ -212,6 +212,7 @@
   /* volume por produto: quadro interno (peças ainda em produção) ou um produto com quantidade informada */
   function demanda() {
     if (A.base === 'PRODUTO') return A.prod ? [{ pid: A.prod, qtd: Math.max(1, num(A.qtd) || 1) }] : [];
+    if (A.base === 'TODOS') return produtos().filter(p => seqMaquinas(p.ID_PRODUTO).filter(x => x.maq).length >= 2).map(p => ({ pid: String(p.ID_PRODUTO), qtd: 100 }));
     const m = new Map(); ((STATE.internalBoard && STATE.internalBoard.rows) || []).forEach(v => { const pid = String(v.ID_PRODUTO || ''); if (pid) m.set(pid, (m.get(pid) || 0) + (Number(v.QTD_VOLUME) || 0)); });
     return [...m].map(([pid, qtd]) => ({ pid, qtd })).filter(x => x.qtd > 0);
   }
@@ -240,6 +241,96 @@
     A.res = { pecas, metros, porPeca: pecas ? metros / pecas : 0, lista, tipos, mq, faltam: [...faltam], semMaq: [...semMaq], porProd };
     painelAnalise();
   }
+  /* ---------- sugestão de layout ----------
+     1) matriz produto × tipo de máquina, ordenada por Rank Order Clustering (King) → ordem inicial das máquinas;
+     2) posições em fileiras (serpentina), com espaço para a costureira e corredor;
+     3) melhora por trocas de lugar entre duas máquinas (estilo CRAFT / 2-opt), aceitando só o que reduz Σ peças × metros. */
+  function custoDe(itens, dem, dist, seqs) {
+    const unid = new Map(); itens.filter(i => i.tipo === 'MAQ').forEach(i => { if (!unid.has(i.maq)) unid.set(i.maq, []); unid.get(i.maq).push(i); });
+    const c = i => [i.x + i.w / 2, i.y + i.h / 2], dd = (a, b) => dist === 'L' ? Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) : Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const memo = new Map(); let tot = 0, pecas = 0, falta = 0;
+    dem.forEach(({ pid, qtd }) => { const seq = seqs ? seqs.get(pid) : seqMaquinas(pid).filter(x => x.maq); if (!seq || !seq.length) return; pecas += qtd;
+      for (let k = 1; k < seq.length; k++) { const a = seq[k - 1].maq, b = seq[k].maq; if (a === b) continue; const key = a + '>' + b;
+        if (!memo.has(key)) { const ua = unid.get(a), ub = unid.get(b); let best = null; if (ua && ub) ua.forEach(x => ub.forEach(y => { const v = dd(c(x), c(y)); if (best == null || v < best) best = v; })); memo.set(key, best); }
+        const v = memo.get(key); if (v == null) falta++; else tot += v * qtd; } });
+    return { tot, pecas, porPeca: pecas ? tot / pecas : 0, falta };
+  }
+  function rocOrdem(dem, tipos) {
+    const prods = dem.map(x => x.pid); let rows = prods.slice(), cols = tipos.slice();
+    const usa = new Map(prods.map(p => [p, new Set(seqMaquinas(p).map(x => x.maq))]));
+    for (let it = 0; it < 12; it++) {
+      const peso = (bits) => bits.reduce((s, b, i) => s + (b ? Math.pow(2, bits.length - 1 - i) : 0), 0);
+      const nr = rows.slice().sort((a, b) => peso(cols.map(c => usa.get(b).has(c))) - peso(cols.map(c => usa.get(a).has(c))));
+      const nc = cols.slice().sort((a, b) => peso(nr.map(r => usa.get(r).has(b))) - peso(nr.map(r => usa.get(r).has(a))));
+      const igual = nr.join() === rows.join() && nc.join() === cols.join(); rows = nr; cols = nc; if (igual) break;
+    }
+    return { rows, cols, usa };
+  }
+  function sugerir() {
+    const d = D(); if (!d) return; const dem = demanda();
+    if (!dem.length) { (window.toast || alert)('Escolha a base: produção interna, um produto ou todos os produtos com roteiro.', true); return; }
+    const mq = maquinas(); if (!mq.length) { (window.toast || alert)('Cadastre as máquinas primeiro.', true); return; }
+    // unidades a posicionar: as numeradas (ativas) de cada tipo; sem numeração, a quantidade do cadastro
+    const unidades = []; mq.forEach(m => { const us = unisTipo(m.id); if (us.length) us.forEach(u => unidades.push({ maq: m.id, uni: u.id, nome: u.codigo })); else for (let k = 1; k <= Math.max(1, m.total); k++) unidades.push({ maq: m.id, uni: '', nome: `${m.nome} ${k}` }); });
+    // ordem inicial: tipos usados nos roteiros, pela ordem ROC; depois os que nenhum roteiro usa
+    const usados = [...new Set(dem.flatMap(x => seqMaquinas(x.pid).map(s => s.maq)).filter(Boolean))].filter(t => mq.some(m => m.id === t));
+    const roc = rocOrdem(dem, usados), ordem = roc.cols.concat(mq.map(m => m.id).filter(t => !roc.cols.includes(t)));
+    unidades.sort((a, b) => ordem.indexOf(a.maq) - ordem.indexOf(b.maq) || String(a.nome).localeCompare(String(b.nome), 'pt-BR', { numeric: true }));
+    // vagas em fileiras: máquina 1,2 × 0,6 m; 0,4 m entre máquinas; 0,8 m para a costureira; corredor de 1,2 m entre pares de fileiras
+    const W = d.largura, H = d.comprimento, m0 = 1, px = MAQ_W + 0.4;
+    const cols = Math.max(1, Math.floor((W - 2 * m0 + 0.4) / px)), vagas = [];
+    let y = m0, fila = 0;
+    while (vagas.length < unidades.length && y + MAQ_H <= H - 0.5) {
+      const xs = Array.from({ length: cols }, (_, k) => m0 + k * px); if (fila % 2) xs.reverse(); // serpentina: a linha continua na fileira de baixo
+      xs.forEach(x => vagas.push({ x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 }));
+      y += MAQ_H + 0.8 + (fila % 2 ? 1.2 : 0); fila++;
+    }
+    if (vagas.length < unidades.length) { (window.toast || alert)(`Não cabem ${unidades.length} máquinas em ${fm(W)} × ${fm(H)} m com espaço para a costureira e corredores. Aumente o ambiente e tente de novo.`, true); return; }
+    let pos = unidades.map((u, k) => k); // unidade k ocupa a vaga pos[k]
+    const montar = () => unidades.map((u, k) => ({ id: 'sg' + k, tipo: 'MAQ', maq: u.maq, uni: u.uni, nome: u.nome, x: vagas[pos[k]].x, y: vagas[pos[k]].y, w: MAQ_W, h: MAQ_H }));
+    const seqs = new Map(dem.map(x => [x.pid, seqMaquinas(x.pid).filter(s => s.maq)]));
+    const custo = () => custoDe(montar(), dem, A.dist, seqs).tot;
+    const ini = custo(), t0 = Date.now(); let passos = 0, rodadas = 0, melhorPos = pos.slice(), melhorCusto = ini;
+    // busca local por trocas (2-opt / CRAFT); várias partidas: a 1ª pela ordem do ROC, as outras embaralhadas
+    while (rodadas < 40 && Date.now() - t0 < 3000) {
+      if (rodadas > 0) { pos = unidades.map((u, k) => k); for (let k = pos.length - 1; k > 0; k--) { const r = Math.floor(Math.random() * (k + 1)); [pos[k], pos[r]] = [pos[r], pos[k]]; } }
+      const livres = vagas.map((v, i) => i).filter(i => !pos.includes(i));
+      let atual = custo(), melhorou = true;
+      while (melhorou && Date.now() - t0 < 6000) {
+        melhorou = false;
+        for (let i = 0; i < unidades.length; i++) {
+          for (let j = i + 1; j < unidades.length + livres.length; j++) {
+            if (j < unidades.length && unidades[i].maq === unidades[j].maq) continue;
+            const ant = pos.slice();
+            if (j < unidades.length) { [pos[i], pos[j]] = [pos[j], pos[i]]; } else { const l = j - unidades.length, v = livres[l]; livres[l] = pos[i]; pos[i] = v; }
+            const c = custo(); passos++;
+            if (c < atual - 1e-9) { atual = c; melhorou = true; }
+            else { if (j >= unidades.length) { const l = j - unidades.length; livres[l] = pos[i]; } pos = ant; }
+          }
+        }
+      }
+      if (atual < melhorCusto - 1e-9 || rodadas === 0) { melhorCusto = atual; melhorPos = pos.slice(); }
+      rodadas++;
+    }
+    pos = melhorPos;
+    const itens = montar(), resAtual = custoDe(d.itens, dem, A.dist), resSug = custoDe(itens, dem, A.dist);
+    const novo = { id: '', nome: 'Sugestão ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), dados: { largura: W, comprimento: H, celula: d.celula, itens, cotas: [] } };
+    A.sug = { de: L.atual.nome, antes: resAtual, depois: resSug, inicial: ini / Math.max(1, resSug.pecas), rodadas, maquinas: unidades.length, passos, roc, nome: novo.nome, faltaAntes: resAtual.falta, base: A.base, dem: dem.length };
+    salvar(); L.lista.push(novo); L.atual = novo; L.sel = null; L.selCota = null; L.hist = []; L.zoom = 1;
+    preencherAmbientes(); campos(); paleta(); props(); mudou(); analisar(); desenhar();
+    (window.toast || console.log)(`Sugestão pronta: ${unidades.length} máquinas posicionadas. Ela foi salva como o ambiente "${novo.nome}".`);
+  }
+  function sugHtml() {
+    const g = A.sug, nm = id => (maquinas().find(m => m.id === id) || {}).nome || 'Máquina';
+    const ganho = g.antes.pecas && g.antes.porPeca > 0 && !g.faltaAntes ? (1 - g.depois.porPeca / g.antes.porPeca) * 100 : null;
+    const rows = g.roc.rows.slice(0, 14), cols = g.roc.cols;
+    return `<div class="lay-sug"><div class="lay-sug-top"><div><b>✨ ${esc(g.nome)}</b><span>${g.maquinas} máquinas posicionadas • ${g.passos.toLocaleString('pt-BR')} trocas testadas em ${g.rodadas} partidas (ordem pelo ROC: ${fm(g.inicial)} m/pç → depois das trocas: ${fm(g.depois.porPeca)} m/pç) • base: ${g.base === 'QUADRO' ? 'produção interna agora' : g.base === 'TODOS' ? 'todos os produtos com roteiro' : 'um produto'}</span></div>
+      <div class="lay-sug-cmp"><div><small>${esc(g.de)}</small><b>${g.faltaAntes ? '—' : fm(g.antes.porPeca) + ' m'}</b><span>${g.faltaAntes ? 'faltam máquinas nesse desenho' : 'por peça'}</span></div><i>→</i><div class="novo"><small>Sugestão</small><b>${fm(g.depois.porPeca)} m</b><span>por peça</span></div>${ganho != null ? `<div class="ganho ${ganho > 0 ? 'bom' : ''}"><b>${ganho > 0 ? '−' : '+'}${Math.abs(Math.round(ganho))}%</b><span>de deslocamento</span></div>` : ''}</div>
+      <div class="lay-acts"><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.trocarNome('${esc(g.de)}')">Voltar para ${esc(g.de)}</button><button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.fecharSug()">Fechar</button></div></div>
+      <details class="lay-roc"><summary>Matriz produto × máquina ordenada (Rank Order Clustering) — mostra as famílias de produtos e as máquinas que devem ficar juntas</summary>
+      <div class="lay-mx-wrap"><table class="lay-mx roc"><thead><tr><th>Produto \\ Máquina</th>${cols.map(c => `<th title="${esc(nm(c))}">${esc(nm(c).slice(0, 14))}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr><th>${esc(nomeProd(r).slice(0, 26))}</th>${cols.map(c => `<td class="${g.roc.usa.get(r).has(c) ? 'on' : ''}">${g.roc.usa.get(r).has(c) ? '1' : ''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${g.roc.rows.length > 14 ? `<p class="hint">Mostrando 14 de ${g.roc.rows.length} produtos.</p>` : ''}</details>
+      <p class="hint">A sugestão usa as fileiras com espaço para a costureira (0,8 m) e um corredor de 1,2 m a cada duas fileiras. Ajuste à vontade: arraste as máquinas e os metros por peça se recalculam. O seu layout original não foi alterado.</p></div>`;
+  }
   function painelAnalise() {
     const el = $('layAn'); if (!el) return; const r = A.res || { lista: [], tipos: [], porProd: [], faltam: [], semMaq: [], mq: new Map() };
     const nm = id => r.mq.get(id) || 'Máquina sem cadastro', abrev = id => { const t = String(nm(id)); return t.length > 14 ? t.slice(0, 13) + '…' : t; };
@@ -247,10 +338,12 @@
     const top = r.lista.filter(f => f.custo != null).sort((a, b) => b.custo - a.custo).slice(0, 8), totC = r.lista.reduce((s, f) => s + (f.custo || 0), 0) || 1;
     const prods = produtos().filter(p => seqMaquinas(p.ID_PRODUTO).length);
     el.innerHTML = `<div class="lay-an-head"><div><h4>Fluxo e metros por peça</h4><p>Matriz De-Para (peças que vão de uma máquina para outra, pelo roteiro) × distância na planta. Quanto menor o total, melhor o layout.</p></div>
-      <div class="lay-an-ctl"><label class="lay-f"><span>Base</span><select onchange="gutLayout.an('base',this.value)"><option value="QUADRO" ${A.base === 'QUADRO' ? 'selected' : ''}>Produção interna agora</option><option value="PRODUTO" ${A.base === 'PRODUTO' ? 'selected' : ''}>Um produto</option></select></label>
+      <div class="lay-an-ctl"><label class="lay-f"><span>Base</span><select onchange="gutLayout.an('base',this.value)"><option value="QUADRO" ${A.base === 'QUADRO' ? 'selected' : ''}>Produção interna agora</option><option value="PRODUTO" ${A.base === 'PRODUTO' ? 'selected' : ''}>Um produto</option><option value="TODOS" ${A.base === 'TODOS' ? 'selected' : ''}>Todos os produtos (100 pç cada)</option></select></label>
       ${A.base === 'PRODUTO' ? `<label class="lay-f"><span>Produto</span><select onchange="gutLayout.an('prod',this.value)"><option value="">Escolha…</option>${prods.map(p => `<option value="${esc(p.ID_PRODUTO)}" ${String(p.ID_PRODUTO) === A.prod ? 'selected' : ''}>${esc(nomeProd(p.ID_PRODUTO))}</option>`).join('')}</select></label><label class="lay-f lay-n"><span>Peças</span><input inputmode="numeric" value="${esc(A.qtd)}" onchange="gutLayout.an('qtd',this.value)"></label>` : ''}
       <label class="lay-f"><span>Distância</span><select onchange="gutLayout.an('dist',this.value)"><option value="L" ${A.dist === 'L' ? 'selected' : ''}>Em L (corredores)</option><option value="R" ${A.dist === 'R' ? 'selected' : ''}>Em linha reta</option></select></label>
-      <label class="lay-chk"><input type="checkbox" ${A.ver ? 'checked' : ''} onchange="gutLayout.an('ver',this.checked)"> Desenhar o fluxo na planta</label></div></div>
+      <label class="lay-chk"><input type="checkbox" ${A.ver ? 'checked' : ''} onchange="gutLayout.an('ver',this.checked)"> Desenhar o fluxo na planta</label>
+      <button class="btn btn-primary btn-sm" type="button" onclick="gutLayout.sugerir()" title="Monta um ambiente novo com todas as máquinas do cadastro na posição que dá menos metros por peça, pela base escolhida">✨ Sugerir layout</button></div></div>
+      ${A.sug ? sugHtml() : ''}
       ${!r.pecas && !r.lista.length ? `<p class="hint">${A.base === 'PRODUTO' ? 'Escolha um produto com roteiro.' : 'Não há caixas na produção interna agora. Use a base "Um produto".'}${r.semMaq.length ? ' Alguns produtos não têm máquina nas operações do roteiro.' : ''}</p>` : `
       <div class="lay-kpis"><div class="k"><small>Metros por peça</small><b>${fm(r.porPeca)} m</b><span>caminho médio de uma peça entre as máquinas do roteiro</span></div>
         <div class="k"><small>Movimentação total</small><b>${Math.round(r.metros).toLocaleString('pt-BR')} m</b><span>para ${r.pecas.toLocaleString('pt-BR')} peça(s)${r.pecas ? ` • ≈ ${Math.round(r.metros / 60).toLocaleString('pt-BR')} min a pé (1 m/s)` : ''}</span></div>
@@ -498,12 +591,14 @@
 
   window.gutLayout = {
     bipar, camera, alvo: () => L.alvo, analise: () => A.res,
+    sugerir, fecharSug() { A.sug = null; painelAnalise(); },
+    trocarNome(n) { const i = L.lista.findIndex(x => x.nome === n); if (i >= 0) { gutLayout.trocar(i); preencherAmbientes(); analisar(); desenhar(); } },
     an(k, v) { if (k === 'ver') A.ver = !!v; else if (k === 'qtd') A.qtd = Math.max(1, Math.round(num(v)) || 1); else A[k] = v; analisar(); desenhar(); },
     cheia: () => { if (L.so) soPlanta(false); cheia(); }, soPlanta: on => soPlanta(on), lado(q) { if (q === 'pal') L.semPal = !L.semPal; else L.semProp = !L.semProp; lados(); setTimeout(desenhar, 30); },
     fluxo(on) { L.fluxo = !!on; desenhar(); },
     limparLotes() { const cx = mapaCaixas(); snapshot(); D().itens = D().itens.filter(i => i.tipo !== 'LOTE' || cx.has(i.vol)); const ids = new Set(D().itens.map(i => i.id)); D().cotas = D().cotas.filter(c => ids.has(c.a) && ids.has(c.b)); mudou(); paleta(); props(); },
     abrirLote(id) { cheia(false); try { showView('dash-interna'); if (typeof setInternalDashboardMode === 'function') setInternalDashboardMode('KANBAN'); openProdOps(id); } catch (e) {} },
-    trocar(i) { salvar(); L.atual = L.lista[Number(i)] || L.lista[0]; L.sel = null; L.selCota = null; L.hist = []; campos(); paleta(); desenhar(); props(); status(); },
+    trocar(i) { salvar(); L.atual = L.lista[Number(i)] || L.lista[0]; L.sel = null; L.selCota = null; L.hist = []; campos(); paleta(); analisar(); desenhar(); props(); status(); preencherAmbientes(); },
     novo() { salvar(); const n = { id: '', nome: 'Ambiente ' + (L.lista.length + 1), dados: novoDados() }; L.lista.push(n); L.atual = n; L.sel = null; L.hist = []; preencherAmbientes(); campos(); paleta(); desenhar(); props(); mudou(false); },
     campo(k, v) {
       const d = D(); snapshot();

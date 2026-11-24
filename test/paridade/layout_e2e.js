@@ -152,6 +152,21 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       return { seq: seq.length, porPeca: Math.round(r.porPeca * 100) / 100, esp: Math.round(esp * 100) / 100, metros: Math.round(r.metros), pecas: r.pecas, kpi: document.querySelector('.lay-kpis .k b')?.textContent, mx: document.querySelectorAll('.lay-mx td b').length, sp: document.querySelectorAll('.lay-sp').length };
     });
     ok(!an.sem && an.seq >= 2 && an.porPeca === an.esp && an.metros === Math.round(an.esp * 50) && an.pecas === 50 && an.mx >= 1 && an.sp >= 1, 'metros por peça = soma das distâncias entre as máquinas do roteiro; matriz e fluxo desenhados: ' + JSON.stringify(an));
+    // sugestão de layout: ROC + trocas
+    const sg = await page.evaluate(() => {
+      const antes = gutLayout.estado().lista.length, orig = gutLayout.estado().atual, origItens = JSON.stringify(orig.dados.itens);
+      gutLayout.sugerir(); const L = gutLayout.estado(), d = L.atual.dados, g = gutLayout.estado && document.querySelector('.lay-sug');
+      const maqs = d.itens.filter(i => i.tipo === 'MAQ'), esperado = STATE.cad.maquinas.reduce((s, m) => s + Math.max(1, (gutCrachas && 0) || 0, Math.floor(Number(m.QTD_TOTAL) || 0)), 0);
+      const sobre = maqs.some((a, i) => maqs.some((b, j) => i < j && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
+      const dentro = maqs.every(i => i.x >= 0 && i.y >= 0 && i.x + i.w <= d.largura && i.y + i.h <= d.comprimento);
+      const r = gutLayout.analise();
+      return { novo: L.lista.length === antes + 1 && L.atual !== orig && /^Sugestão/.test(L.atual.nome), n: maqs.length, esperado, sobre, dentro, card: !!g, porPeca: r.porPeca, intacto: JSON.stringify(orig.dados.itens) === origItens, txt: (g && g.innerText || '').slice(0, 160) };
+    });
+    ok(sg.novo && sg.n >= sg.esperado && !sg.sobre && sg.dentro && sg.card && sg.intacto, 'sugestão cria um ambiente novo com todas as máquinas, sem sobrepor, sem mexer no original: ' + JSON.stringify(sg));
+    const melhor = await page.evaluate(() => { const t = document.querySelector('.lay-sug').innerText; const m = t.match(/ROC: ([\d,]+) m\/pç → depois das trocas: ([\d,]+) m\/pç/); return m ? [Number(m[1].replace(',', '.')), Number(m[2].replace(',', '.'))] : null; });
+    ok(melhor && melhor[1] <= melhor[0], 'as trocas nunca pioram o arranjo inicial: ' + JSON.stringify(melhor));
+    if (process.env.SHOT) { await page.evaluate(() => gutLayout.zoom(0)); await page.waitForTimeout(400); await page.screenshot({ path: path.join(process.env.SHOT, 'sugestao.png') }); await page.evaluate(() => document.getElementById('layAn').scrollIntoView()); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'sugestao-quadro.png') }); }
+    await page.evaluate(() => gutLayout.trocar(0)); await page.waitForTimeout(500);
     if (process.env.SHOT) { await page.evaluate(() => { document.getElementById('layAn').scrollIntoView(); }); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-analise.png'), fullPage: false }); await page.evaluate(() => window.scrollTo(0, 0)); }
     if (process.env.SHOT) { await page.evaluate(() => gutLayout.zoom(0)); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-bipagem.png') }); }
     await page.reload(); await page.waitForTimeout(3500); await page.evaluate(() => showView('layout')); await page.waitForTimeout(2500);
