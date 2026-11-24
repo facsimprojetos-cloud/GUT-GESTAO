@@ -35,6 +35,7 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
       const u = r.request().url();
       if (u.startsWith('http://app.local/sistema/gut-motor.js')) return r.fulfill({ contentType: 'application/javascript', body: motorJs });
       if (u.startsWith('http://app.local/sistema/paineis-tv.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/paineis-tv.js'), 'utf8') });
+      if (u.startsWith('http://app.local/sistema/crachas.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/crachas.js'), 'utf8') });
       if (u.startsWith('http://app.local/sistema/layout.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/layout.js'), 'utf8') });
       if (u.startsWith('http://app.local/sistema/menu-principal.js')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'site/sistema/menu-principal.js'), 'utf8') });
       if (u.startsWith('http://app.local/')) return r.fulfill({ contentType: 'text/html', body: html });
@@ -102,9 +103,38 @@ const results = []; const ok = (c, m) => { results.push(!!c); console.log((c ? '
     ok(await page.evaluate(() => !document.getElementById('view-layout').classList.contains('lay-so')), 'Esc volta a mostrar os controles');
     await page.evaluate(() => gutLayout.cheia()); await page.waitForTimeout(2500);
     if (process.env.SHOT) { fs.mkdirSync(process.env.SHOT, { recursive: true }); await page.evaluate(() => { const d = gutLayout.estado().atual.dados; gutLayout.adicionar('CORREDOR'); gutLayout.adicionar('ESTOQUE'); }); await page.waitForTimeout(500); await page.screenshot({ path: path.join(process.env.SHOT, 'layout.png') }); await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; }); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-dark.png') }); await page.evaluate(() => { delete document.documentElement.dataset.theme; }); await page.waitForTimeout(2000); }
+    // máquinas numeradas pelo cadastro
+    await page.evaluate(() => { showView('cadastros'); });
+    await page.waitForTimeout(800);
+    const uni = await page.evaluate(async () => { const m = STATE.cad.maquinas[0]; await gutCrachas.abrirUnidades(m.ID_MAQUINA); gutCrachas._gerar(); const cods = [...document.querySelectorAll('.cr-ur input.mono')].map(i => i.value); await gutCrachas._salvar(); await new Promise(r => setTimeout(r, 800)); const l = await gutCrachas.unidades(true); return { tot: Number(m.QTD_TOTAL), cods, salvos: l.map(u => u.codigo), fechado: !document.getElementById('gutCrModal').classList.contains('show') }; });
+    ok(uni.salvos.length === uni.tot && uni.fechado && /^[A-Z]{2}-01$/.test(uni.salvos[0]), 'cadastro numera as máquinas pela quantidade (RT-01, RT-02…): ' + JSON.stringify(uni));
+    if (process.env.SHOT) { await page.evaluate(async () => { await gutCrachas.abrirUnidades(STATE.cad.maquinas[0].ID_MAQUINA); }); await page.waitForTimeout(400); await page.screenshot({ path: path.join(process.env.SHOT, 'unidades.png') }); await page.evaluate(() => gutCrachas.fechar());
+      await page.evaluate(async () => { await gutCrachas.abrirCracha(STATE.cad.operadores[0].ID_OPERADOR); }); await page.waitForTimeout(400); await page.screenshot({ path: path.join(process.env.SHOT, 'cracha.png') }); await page.evaluate(() => gutCrachas.fechar());
+      await page.evaluate(() => { const b = document.querySelector('[data-cad="maquina"]'); b && b.click(); }); await page.waitForTimeout(600); await page.screenshot({ path: path.join(process.env.SHOT, 'cad-maquinas.png') }); }
+    const rep = await page.evaluate(async () => { const m = STATE.cad.maquinas[0]; const { error } = await GUT_SB.rpc('web_unidades_salvar', { p_slug: GUT_EMPRESA_SLUG, p_id_maquina: 'OUTRA', p_unidades: [{ codigo: (await gutCrachas.unidades())[0].codigo }] }); return error ? error.message : ''; });
+    ok(/já está em uso/.test(rep), 'o mesmo código não pode ser usado em outra máquina: ' + rep);
+    const cr = await page.evaluate(async () => { const o = STATE.cad.operadores[0]; try { await gutCrachas.abrirCracha(o.ID_OPERADOR); const ok = !!document.querySelector('.cr-mini .qr') && /Matrícula/.test(document.querySelector('.cr-mini').innerText); const t = document.getElementById('gutCrModal')?.innerText.slice(0, 150); gutCrachas.fechar(); return { ok, id: o.ID_OPERADOR, t }; } catch (e) { return { ok: false, id: o && o.ID_OPERADOR, err: e.message, html: document.getElementById('gutCrModal')?.innerText.slice(0, 200) }; } });
+    ok(cr.ok, 'crachá do funcionário abre com o QR');
+    // bipagem na planta: máquina → caixa ao lado; crachá → posto
+    await page.evaluate(() => showView('layout')); await page.waitForTimeout(1500);
+    const bip = await page.evaluate(async (opId) => {
+      const u = (await gutCrachas.unidades())[1]; const L = gutLayout.estado(), d = L.atual.dados;
+      gutLayout.bipar('GUT-MAQ:' + u.codigo); const m = d.itens.find(i => i.uni === u.id);
+      const cx = (STATE.internalBoard.rows || [])[1]; const cod = displayVolumeCode(cx);
+      gutLayout.bipar(cod); const l = d.itens.find(i => i.tipo === 'LOTE' && i.vol === String(cx.ID_VOLUME));
+      const dist = l && m ? Math.hypot((l.x + l.w / 2) - (m.x + m.w / 2), (l.y + l.h / 2) - (m.y + m.h / 2)) : 99;
+      const sobre = l && d.itens.some(i => i !== l && i.tipo !== 'AREA' && i.tipo !== 'CORREDOR' && l.x < i.x + i.w - 1e-6 && l.x + l.w > i.x + 1e-6 && l.y < i.y + i.h - 1e-6 && l.y + l.h > i.y + 1e-6);
+      gutLayout.bipar('GUT-OP:' + opId);
+      gutLayout.bipar('XYZ-NAO-EXISTE'); const msg = document.getElementById('layHint').textContent;
+      return { maq: !!m && m.nome === u.codigo, perto: l ? l.perto === m.id : false, dist: Math.round(dist * 100) / 100, sobre, op: m && m.op === opId, msg, label: !!document.querySelector('.lay-optx') };
+    }, cr.id);
+    ok(bip.maq && bip.perto && bip.dist < 2.2 && !bip.sobre, 'bipar a máquina e depois a caixa põe a caixa encostada nela, sem sobrepor: ' + JSON.stringify(bip));
+    ok(bip.op && bip.label, 'bipar o crachá põe o funcionário no posto da máquina');
+    ok(/não é uma máquina numerada nem uma caixa/.test(bip.msg), 'código desconhecido avisa');
+    if (process.env.SHOT) { await page.evaluate(() => gutLayout.zoom(0)); await page.waitForTimeout(300); await page.screenshot({ path: path.join(process.env.SHOT, 'layout-bipagem.png') }); }
     await page.reload(); await page.waitForTimeout(3500); await page.evaluate(() => showView('layout')); await page.waitForTimeout(2500);
     const vol = await page.evaluate(() => { const d = gutLayout.estado().atual.dados; return { n: d.itens.length, c: d.cotas.length, w: d.largura, id: gutLayout.estado().atual.id }; });
-    ok(vol.n >= 5 && vol.c === 1 && vol.w === 15 && /^LAY-/.test(vol.id), 'ao reabrir, a planta volta como foi salva: ' + JSON.stringify(vol));
+    ok(vol.n >= 6 && vol.c === 1 && vol.w === 15 && /^LAY-/.test(vol.id), 'ao reabrir, a planta volta como foi salva: ' + JSON.stringify(vol));
     console.log('erros', errors.slice(0, 5)); console.log(`${pass}/${pass + fail}`); if (fail) process.exitCode = 1;
   } finally { if (browser) await browser.close(); pg.descer(true); }
 })().catch(e => { console.error(e); pg.descer(true); process.exit(2); });

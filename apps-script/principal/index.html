@@ -969,6 +969,29 @@ html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] b{color:#8a99ad}html.u
 html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] .tv-n{background:#eef2f7;color:#8a99ad}html.ui:not([data-theme="dark"]) .tv-launch-btn[disabled] em{color:#a3b0c0!important}
 @media (prefers-reduced-motion:reduce){html.ui .tv-launch-btn:hover{transform:none}}
 </style>
+<style id="gut-cracha-433">
+.cr-modal{position:fixed;inset:0;z-index:1200;background:rgba(10,11,14,.55);display:none;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto}
+.cr-modal.show{display:flex}
+.cr-card{width:100%;background:var(--surface);color:var(--text);border-radius:18px;padding:20px 22px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5);border:1px solid var(--line);display:flex;flex-direction:column;gap:12px}
+.cr-head{display:flex;gap:12px;align-items:flex-start}.cr-head h3{margin:0;font-size:20px}.cr-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.cr-head>div{flex:1}
+.cr-x{border:0;background:none;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}
+.cr-gen{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}.cr-gen label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:700;color:var(--muted)}.cr-gen input{width:110px}
+.cr-card input:not([type=checkbox]){height:36px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text);font:inherit;font-size:14px;min-width:0}
+.cr-uni{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto}
+.cr-uh,.cr-ur{display:grid;grid-template-columns:120px 1fr 140px 48px 32px;gap:8px;align-items:center}.cr-uh{font-size:11.5px;font-weight:700;color:var(--muted)}
+.cr-ur input[type=checkbox]{width:18px;height:18px;justify-self:center;accent-color:#e11d2a}
+.cr-del{border:0;background:none;color:#c8101c;font-size:20px;cursor:pointer}
+.cr-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.cr-load{padding:30px;text-align:center;color:var(--muted)}
+.cr-prev{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+.cr-mini{width:216px;height:344px;border-radius:14px;border:1px solid #c9ccd3;overflow:hidden;display:flex;flex-direction:column;align-items:center;background:#fff;color:#16171b;flex:0 0 auto}
+.cr-mini .top{width:100%;height:60px;background:linear-gradient(135deg,#16171b 0,#16171b 62%,#e11d2a 62.2%);color:#fff;display:flex;align-items:center;padding:0 16px}.cr-mini .top b{font-size:14px;max-width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cr-mini .ph{width:100px;height:124px;margin-top:-20px;border-radius:10px;border:3px solid #fff;box-shadow:0 0 0 1px #c9ccd3;background:#eceef2 center/cover no-repeat;display:grid;place-items:center;color:#9aa0aa;font-size:30px;font-weight:800}
+.cr-mini .nm{margin-top:8px;font-weight:800;font-size:15px;text-align:center;padding:0 10px;line-height:1.15}.cr-mini .mt{font-size:11px;color:#5b606b;margin-top:2px;text-align:center}
+.cr-mini .qr{width:84px;height:84px;margin-top:auto;margin-bottom:10px}
+.cr-side{flex:1;min-width:200px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}.cr-side .muted{font-size:12.5px;margin:0}
+@media(max-width:640px){.cr-uh{display:none}.cr-ur{grid-template-columns:1fr 1fr;}.cr-ur input:nth-child(3){grid-column:1/2}}
+</style>
 <style id="gut-layout-431">
 /* v4.31 — Layout da fábrica (planta baixa) */
 #view-layout .page-head p{margin:4px 0 0;color:var(--muted)}
@@ -1025,6 +1048,15 @@ html.ui[data-theme="dark"] .lay-it.maq .lay-body-r{fill:#26272d}html.ui[data-the
 html.ui[data-theme="dark"] .lay-tx,html.ui[data-theme="dark"] .lay-pct{fill:#eceef2}html.ui[data-theme="dark"] .lay-it.blk .lay-body-r{fill:#1c1d22;stroke:#4b4f58}html.ui[data-theme="dark"] .lay-it.t-corredor .lay-body-r{fill:#2a260f}
 html.ui[data-theme="dark"] .lay-it.t-estoque .lay-body-r{fill:#14233a}html.ui[data-theme="dark"] .lay-it.t-mesa .lay-body-r{fill:#2c241a}html.ui[data-theme="dark"] .lay-cbox{fill:#16171b}html.ui[data-theme="dark"] .lay-ctx{fill:#8fb4ff}
 html.ui[data-theme="dark"] .lay-occ{background:#202127}html.ui[data-theme="dark"] .lay-occ.ok{background:#123824}html.ui[data-theme="dark"] .lay-occ.high{background:#3a2f0a}html.ui[data-theme="dark"] .lay-occ.over{background:#3a1418}html.ui[data-theme="dark"] .lay-tot{background:#24252b}
+.lay-scan{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 4px 0 10px;border:1.5px solid #e11d2a;border-radius:10px;background:var(--surface)}.lay-scan input{border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:14px;width:220px;height:32px}
+.lay-alvo{fill:none;stroke:#e11d2a;stroke-width:2.4;vector-effect:non-scaling-stroke;stroke-dasharray:5 4;animation:layAlvo 1.2s linear infinite}
+@keyframes layAlvo{to{stroke-dashoffset:-18}}@media(prefers-reduced-motion:reduce){.lay-alvo{animation:none}}
+.lay-optx{fill:#7c2d12;font-weight:800;paint-order:stroke;stroke:#fff;stroke-width:.04px;pointer-events:none}
+html.ui[data-theme="dark"] .lay-optx{fill:#ffd0a8}
+.lay-opr{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;background:rgba(225,29,42,.08);font-weight:700;font-size:13px}.lay-opr .x{margin-left:auto;border:0;background:none;font-size:18px;color:var(--muted);cursor:pointer}
+.lay-hint.ok{color:#12a565}.lay-hint.erro{color:#c8101c}
+.lay-cam{position:fixed;inset:0;z-index:1300;background:#000;display:flex;flex-direction:column}.lay-cam video{flex:1;width:100%;object-fit:cover}
+.lay-cam-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#16171b;color:#fff;font-weight:700}.lay-cam-bar span{flex:1}.lay-cam-bar button{border:0;border-radius:9px;background:#e11d2a;color:#fff;font:700 14px inherit;padding:10px 16px}
 .lay-float{display:none}
 #view-layout.lay-so .lay-bar,#view-layout.lay-so .lay-side,#view-layout.lay-so .lay-hint{display:none!important}
 #view-layout.lay-so{padding:0}
@@ -1124,7 +1156,7 @@ body.mod-mode .theme-toggle #themeToggleLabel,body.mod-mode .app-refresh span:no
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.32.1 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
+    <div class="brand"><div class="logo">G</div><div class="brand-text"><h1>GUT PPCP</h1><small>v4.33.0 • Lote → sublote → volume → remessa</small></div><button class="side-toggle" id="sideToggleBtn" type="button" onclick="toggleSidebar()" title="Encolher menu (mostrar só ícones)">‹</button></div>
     <nav class="nav" id="nav">
       <button class="active" data-view="dashboard"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span><span>Dashboard</span></button>
       <button data-view="dash-faccoes"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span><span>Dashboard facções</span></button>
@@ -4422,7 +4454,7 @@ const CAD_UI={
 };
 function cadSource(type){const c=CAD_UI[type];return c?(STATE.cad[c.arr]||[]):[]}
 function cadCurrentRecord(type){const e=STATE.editingCadastro,c=CAD_UI[type];if(!e||e.type!==type||!c)return null;return cadSource(type).find(r=>String(r[c.id])===String(e.id))||null}
-function renderCadList(type){const box=$('cadList');if(!box)return;const cfg=CAD_UI[type];if(!cfg){box.innerHTML='';return}const q=($('cadListSearch')?.value||'').trim().toLowerCase();let rows=cadSource(type).slice();rows=rows.filter(r=>{const t=(cfg.title(r)+' '+cfg.detail(r)).toLowerCase();return !q||t.includes(q)});box.innerHTML=rows.length?`<div class="table-wrap cad-mini-table"><table><thead><tr><th>Cadastro</th><th>Detalhes</th><th style="width:180px"></th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(cfg.title(r)||'—')}</strong></td><td style="white-space:normal">${esc(cfg.detail(r)||'—')}</td><td><div class="action-pair"><button class="btn btn-secondary btn-sm" onclick="editCadastro('${type}','${esc(r[cfg.id])}')">Editar</button><button class="btn btn-danger btn-sm" onclick="openDeletePreview('cadastro:${type}','${esc(r[cfg.id])}','${esc(cfg.title(r)||'Cadastro')}')">Excluir</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhum cadastro encontrado.</div>'}
+function renderCadList(type){const box=$('cadList');if(!box)return;const cfg=CAD_UI[type];if(!cfg){box.innerHTML='';return}const q=($('cadListSearch')?.value||'').trim().toLowerCase();let rows=cadSource(type).slice();rows=rows.filter(r=>{const t=(cfg.title(r)+' '+cfg.detail(r)).toLowerCase();return !q||t.includes(q)});box.innerHTML=rows.length?`<div class="table-wrap cad-mini-table"><table><thead><tr><th>Cadastro</th><th>Detalhes</th><th style="width:${type==='maquina'||type==='operador'?300:180}px"></th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(cfg.title(r)||'—')}</strong></td><td style="white-space:normal">${esc(cfg.detail(r)||'—')}</td><td><div class="action-pair">${type==='maquina'?`<button class="btn btn-secondary btn-sm" onclick="gutCrachas.abrirUnidades('${esc(r[cfg.id])}')" title="Numerar as máquinas físicas e imprimir as etiquetas com QR">🏷 Numerar / QR</button>`:type==='operador'?`<button class="btn btn-secondary btn-sm" onclick="gutCrachas.abrirCracha('${esc(r[cfg.id])}')" title="Foto e crachá com QR">🪪 Crachá</button>`:''}<button class="btn btn-secondary btn-sm" onclick="editCadastro('${type}','${esc(r[cfg.id])}')">Editar</button><button class="btn btn-danger btn-sm" onclick="openDeletePreview('cadastro:${type}','${esc(r[cfg.id])}','${esc(cfg.title(r)||'Cadastro')}')">Excluir</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhum cadastro encontrado.</div>'}
 function editCadastro(type,id){STATE.editingCadastro={type,id:String(id)};renderCadForm(type);requestAnimationFrame(()=>{document.getElementById('cadEditBanner')?.scrollIntoView({behavior:'smooth',block:'center'})})}
 function cancelCadastroEdit(){const type=STATE.cadType;STATE.editingCadastro=null;renderCadForm(type)}
 function setCadValue(id,value){const el=$(id);if(!el)return;el.value=value===null||value===undefined?'':String(value)}
@@ -4733,7 +4765,7 @@ function renderCadForm(type){
   }[type]||'';
   STATE.cadType=type;const editing=cadCurrentRecord(type),t=CSV_TEMPLATES[type];const guide=t?`<div class="csv-guide"><strong>Modelo CSV desta aba</strong><div class="csv-cols">${t.headers.map(h=>`<span class="csv-col">${esc(h)}</span>`).join('')}</div><div class="hint" style="margin-top:8px">Use ponto e vírgula (;) ou vírgula. A primeira linha deve conter os cabeçalhos acima.</div></div>`:'';
   const banner=editing?`<div id="cadEditBanner" class="section-box" style="margin-bottom:14px;background:#eff6ff;border-color:#bfdbfe"><strong>Editando cadastro existente</strong><div class="hint" style="margin-top:4px">${esc(CAD_UI[type]?.title(editing)||'Registro')} • Salvar irá atualizar este registro, sem criar outro.</div></div>`:'';
-  $('cadForms').innerHTML=banner+html+`<div class="toolbar" style="justify-content:flex-end;margin-top:16px">${editing?'<button class="btn btn-secondary" onclick="cancelCadastroEdit()">Cancelar edição</button>':''}<button class="btn btn-primary" onclick="saveCadastro('${type}')">${editing?'Salvar alterações':'Salvar cadastro'}</button></div><div id="campoAccessBox"></div>`+guide+`<div class="section-box" style="margin-top:18px"><div class="panel-title"><div><h4>Cadastros existentes</h4><div class="hint">Clique em Editar para corrigir os dados deste cadastro. Máquinas e roteiros também podem ser ajustados sem recriar o registro.</div></div><input class="search" id="cadListSearch" placeholder="Buscar nesta lista..." oninput="renderCadList('${type}')"></div><div id="cadList"></div></div>`;
+  $('cadForms').innerHTML=banner+html+`<div class="toolbar" style="justify-content:flex-end;margin-top:16px">${editing?'<button class="btn btn-secondary" onclick="cancelCadastroEdit()">Cancelar edição</button>':''}<button class="btn btn-primary" onclick="saveCadastro('${type}')">${editing?'Salvar alterações':'Salvar cadastro'}</button></div><div id="campoAccessBox"></div>`+guide+`<div class="section-box" style="margin-top:18px"><div class="panel-title"><div><h4>Cadastros existentes</h4><div class="hint">Clique em Editar para corrigir os dados deste cadastro. Máquinas e roteiros também podem ser ajustados sem recriar o registro.</div></div>${type==='maquina'?`<button class="btn btn-secondary btn-sm" onclick="gutCrachas.etiquetasTodas()" title="Etiquetas com QR de todas as máquinas numeradas">🏷 Etiquetas QR de todas</button>`:type==='operador'?`<button class="btn btn-secondary btn-sm" onclick="gutCrachas.crachasTodos()" title="Crachás com foto e QR de todos os funcionários ativos">🪪 Crachás de todos</button>`:''}<input class="search" id="cadListSearch" placeholder="Buscar nesta lista..." oninput="renderCadList('${type}')"></div><div id="cadList"></div></div>`;
   attachCadPlus(type);if(editing&&(type==='operador'||(type==='destino'&&String(editing.TIPO_DESTINO||'').toUpperCase()==='FACCAO')))campoAccessRender(type,editing);
   if(editing)populateCadForm(type,editing);else if(type==='estrutura')setTimeout(syncStructureUnit,0);else if(type==='roteiro')setTimeout(()=>syncRouteMachineDefault(false),0);renderCadList(type)
 }
@@ -5046,6 +5078,7 @@ function pageRows(rows,id,render,size=100){
 
 </script>
 <script src="menu-principal.js?v=4.31.1"></script>
-<script src="layout.js?v=4.32.1"></script>
+<script src="crachas.js?v=4.33.0"></script>
+<script src="layout.js?v=4.33.0"></script>
 </body>
 </html>

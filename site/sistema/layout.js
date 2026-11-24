@@ -70,6 +70,11 @@
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   }
 
+  const unis = () => (window.gutCrachas && gutCrachas.unidades && window.GUT_UNI_CACHE) || [];
+  const unisTipo = id => unis().filter(u => String(u.maq) === String(id) && u.ativo !== false);
+  async function carregarUnidades() { try { window.GUT_UNI_CACHE = await gutCrachas.unidades(); } catch (e) { window.GUT_UNI_CACHE = window.GUT_UNI_CACHE || []; } }
+  document.addEventListener('gut-unidades', () => { carregarUnidades().then(() => { if (visivel()) { paleta(); desenhar(); props(); } }); });
+  function operadorNome(id) { try { const o = (STATE.cad.operadores || []).find(x => String(x.ID_OPERADOR) === String(id)); return o ? String(o.NOME || '').trim() : ''; } catch (e) { return ''; } }
   function caixas() {
     const rows = (typeof STATE !== 'undefined' && STATE.internalBoard && STATE.internalBoard.rows) || [];
     return rows.map(v => {
@@ -108,6 +113,8 @@
       <div class="seg" role="group" aria-label="Ferramenta"><button type="button" data-lm="MOVER" onclick="gutLayout.modo('MOVER')" title="Arrastar e selecionar (atalho V)">Mover</button><button type="button" data-lm="COTA" onclick="gutLayout.modo('COTA')" title="Medir: toque num item e depois em outro (atalho C)">Cota</button></div>
       <div class="seg" role="group" aria-label="Zoom"><button type="button" onclick="gutLayout.zoom(-1)" title="Diminuir">−</button><button type="button" onclick="gutLayout.zoom(0)" title="Caber na tela">Ajustar</button><button type="button" onclick="gutLayout.zoom(1)" title="Aumentar">+</button></div>
       <button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.desfazer()" title="Desfazer (Ctrl+Z)">↶ Desfazer</button>
+      <label class="lay-scan" title="Bipe a etiqueta da máquina e depois as caixas que estão ao lado dela (também aceita o crachá do funcionário)"><span>📟</span><input id="layScan" placeholder="Bipar máquina, caixa ou crachá" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();gutLayout.bipar(this.value);this.value=''}"></label>
+      ${'BarcodeDetector' in window ? '<button class="btn btn-secondary btn-sm" type="button" onclick="gutLayout.camera()" title="Ler QR pela câmera">📷</button>' : ''}
       <button class="btn btn-secondary btn-sm lay-only-full" type="button" id="layPalBtn" onclick="gutLayout.lado('pal')" title="Mostrar ou esconder a lista de máquinas e lotes">◧ Lista</button>
       <button class="btn btn-secondary btn-sm lay-only-full" type="button" id="layPropBtn" onclick="gutLayout.lado('prop')" title="Mostrar ou esconder os detalhes e as cotas">◨ Detalhes</button>
       <label class="lay-chk" title="Liga cada lote à máquina da próxima operação dele"><input type="checkbox" id="layFluxo" onchange="gutLayout.fluxo(this.checked)" checked> Fluxo dos lotes</label>
@@ -136,8 +143,8 @@
     const usados = new Map(); d.itens.filter(i => i.tipo === 'MAQ').forEach(i => usados.set(i.maq, (usados.get(i.maq) || 0) + 1));
     const mq = maquinas(), cxs = caixas(), cxm = new Map(cxs.map(c => [c.id, c])), lotes = d.itens.filter(i => i.tipo === 'LOTE'), noPlano = new Set(lotes.map(i => i.vol)), fora = lotes.filter(i => !cxm.has(i.vol)).length;
     el.innerHTML = `<div class="lay-h">Máquinas do cadastro</div>
-      ${mq.length ? mq.map(m => { const u = usados.get(m.id) || 0, o = occ.get(m.id), p = o ? o.pct : 0; return `<button type="button" class="lay-pal" draggable="true" data-add="MAQ" data-maq="${esc(m.id)}" onclick="gutLayout.adicionar('MAQ','${esc(m.id)}')" title="Clique ou arraste para a planta">
-        <i class="lay-dot ${classe(p)}"></i><span><b>${esc(m.nome)}</b><small>${u} de ${m.total} na planta${o && o.cap ? ` • ${isFinite(p) ? Math.round(p) : '>999'}% hoje` : ''}</small></span>${u >= m.total && m.total ? '<em>✓</em>' : ''}</button>`; }).join('') : '<p class="hint">Cadastre as máquinas em Cadastros › Máquinas.</p>'}
+      ${mq.length ? mq.map(m => { const u = usados.get(m.id) || 0, o = occ.get(m.id), p = o ? o.pct : 0, nu = unisTipo(m.id).length; m = Object.assign({}, m, { total: nu || m.total }); return `<button type="button" class="lay-pal" draggable="true" data-add="MAQ" data-maq="${esc(m.id)}" onclick="gutLayout.adicionar('MAQ','${esc(m.id)}')" title="Clique ou arraste para a planta">
+        <i class="lay-dot ${classe(p)}"></i><span><b>${esc(m.nome)}</b><small>${u} de ${m.total} na planta${nu ? '' : ' • sem numeração'}${o && o.cap ? ` • ${isFinite(p) ? Math.round(p) : '>999'}% hoje` : ''}</small></span>${u >= m.total && m.total ? '<em>✓</em>' : ''}</button>`; }).join('') : '<p class="hint">Cadastre as máquinas em Cadastros › Máquinas.</p>'}
       <div class="lay-h">Lotes em produção (${cxs.length})</div>
       ${cxs.length ? cxs.map(c => { const na = noPlano.has(c.id); return `<button type="button" class="lay-pal lay-pal-lote ${c.feito ? 'feito' : ''}" draggable="true" data-add="LOTE" data-vol="${esc(c.id)}" onclick="gutLayout.adicionar('LOTE','${esc(c.id)}')" title="${esc(c.prod)} ${esc(c.cor)} • ${c.qtd} pç${c.op ? ' • próxima: ' + esc(c.op) : ''}">
         <i class="lay-dot lote"></i><span><b>${esc(c.cod)}</b><small>${esc(c.prod)} • ${c.qtd} pç • ${Math.round(c.pct)}%${c.op ? ' • ' + esc(c.op) : ''}</small></span>${na ? '<em>✓</em>' : ''}</button>`; }).join('') : '<p class="hint">Nenhuma caixa na produção interna agora.</p>'}
@@ -166,6 +173,9 @@
       const occ = ocupacao().get(it.maq || ''), mq = maquinas();
       h += `<div class="lay-h">${it.tipo === 'MAQ' ? 'Máquina' : 'Item'} selecionado</div>
       <label class="lay-f"><span>Nome na planta</span><input value="${esc(it.nome)}" maxlength="40" oninput="gutLayout.prop('nome',this.value)"></label>
+      ${it.tipo === 'MAQ' ? `<label class="lay-f"><span>Máquina nº (etiqueta QR)</span><select onchange="gutLayout.prop('uni',this.value)"><option value="">— sem número —</option>${unisTipo(it.maq).map(u => { const outro = d.itens.find(x => x.uni === u.id && x.id !== it.id); return `<option value="${esc(u.id)}" ${u.id === it.uni ? 'selected' : ''} ${outro ? 'disabled' : ''}>${esc(u.codigo)}${u.descricao ? ' • ' + esc(u.descricao) : ''}${outro ? ' (já na planta)' : ''}</option>`; }).join('')}</select></label>
+      ${unisTipo(it.maq).length ? '' : `<p class="hint">Numere as máquinas em Cadastros › Máquinas › 🏷 Numerar / QR.</p>`}
+      ${it.op ? `<div class="lay-opr">👤 ${esc(operadorNome(it.op) || it.op)} <button type="button" class="x" onclick="gutLayout.prop('op','')" title="Tirar o funcionário deste posto">×</button></div>` : ''}` : ''}
       ${it.tipo === 'MAQ' ? `<label class="lay-f"><span>Tipo de máquina</span><select onchange="gutLayout.prop('maq',this.value)">${mq.map(m => `<option value="${esc(m.id)}" ${m.id === it.maq ? 'selected' : ''}>${esc(m.nome)}</option>`).join('')}</select></label>` : ''}
       <div class="lay-2"><label class="lay-f"><span>Largura (m)</span><input inputmode="decimal" value="${fm(it.w)}" onchange="gutLayout.prop('w',this.value)"></label><label class="lay-f"><span>Profundidade (m)</span><input inputmode="decimal" value="${fm(it.h)}" onchange="gutLayout.prop('h',this.value)"></label></div>
       <div class="lay-2"><label class="lay-f"><span>X (m)</span><input inputmode="decimal" value="${fm(it.x)}" onchange="gutLayout.prop('x',this.value)"></label><label class="lay-f"><span>Y (m)</span><input inputmode="decimal" value="${fm(it.y)}" onchange="gutLayout.prop('y',this.value)"></label></div>
@@ -217,6 +227,8 @@
       if (it.tipo === 'MAQ') {
         const bw = it.w * 0.8, pct = isFinite(p) ? Math.min(100, p) : 100;
         g += `<rect x="${it.x + it.w * 0.1}" y="${it.y + it.h - Math.max(0.07, it.h * 0.16)}" width="${bw}" height="${Math.max(0.035, it.h * 0.07)}" rx="0.02" class="lay-bar-bg"/><rect x="${it.x + it.w * 0.1}" y="${it.y + it.h - Math.max(0.07, it.h * 0.16)}" width="${bw * pct / 100}" height="${Math.max(0.035, it.h * 0.07)}" rx="0.02" class="lay-bar"/>`;
+        if (it.op) g += `<text x="${tx}" y="${it.y - f * 0.35}" font-size="${f * 0.8}" class="lay-optx" text-anchor="middle">👤 ${esc(curto(operadorNome(it.op).split(/\s+/)[0] || 'func.', 14))}</text>`;
+        if (L.alvo === it.id) g += `<rect x="${it.x - 0.12}" y="${it.y - 0.12}" width="${it.w + 0.24}" height="${it.h + 0.24}" rx="0.12" class="lay-alvo"/>`;
         g += `<text x="${tx}" y="${ty - f * 0.25}" font-size="${f}" class="lay-tx" text-anchor="middle">${esc(curto(it.nome, it.w / f * 1.7))}</text><text x="${tx}" y="${ty + f * 0.85}" font-size="${f * 0.95}" class="lay-pct" text-anchor="middle">${o && o.cap ? (isFinite(p) ? Math.round(p) + '%' : '>999%') : '—'}</text>`;
       } else {
         g += `<text x="${tx}" y="${ty + f * 0.35}" font-size="${f}" class="lay-tx" text-anchor="middle"${rot}>${esc(curto(it.nome, (rot ? it.h : it.w) / f * 1.7))}</text>`;
@@ -271,7 +283,7 @@
       if (cg && !g) { L.selCota = cg.dataset.cota; L.sel = null; desenhar(); props(); return; }
       if (!g) { L.sel = null; L.selCota = null; desenhar(); props(); return; }
       const it = D().itens.find(i => i.id === g.dataset.it); if (!it) return;
-      L.drag = true; L.sel = it.id; L.selCota = null; const p = pt(e); drag = { it, dx: p.x - it.x, dy: p.y - it.y, x0: it.x, y0: it.y, moveu: false };
+      L.drag = true; if (it.tipo === 'MAQ') L.alvo = it.id; L.sel = it.id; L.selCota = null; const p = pt(e); drag = { it, dx: p.x - it.x, dy: p.y - it.y, x0: it.x, y0: it.y, moveu: false };
       try { svg.setPointerCapture(e.pointerId); } catch (x) {}
       desenhar(); props(); e.preventDefault();
     });
@@ -297,7 +309,7 @@
       if (k === 'escape' && L.so) { soPlanta(false); return; }
       if (k === 'escape' && L.cheia && !document.fullscreenElement) { cheia(false); return; }
       if (k === 'v') return modo('MOVER'); if (k === 'c' && !e.ctrlKey && !e.metaKey) return modo('COTA');
-      if (k === 'escape') { L.cotaA = null; L.sel = null; L.selCota = null; desenhar(); props(); return; }
+      if (k === 'escape') { L.alvo = null; L.cotaA = null; L.sel = null; L.selCota = null; desenhar(); props(); return; }
       if ((k === 'delete' || k === 'backspace')) { e.preventDefault(); if (it) excluirItem(); else if (L.selCota) excluirCota(L.selCota); return; }
       if (!it) return; if (k === 'r') return girar();
       const c = D().celula, mv = { arrowleft: [-c, 0], arrowright: [c, 0], arrowup: [0, -c], arrowdown: [0, c] }[k];
@@ -311,14 +323,18 @@
     for (let y = c; y + h <= d.comprimento; y += c) for (let x = c; x + w <= d.largura; x += c) if (!ocup(x, y)) return { x, y };
     return { x: 0, y: 0 };
   }
-  function adicionar(tipo, maq, p) {
+  function adicionar(tipo, maq, p, uniEsp) {
     const d = D(); snapshot(); let it;
     if (tipo === 'LOTE') {
       const ex = d.itens.find(i => i.tipo === 'LOTE' && i.vol === maq);
       if (ex) { L.hist.pop(); if (p) { snapshot(); ex.x = snap(p.x - ex.w / 2); ex.y = snap(p.y - ex.h / 2); limitar(ex); } L.sel = ex.id; mudou(); props(); return; }
       it = { id: uid(), tipo: 'LOTE', vol: maq, nome: (mapaCaixas().get(maq) || {}).cod || 'Lote', w: LOTE_W, h: LOTE_H };
       if (!p) { const c = mapaCaixas().get(maq), alvo = c && d.itens.find(i => i.tipo === 'MAQ' && i.maq === c.opMaq); if (alvo) p = { x: alvo.x + alvo.w / 2, y: alvo.y + alvo.h + LOTE_H / 2 + d.celula }; }
-    } else if (tipo === 'MAQ') { const m = maquinas().find(x => x.id === maq); const n = d.itens.filter(i => i.tipo === 'MAQ' && i.maq === maq).length + 1; it = { id: uid(), tipo: 'MAQ', maq, nome: `${m ? m.nome : 'Máquina'} ${n}`, w: MAQ_W, h: MAQ_H }; }
+    } else if (tipo === 'MAQ') {
+      const m = maquinas().find(x => x.id === maq), n = d.itens.filter(i => i.tipo === 'MAQ' && i.maq === maq).length + 1;
+      const usadas = new Set(d.itens.filter(i => i.uni).map(i => i.uni)), un = (uniEsp && unis().find(u => u.id === uniEsp)) || unisTipo(maq).find(u => !usadas.has(u.id));
+      it = { id: uid(), tipo: 'MAQ', maq, uni: un ? un.id : '', nome: un ? un.codigo : `${m ? m.nome : 'Máquina'} ${n}`, w: MAQ_W, h: MAQ_H };
+    }
     else { const b = BLOCOS.find(x => x.tipo === tipo) || BLOCOS[5]; it = { id: uid(), tipo: b.tipo, nome: b.nome, w: b.w, h: b.h }; }
     if (p) { it.x = snap(p.x - it.w / 2); it.y = snap(p.y - it.h / 2); } else Object.assign(it, lugarLivre(it.w, it.h));
     limitar(it); d.itens.push(it); L.sel = it.id; L.selCota = null; if (L.modo !== 'MOVER') modo('MOVER', true); mudou(); paleta(); props();
@@ -353,7 +369,65 @@
   }
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && L.cheia) { if (L.so) { L.so = false; $('view-layout')?.classList.remove('lay-so'); } cheia(false); } });
 
+  /* ---------- bipagem: máquina → caixas ao lado dela ---------- */
+  function aviso(m, tipo) { const h = $('layHint'); if (h) { h.textContent = m; h.className = 'lay-hint ' + (tipo || ''); clearTimeout(L.tAviso); L.tAviso = setTimeout(() => { h.textContent = ''; h.className = 'lay-hint'; }, 6000); } if (L.so || !h) (window.toast || console.log)(m, tipo === 'erro'); }
+  function vagaPerto(m, w, h) {
+    const d = D(), c = d.celula, livre = (x, y) => x >= 0 && y >= 0 && x + w <= d.largura && y + h <= d.comprimento && !d.itens.some(i => i.tipo !== 'AREA' && i.tipo !== 'CORREDOR' && x < i.x + i.w - 1e-6 && x + w > i.x + 1e-6 && y < i.y + i.h - 1e-6 && y + h > i.y + 1e-6);
+    const cand = [];
+    for (let r = 0; r < 6; r++) {
+      const gap = c * (1 + r);
+      cand.push([m.x, m.y + m.h + gap - c + c * 0], [m.x + m.w + gap - c, m.y], [m.x, m.y - h - gap + c], [m.x - w - gap + c, m.y]);
+      for (let k = 1; k <= r + 1; k++) cand.push([m.x + k * (w + c), m.y + m.h + gap - c], [m.x - k * (w + c), m.y + m.h + gap - c]);
+    }
+    for (const [x, y] of cand) { const sx = snap(x), sy = snap(y); if (livre(sx, sy)) return { x: sx, y: sy }; }
+    return lugarLivre(w, h);
+  }
+  function bipar(txt) {
+    const t = String(txt || '').trim(); if (!t || !D()) return;
+    const d = D(), up = t.toUpperCase();
+    // funcionário
+    if (up.startsWith('GUT-OP:')) {
+      const id = t.slice(7), nome = operadorNome(id); if (!nome) return aviso('Crachá não encontrado no cadastro de funcionários.', 'erro');
+      const m = d.itens.find(i => i.id === L.alvo); if (!m) return aviso(`${nome}: bipe primeiro a máquina onde ela trabalha.`, 'erro');
+      snapshot(); d.itens.forEach(i => { if (i.op === id) i.op = ''; }); m.op = id; mudou(); props(); return aviso(`${nome} no posto ${m.nome}.`, 'ok');
+    }
+    // máquina
+    const cod = up.startsWith('GUT-MAQ:') ? up.slice(8) : up, un = unis().find(u => String(u.codigo).toUpperCase() === cod);
+    if (un) {
+      let m = d.itens.find(i => i.uni === un.id);
+      if (!m) { adicionar('MAQ', String(un.maq), null, un.id); m = d.itens.find(i => i.uni === un.id); aviso(`${un.codigo} não estava na planta: coloquei num lugar livre, arraste até onde ela fica. Agora bipe as caixas.`, 'ok'); }
+      else aviso(`${un.codigo} selecionada. Agora bipe as caixas que estão ao lado dela.`, 'ok');
+      L.alvo = m.id; L.sel = m.id; L.selCota = null; desenhar(); props(); return;
+    }
+    if (up.startsWith('GUT-MAQ:')) return aviso(`A máquina ${cod} não está numerada no cadastro.`, 'erro');
+    // caixa (código da etiqueta da caixa, ID do volume ou código de um cupom dela)
+    const cxs = caixas(), rows = (STATE.internalBoard && STATE.internalBoard.rows) || [];
+    let c = cxs.find(x => String(x.cod).toUpperCase() === up || String(x.id).toUpperCase() === up);
+    if (!c) { const r = rows.find(v => (v.OPERACOES || []).some(o => String(o.COD_CUPOM || '').toUpperCase() === up || String(o.QR_TEXT || '').toUpperCase() === up)); if (r) c = cxs.find(x => x.id === String(r.ID_VOLUME)); }
+    if (!c) return aviso(`"${t}" não é uma máquina numerada nem uma caixa que está na produção interna.`, 'erro');
+    const m = d.itens.find(i => i.id === L.alvo);
+    if (!m) { adicionar('LOTE', c.id); return aviso(`Caixa ${c.cod} na planta. Para pôr ao lado de uma máquina, bipe a máquina antes.`, 'ok'); }
+    snapshot(); let l = d.itens.find(i => i.tipo === 'LOTE' && i.vol === c.id);
+    if (!l) { l = { id: uid(), tipo: 'LOTE', vol: c.id, nome: c.cod, w: LOTE_W, h: LOTE_H }; d.itens.push(l); }
+    const ant = { x: l.x, y: l.y }; l.x = -999; l.y = -999; const v = vagaPerto(m, l.w, l.h); l.x = v.x; l.y = v.y; l.perto = m.id; limitar(l);
+    L.sel = m.id; mudou(); paleta(); props();
+    const f = fluxos().find(x => x.l.id === l.id), dica = c.feito ? ' Todas as operações já estão concluídas.' : c.op ? ` Próxima operação: ${c.op}${f && f.alvo && f.alvo.id !== m.id ? ` (na ${f.alvo.nome})` : ''}.` : '';
+    aviso(`Caixa ${c.cod} ao lado da ${m.nome}.${dica}`, 'ok');
+  }
+  async function camera() {
+    if (!('BarcodeDetector' in window)) return aviso('Este navegador não lê QR pela câmera. Use o leitor ou digite o código.', 'erro');
+    let st; const dlg = document.createElement('div'); dlg.className = 'lay-cam'; dlg.innerHTML = '<video playsinline muted></video><div class="lay-cam-bar"><span id="layCamMsg">Aponte para a etiqueta</span><button type="button">Fechar</button></div>'; document.body.appendChild(dlg);
+    const fim = () => { try { st && st.getTracks().forEach(t => t.stop()); } catch (e) {} dlg.remove(); }; dlg.querySelector('button').onclick = fim;
+    try {
+      st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); const vid = dlg.querySelector('video'); vid.srcObject = st; await vid.play();
+      const det = new BarcodeDetector({ formats: ['qr_code'] }); let ult = '', quando = 0;
+      const loop = async () => { if (!document.body.contains(dlg)) return; try { const r = await det.detect(vid); const v = r[0] && r[0].rawValue; if (v && (v !== ult || Date.now() - quando > 2500)) { ult = v; quando = Date.now(); bipar(v); const msg = $('layCamMsg'); if (msg) msg.textContent = 'Lido: ' + v; try { navigator.vibrate && navigator.vibrate(60); } catch (e) {} } } catch (e) {} setTimeout(loop, 250); };
+      loop();
+    } catch (e) { fim(); aviso('Não foi possível abrir a câmera: ' + e.message, 'erro'); }
+  }
+
   window.gutLayout = {
+    bipar, camera, alvo: () => L.alvo,
     cheia: () => { if (L.so) soPlanta(false); cheia(); }, soPlanta: on => soPlanta(on), lado(q) { if (q === 'pal') L.semPal = !L.semPal; else L.semProp = !L.semProp; lados(); setTimeout(desenhar, 30); },
     fluxo(on) { L.fluxo = !!on; desenhar(); },
     limparLotes() { const cx = mapaCaixas(); snapshot(); D().itens = D().itens.filter(i => i.tipo !== 'LOTE' || cx.has(i.vol)); const ids = new Set(D().itens.map(i => i.id)); D().cotas = D().cotas.filter(c => ids.has(c.a) && ids.has(c.b)); mudou(); paleta(); props(); },
@@ -370,7 +444,9 @@
     prop(k, v) {
       const it = D().itens.find(i => i.id === L.sel); if (!it) return; snapshot();
       if (k === 'nome') { it.nome = String(v).slice(0, 40); mudou(); return; }
-      if (k === 'maq') { it.maq = v; mudou(); paleta(); props(); return; }
+      if (k === 'maq') { it.maq = v; it.uni = ''; mudou(); paleta(); props(); return; }
+      if (k === 'uni') { it.uni = v; const u = unis().find(x => x.id === v); if (u) it.nome = u.codigo; mudou(); paleta(); props(); return; }
+      if (k === 'op') { it.op = v; mudou(); props(); return; }
       const x = num(v); if (k === 'w' || k === 'h') { if (x <= 0) return props(); it[k] = r2(x); } else it[k] = r2(x);
       limitar(it); mudou(); props();
     },
@@ -389,6 +465,7 @@
 
   window.gutLayoutAbrir = async function () {
     const root = $('layoutRoot'); if (!root) return;
+    await carregarUnidades();
     if (!L.carregado) { root.innerHTML = '<div class="card internal-loading">Carregando o layout…</div>'; try { await carregar(); } catch (e) { root.innerHTML = /web_layout_ler|does not exist|schema cache/i.test(e.message) ? '<div class="card">O Layout da fábrica ainda está sendo instalado no banco. Tente de novo daqui a pouco.</div>' : `<div class="card">Não foi possível abrir o layout: ${esc(e.message)}</div>`; return; } montar(); }
     else if (!$('laySvg')) montar(); else { paleta(); desenhar(); props(); }
     // ocupação: precisa do quadro da produção interna

@@ -20,7 +20,7 @@ const { comparar } = require('./comparar');
 // ---------- caminho B: o motor do navegador ----------
 function chamarRpc(banco, fn, args, uid = pg.USER) {
   const a = Object.entries(args).map(([k, v]) => {
-    if (Array.isArray(v) && k !== 'p_ops') return `${k} => array(select jsonb_array_elements_text($j$${JSON.stringify(v)}$j$::jsonb))`;
+    if (Array.isArray(v) && k !== 'p_ops' && k !== 'p_unidades') return `${k} => array(select jsonb_array_elements_text($j$${JSON.stringify(v)}$j$::jsonb))`;
     if (typeof v === 'object' && v !== null) return `${k} => $j$${JSON.stringify(v)}$j$::jsonb`;
     return `${k} => $j$${v}$j$`;
   });
